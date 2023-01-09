@@ -13,6 +13,7 @@ import { Component, NO_ERRORS_SCHEMA } from '@angular/core';
         <TSCView style="width: 20dip; height: 100dip;" backgroundColor="purple"></TSCView>
       </TSCView>
     </TSCView>
+<<<<<<< HEAD
   <ActionBar title="width_smaller_then_content_with_flex_grow_unconstraint_size"></ActionBar>
   <TSCView id="test-root" style="flex-direction: row;" backgroundColor="red">
   <TSCView style="width: 0dip; flex-grow: 1; flex-direction: column;" backgroundColor="green">
@@ -22,6 +23,8 @@ import { Component, NO_ERRORS_SCHEMA } from '@angular/core';
     <TSCView style="width: 20dip; height: 100dip;" backgroundColor="purple"></TSCView>
   </TSCView>
 </TSCView>
+=======
+>>>>>>> 7fff08659e98cfd091aecc60113fc1c6002389c7
   `,
 })
 export class WidthSmallerThenContentWithFlexGrowUnconstraintSizeComponent {}
