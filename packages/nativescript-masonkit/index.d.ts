@@ -1,4 +1,5 @@
 import { CoreTypes } from '@nativescript/core';
+import { TSCViewBase } from './common';
 
 export type Length = CoreTypes.dip | CoreTypes.LengthDipUnit | CoreTypes.LengthPxUnit;
 
@@ -31,6 +32,10 @@ export type JustifySelf = AlignSelf;
 export type JustifyContent = AlignContent;
 
 export type GridAutoFlow = 'row' | 'column' | 'row-dense' | 'column-dense';
+
+export class TSCView extends TSCViewBase {
+
+}
 
 declare module '@nativescript/core/ui/styling/style' {
   interface Style {
