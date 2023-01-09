@@ -45,6 +45,15 @@
         }
       ]
     },
+    "e2e": {
+      "executor": "@nrwl/workspace:run-commands",
+      "options": {
+        "commands": [
+          "echo hello"
+        ],
+        "cwd": "apps/demo-angular"
+      }
+    },
     "clean": {
       "executor": "@nativescript/nx:build",
       "options": {
