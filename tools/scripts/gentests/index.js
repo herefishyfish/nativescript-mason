@@ -47,6 +47,19 @@ export class ${toPascalCase(testName)}Component {}
   fs.writeFileSync(`../../../apps/demo-angular/src/tests/${testName.toLowerCase()}.component.ts`, component);
 }
 
+function writeHtmlWithColor(testName) {
+  const html = fs.readFileSync(`taffy_tests/${testName}.html`, 'utf8');
+  const $ = cheerio.load(html);
+
+  $('div').each((i, elem) => {
+    if (elem.attribs['style']) {
+      elem.attribs['style'] += `background-color: ${colors[i % colors.length]};`
+    }
+  });
+
+  fs.writeFileSync(`./taffy_tests_with_color/${testName.toLowerCase()}.html`, $.html());
+}
+
 function writeComponentsToFile() {
   const routes = [];
   const items = [];
@@ -55,6 +68,7 @@ function writeComponentsToFile() {
     const testName = file.replace('.html', '');
     console.log('writing component for test: ' + testName);
     writeComponentToFile(testName);
+    writeHtmlWithColor(testName);
 
     routes.push(`{ path: '${testName.toLowerCase()}', loadComponent: () => import('./tests/${testName.toLowerCase()}.component').then((m) => m.${toPascalCase(testName)}Component)}`);
     items.push({ name: testName.toLowerCase()})
