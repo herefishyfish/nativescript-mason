@@ -7,6 +7,7 @@ import { HomeComponent } from './home.component';
 const routes: Routes = [
   { path: '', redirectTo: '/home', pathMatch: 'full' },
   { path: 'home', component: HomeComponent },
+  { path: 'flex', loadComponent: () => import('./tests/flex.component').then((m) => m.FlexComponent) },
   { path: 'absolute_layout_align_items_and_justify_content_center', loadComponent: () => import('./tests/absolute_layout_align_items_and_justify_content_center.component').then((m) => m.AbsoluteLayoutAlignItemsAndJustifyContentCenterComponent) },
   { path: 'absolute_layout_align_items_and_justify_content_center_and_bottom_position', loadComponent: () => import('./tests/absolute_layout_align_items_and_justify_content_center_and_bottom_position.component').then((m) => m.AbsoluteLayoutAlignItemsAndJustifyContentCenterAndBottomPositionComponent) },
   { path: 'absolute_layout_align_items_and_justify_content_center_and_left_position', loadComponent: () => import('./tests/absolute_layout_align_items_and_justify_content_center_and_left_position.component').then((m) => m.AbsoluteLayoutAlignItemsAndJustifyContentCenterAndLeftPositionComponent) },
