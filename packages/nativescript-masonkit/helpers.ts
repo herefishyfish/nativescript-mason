@@ -180,7 +180,7 @@ export let JSIEnabled = false;
 if (global.isAndroid) {
   try {
     __non_webpack_require__('system_lib://libmasonnativev8.so');
-    // JSIEnabled = true;
+    JSIEnabled = true;
   } catch (error) {
     console.warn('Failed to enable on FastAPI', error);
   }

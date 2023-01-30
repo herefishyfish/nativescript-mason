@@ -53,7 +53,11 @@ function writeHtmlWithColor(testName) {
 
   $('div').each((i, elem) => {
     if (elem.attribs['style']) {
-      elem.attribs['style'] += `background-color: ${colors[i % colors.length]};`
+      if (!elem.attribs['style'].endsWith(';')) {
+        elem.attribs['style'] += ';';
+      }
+
+      elem.attribs['style'] += ` background-color: ${colors[i % colors.length]};`
     }
   });
 
