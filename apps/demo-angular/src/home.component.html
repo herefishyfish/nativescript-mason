@@ -1,12 +1,10 @@
 <ActionBar>
-	<ActionBar title="Demos"></ActionBar>
+  <ActionBar title="Demos"></ActionBar>
 </ActionBar>
-<GridLayout>
-	<ListView [items]="demos">
-		<ng-template let-item="item" let-i="index">
-			<GridLayout class="p-y-10">
-				<Label [text]="item.name" [nsRouterLink]="['/' + item.name]"></Label>
-			</GridLayout>
-		</ng-template>
-	</ListView>
-</GridLayout>
+<ScrollView testID="test-root-list">
+  <StackLayout>
+    <FlexboxLayout height="35" style="background-color: #e9e9e9; justify-content: center; align-items: center; width: 100%" *ngFor="let item of demos">
+      <Label id="item.name" testID="item.name" textWrap="true" style="text-align: center; font-size: 12px" class="p-x-10" [text]="item.name" [nsRouterLink]="['/' + item.name]"></Label>
+    </FlexboxLayout>
+  </StackLayout>
+</ScrollView>
