@@ -573,6 +573,7 @@ SWIFT_CLASS_NAMED("MasonNode")
 - (void)rootComputeMaxContent;
 - (void)rootComputeMinContent;
 - (void)rootComputeWithViewSize;
+- (void)rootComputeWithViewSizeWithLayout:(BOOL)layout;
 - (void)rootComputeWithMaxContent;
 - (void)compute;
 - (void)compute:(float)width :(float)height;
@@ -580,6 +581,7 @@ SWIFT_CLASS_NAMED("MasonNode")
 - (void)computeMinContent;
 - (void)computeWithSize:(float)width :(float)height;
 - (void)computeWithViewSize;
+- (void)computeWithViewSizeWithLayout:(BOOL)layout;
 - (void)computeWithMaxContent;
 - (void)computeWithMinContent;
 - (void)attachAndApply;
@@ -805,7 +807,7 @@ SWIFT_CLASS_NAMED("MaxSizing")
 + (MaxSizing * _Nonnull)Percent:(float)percent SWIFT_WARN_UNUSED_RESULT;
 + (MaxSizing * _Nonnull)FitContent:(float)fit SWIFT_WARN_UNUSED_RESULT;
 + (MaxSizing * _Nonnull)FitContentPercent:(float)fit SWIFT_WARN_UNUSED_RESULT;
-+ (MaxSizing * _Nonnull)Flex:(float)flex SWIFT_WARN_UNUSED_RESULT;
++ (MaxSizing * _Nonnull)Fraction:(float)flex SWIFT_WARN_UNUSED_RESULT;
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly, strong) MaxSizing * _Nonnull Auto;)
 + (MaxSizing * _Nonnull)Auto SWIFT_WARN_UNUSED_RESULT;
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly, strong) MaxSizing * _Nonnull MinContent;)
@@ -901,6 +903,7 @@ SWIFT_CLASS_NAMED("TrackSizingFunction")
 
 
 @interface UIView (SWIFT_EXTENSION(Mason))
+@property (nonatomic, readonly, strong) UIView * _Nullable rootView;
 + (UIView * _Nonnull)createGridView SWIFT_WARN_UNUSED_RESULT;
 + (UIView * _Nonnull)createFlexView SWIFT_WARN_UNUSED_RESULT;
 @property (nonatomic, readonly, strong) MasonNode * _Nonnull mason;
@@ -1591,6 +1594,7 @@ SWIFT_CLASS_NAMED("MasonNode")
 - (void)rootComputeMaxContent;
 - (void)rootComputeMinContent;
 - (void)rootComputeWithViewSize;
+- (void)rootComputeWithViewSizeWithLayout:(BOOL)layout;
 - (void)rootComputeWithMaxContent;
 - (void)compute;
 - (void)compute:(float)width :(float)height;
@@ -1598,6 +1602,7 @@ SWIFT_CLASS_NAMED("MasonNode")
 - (void)computeMinContent;
 - (void)computeWithSize:(float)width :(float)height;
 - (void)computeWithViewSize;
+- (void)computeWithViewSizeWithLayout:(BOOL)layout;
 - (void)computeWithMaxContent;
 - (void)computeWithMinContent;
 - (void)attachAndApply;
@@ -1823,7 +1828,7 @@ SWIFT_CLASS_NAMED("MaxSizing")
 + (MaxSizing * _Nonnull)Percent:(float)percent SWIFT_WARN_UNUSED_RESULT;
 + (MaxSizing * _Nonnull)FitContent:(float)fit SWIFT_WARN_UNUSED_RESULT;
 + (MaxSizing * _Nonnull)FitContentPercent:(float)fit SWIFT_WARN_UNUSED_RESULT;
-+ (MaxSizing * _Nonnull)Flex:(float)flex SWIFT_WARN_UNUSED_RESULT;
++ (MaxSizing * _Nonnull)Fraction:(float)flex SWIFT_WARN_UNUSED_RESULT;
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly, strong) MaxSizing * _Nonnull Auto;)
 + (MaxSizing * _Nonnull)Auto SWIFT_WARN_UNUSED_RESULT;
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly, strong) MaxSizing * _Nonnull MinContent;)
@@ -1919,6 +1924,7 @@ SWIFT_CLASS_NAMED("TrackSizingFunction")
 
 
 @interface UIView (SWIFT_EXTENSION(Mason))
+@property (nonatomic, readonly, strong) UIView * _Nullable rootView;
 + (UIView * _Nonnull)createGridView SWIFT_WARN_UNUSED_RESULT;
 + (UIView * _Nonnull)createFlexView SWIFT_WARN_UNUSED_RESULT;
 @property (nonatomic, readonly, strong) MasonNode * _Nonnull mason;

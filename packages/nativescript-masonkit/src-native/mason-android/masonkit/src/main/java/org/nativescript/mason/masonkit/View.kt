@@ -2,6 +2,7 @@ package org.nativescript.mason.masonkit
 
 import android.content.Context
 import android.util.AttributeSet
+import android.util.Log
 import android.util.SparseArray
 import android.util.TypedValue
 import android.view.ViewGroup
@@ -110,8 +111,12 @@ class View @JvmOverloads constructor(
   }
 
   fun nodeForView(view: android.view.View): Node {
+    val that = this
     return nodes[view] ?: run {
-      val node = Node().apply { data = view }
+      val node = Node().apply {
+        data = view
+        owner = that.node
+      }
       nodes[view] = node
       node
     }
@@ -125,43 +130,90 @@ class View @JvmOverloads constructor(
         return
       }
 
-      val layout = node.layout()
+      var layout = node.layout()
 
       var widthIsNaN = layout.width.isNaN()
       var heightIsNaN = layout.height.isNaN()
 
-      val measureWidth = if (widthIsNaN) 0 else layout.width.roundToInt()
-      val measureHeight = if (heightIsNaN) 0 else layout.height.roundToInt()
+      var measuredWidth = if (widthIsNaN) 0 else layout.width.roundToInt()
+      var measuredHeight = if (heightIsNaN) 0 else layout.height.roundToInt()
 
-      if (measureWidth == 0 && node.style.size.width == Dimension.Auto) {
-        widthIsNaN = true
+      val widthIsZero = node.style.size.width.isZero
+
+      val heightIsZero = node.style.size.height.isZero
+
+      var hasPercentDimensions = false
+
+      if (measuredWidth == 0 && !widthIsZero) {
+        when (node.style.size.width) {
+          is Dimension.Auto -> {
+            widthIsNaN = true
+          }
+          is Dimension.Percent -> {
+            hasPercentDimensions = true
+          }
+          else -> {}
+        }
       }
 
-      if (measureHeight == 0 && node.style.size.height == Dimension.Auto) {
-        heightIsNaN = true
+      if (measuredHeight == 0 && !heightIsZero) {
+        when (node.style.size.height) {
+          is Dimension.Auto -> {
+            heightIsNaN = true
+          }
+          is Dimension.Percent -> {
+            hasPercentDimensions = true
+          }
+          else -> {}
+        }
+      }
+
+      if (hasPercentDimensions) {
+        node.owner?.dirty()
+        node.dirty()
+        node.rootComputeWithViewSize()
+
+        layout = node.layout()
+
+        widthIsNaN = layout.width.isNaN()
+        heightIsNaN = layout.height.isNaN()
+      }
+
+      measuredWidth = if (widthIsNaN) 0 else layout.width.roundToInt()
+      measuredHeight = if (heightIsNaN) 0 else layout.height.roundToInt()
+
+      if (widthIsZero) {
+        measuredWidth = 0
+        widthIsNaN = false
+      }
+
+      if (heightIsZero) {
+        measuredHeight = 0
+        heightIsNaN = false
       }
 
 
-      if (widthIsNaN || heightIsNaN) {
         view.measure(
           MeasureSpec.makeMeasureSpec(
-            measureWidth,
-            if (widthIsNaN) MeasureSpec.UNSPECIFIED else MeasureSpec.EXACTLY
+            measuredWidth,
+            MeasureSpec.EXACTLY
           ), MeasureSpec.makeMeasureSpec(
-            measureHeight,
-            if (heightIsNaN) MeasureSpec.UNSPECIFIED else MeasureSpec.EXACTLY
+            measuredHeight,
+            MeasureSpec.EXACTLY
           )
         )
-      }
+        measuredWidth = view.measuredWidth
+        measuredHeight = view.measuredHeight
+
 
 
       val left = (xOffset + if (layout.x.isNaN()) 0F else layout.x).roundToInt()
       val top = (yOffset + if (layout.y.isNaN()) 0F else layout.y).roundToInt()
 
       val right =
-        left + if (widthIsNaN && !node.isViewGroup) view.measuredWidth else measureWidth
+        left + measuredWidth
       val bottom =
-        top + if (heightIsNaN && !node.isViewGroup) view.measuredHeight else measureHeight
+        top + measuredHeight
 
       view.layout(left, top, right, bottom)
     }
@@ -195,6 +247,7 @@ class View @JvmOverloads constructor(
     }
 
     applyLayoutRecursive(node, 0F, 0F)
+
   }
 
   private fun setSizeFromMeasureSpec(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -225,8 +278,9 @@ class View @JvmOverloads constructor(
       }
 
       node.style.size = Size(width, height)
+
+      checkAndUpdateStyle()
     }
-    checkAndUpdateStyle()
   }
 
   private fun createLayout(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -245,11 +299,42 @@ class View @JvmOverloads constructor(
     }
 
     val layout = if (parent !is View) {
-      node.computeAndLayout(specWidth.toFloat(), specHeight.toFloat())
+      val masonHeight = node.style.size.height
+      val masonWidth = node.style.size.width
+
+      if (masonWidth is Dimension.Auto && masonHeight is Dimension.Auto) {
+        node.computeMaxContent()
+      } else {
+
+        val width: Float = when (masonWidth) {
+          is Dimension.Percent -> {
+            masonWidth.value * (parent as android.view.View).measuredWidth
+          }
+          is Dimension.Auto -> {
+            -2.0f
+          }
+          is Dimension.Points -> {
+            specWidth.toFloat()
+          }
+        }
+
+        val height: Float = when (masonHeight) {
+          is Dimension.Percent -> {
+            masonHeight.value * (parent as android.view.View).measuredHeight
+          }
+          is Dimension.Auto -> {
+            -2.0f
+          }
+          is Dimension.Points -> {
+            specHeight.toFloat()
+          }
+        }
+        node.compute(width, height)
+      }
+      node.layout()
     } else {
       node.layout()
     }
-
 
     val width = MeasureSpec.makeMeasureSpec(layout.width.roundToInt(), MeasureSpec.EXACTLY)
     val height = MeasureSpec.makeMeasureSpec(layout.height.roundToInt(), MeasureSpec.EXACTLY)
@@ -541,10 +626,10 @@ class View @JvmOverloads constructor(
           marginBottom = points
         }
         R.styleable.mason_mason_maxHeight -> {
-          maxWidth = Dimension.Points(value)
+          maxHeight = Dimension.Points(value)
         }
         R.styleable.mason_mason_maxWidth -> {
-          maxHeight = Dimension.Points(value)
+          maxWidth = Dimension.Points(value)
         }
         R.styleable.mason_mason_minHeight -> {
           minHeight = Dimension.Points(value)
@@ -793,6 +878,78 @@ class View @JvmOverloads constructor(
             insetRight = percent
             insetTop = percent
             insetBottom = percent
+          }
+        }
+      }
+
+      if (value == "0") {
+        when (attribute) {
+          R.styleable.mason_mason_marginLeft -> {
+            marginLeft = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_marginTop -> {
+            marginTop = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_marginRight -> {
+            marginRight = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_marginBottom -> {
+            marginBottom = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_marginStart -> {
+            marginLeft = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_marginEnd -> {
+            marginRight = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_marginAll -> {
+            marginLeft = LengthPercentageAuto.Points(0F)
+            marginRight = LengthPercentageAuto.Points(0F)
+            marginTop = LengthPercentageAuto.Points(0F)
+            marginBottom = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_insetLeft -> {
+            insetLeft = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_insetTop -> {
+            insetTop = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_insetRight -> {
+            insetRight = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_insetBottom -> {
+            insetBottom = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_insetStart -> {
+            insetLeft = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_insetEnd -> {
+            insetRight = LengthPercentageAuto.Points(0F)
+          }
+          R.styleable.mason_mason_insetAll -> {
+            val points = LengthPercentageAuto.Points(0F)
+            insetLeft = points
+            insetRight = points
+            insetBottom = points
+            insetTop = points
+          }
+          R.styleable.mason_mason_height -> {
+            height = Dimension.Points(0F)
+          }
+          R.styleable.mason_mason_width -> {
+            width = Dimension.Points(0F)
+          }
+          R.styleable.mason_mason_maxHeight -> {
+            maxHeight = Dimension.Points(0F)
+          }
+          R.styleable.mason_mason_maxWidth -> {
+            maxWidth = Dimension.Points(0F)
+          }
+          R.styleable.mason_mason_minHeight -> {
+            minHeight = Dimension.Points(0F)
+          }
+          R.styleable.mason_mason_minWidth -> {
+            minWidth = Dimension.Points(0F)
           }
         }
       }
@@ -1828,8 +1985,8 @@ class View @JvmOverloads constructor(
         return zeroSize
       }
 
-      val widthIsNaN = width.isNaN()
-      val heightIsNaN = height.isNaN()
+      var widthIsNaN = width.isNaN()
+      var heightIsNaN = height.isNaN()
 
       if (!widthIsNaN && !heightIsNaN) {
         return Size(width, height)
@@ -1840,66 +1997,81 @@ class View @JvmOverloads constructor(
 
       node.get()?.let { node ->
 
-        var widthCalculated = false
-        var heightCalculated = false
+        val widthIsZero = node.style.size.width.isZero
+        val heightIsZero = node.style.size.height.isZero
 
-        var isWidthPercent = false
-        var isHeightPercent = false
-
-        if (widthIsNaN) {
-          if (node.style.size.width is Dimension.Points) {
-            retWidth = node.style.size.width.value
-            widthCalculated = true
-          } else if (node.style.size.width is Dimension.Percent) {
-            isWidthPercent = true
-          }
-        }
-
-        if (heightIsNaN) {
-          if (node.style.size.height is Dimension.Points) {
-            retHeight = node.style.size.height.value
-            heightCalculated = true
-          } else if (node.style.size.height is Dimension.Percent) {
-            isHeightPercent = true
-          }
-        }
-
-        if (widthCalculated && heightCalculated) {
+        // return early if the size is zero
+        if (widthIsZero && heightIsZero) {
+          retWidth = 0F
+          retHeight = 0F
           return@let
         }
 
-        val measureWidth = if (widthIsNaN) 0 else width.roundToInt()
-        val measureHeight = if (heightIsNaN) 0 else height.roundToInt()
+        if (widthIsNaN || (width.equals(0.0f) && !widthIsZero)) {
+          when (node.style.size.width) {
+            is Dimension.Points -> {
+              retWidth = node.style.size.width.value
+              if (!retWidth.isNaN()) widthIsNaN = false
+            }
+            is Dimension.Percent -> {
+              val parentLayout = node.owner?.layout()
+              parentLayout?.let {
+                retWidth =
+                  if (it.width.isNaN()) 0.0f else parentLayout.width * node.style.size.width.value
+                widthIsNaN = false
+              }
+            }
+            else -> {}
+          }
+        }
+
+        if (heightIsNaN || (height.equals(0.0f) && !heightIsZero)) {
+          when (node.style.size.height) {
+            is Dimension.Points -> {
+              retHeight = node.style.size.height.value
+              if (!retHeight.isNaN()) heightIsNaN = false
+            }
+            is Dimension.Percent -> {
+              val parentLayout = node.owner?.layout()
+              parentLayout?.let {
+                retHeight =
+                  if (it.height.isNaN()) 0.0f else parentLayout.height * node.style.size.height.value
+                heightIsNaN = false
+              }
+            }
+            else -> {}
+          }
+        }
 
         val widthSpec = if (widthIsNaN) MeasureSpec.UNSPECIFIED else MeasureSpec.EXACTLY
-
         val heightSpec = if (heightIsNaN) MeasureSpec.UNSPECIFIED else MeasureSpec.EXACTLY
+
 
         view.measure(
           MeasureSpec.makeMeasureSpec(
-            measureWidth, widthSpec
+            if (retWidth.isNaN()) 0 else retWidth.roundToInt(), widthSpec
           ), MeasureSpec.makeMeasureSpec(
-            measureHeight, heightSpec
+            if (retHeight.isNaN()) 0 else retHeight.roundToInt(), heightSpec
           )
         )
 
-        if (widthIsNaN) {
-          retWidth = view.measuredWidth.toFloat()
-          if (retWidth == 0F) {
-            retWidth = Float.NaN
-          }
+        retWidth = view.measuredWidth.toFloat()
+        retHeight = view.measuredHeight.toFloat()
+
+
+
+        if (retWidth.equals(0f)) {
+          retWidth = Float.NaN
         }
 
-        if (heightIsNaN) {
-          retHeight = view.measuredHeight.toFloat()
-          if (retHeight == 0F) {
-            retHeight = Float.NaN
-          }
+        if (retHeight.equals(0f)) {
+          retHeight = Float.NaN
         }
+
+
       }
 
       return Size(retWidth, retHeight)
-
     }
 
     override fun measure(

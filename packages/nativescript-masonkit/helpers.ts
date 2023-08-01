@@ -184,7 +184,7 @@ if (global.isAndroid) {
     __non_webpack_require__('system_lib://libmasonnativev8.so');
     // JSIEnabled = true;
   } catch (error) {
-    console.warn('Failed to enable on FastAPI', error);
+    console.warn('Failed to enable on FastAPI');
   }
 }
 
@@ -197,7 +197,7 @@ if (global.isIOS) {
       // module.install()
       // JSIEnabled = true;
     } catch (error) {
-      console.warn('Failed to enable on FastAPI', error);
+      console.warn('Failed to enable on FastAPI');
     }
   }
 }
@@ -537,7 +537,7 @@ export function _setDisplay(value, instance: TSCView, initial = false) {
             nativeValue = org.nativescript.mason.masonkit.Display.None;
             break;
         }
-        if (nativeValue) {
+        if (!Utils.isNullOrUndefined(nativeValue)) {
           const nodeOrView = getMasonInstance(instance);
           if (instance._isMasonChild) {
             org.nativescript.mason.masonkit.NodeHelper.INSTANCE.setDisplay(nodeOrView, nativeValue);
@@ -962,7 +962,7 @@ export function _setFlexDirection(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setFlexDirection(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -1069,7 +1069,7 @@ export function _getPosition(instance: TSCView) {
     }
 
     if (global.isIOS) {
-      switch (instance.ios.position) {
+      switch (instance.ios._position) {
         case Position.Absolute:
           return 'absolute';
         case Position.Relative:
@@ -1091,7 +1091,11 @@ export function _setPosition(value, instance: TSCView, initial = false) {
         if (JSIEnabled) {
           nativeValue = PositionType.Absolute;
         } else {
-          nativeValue = org.nativescript.mason.masonkit.Position.Absolute;
+          if (global.isAndroid) {
+            nativeValue = org.nativescript.mason.masonkit.Position.Absolute;
+          } else {
+            nativeValue = 1;
+          }
         }
 
         break;
@@ -1099,13 +1103,17 @@ export function _setPosition(value, instance: TSCView, initial = false) {
         if (JSIEnabled) {
           nativeValue = PositionType.Relative;
         } else {
-          nativeValue = org.nativescript.mason.masonkit.Position.Relative;
+          if (global.isAndroid) {
+            nativeValue = org.nativescript.mason.masonkit.Position.Relative;
+          } else {
+            nativeValue = 0;
+          }
         }
 
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setPosition(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -1119,7 +1127,7 @@ export function _setPosition(value, instance: TSCView, initial = false) {
         }
 
         if (global.isIOS) {
-          instance.ios.position = nativeValue;
+          instance.ios._position = nativeValue;
         }
       }
     }
@@ -1177,7 +1185,7 @@ export function _setFlexWrap(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setFlexWrap(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -1253,14 +1261,14 @@ export function _setAlignItems(value, instance: TSCView, initial = false) {
     let nativeValue = null;
     switch (value) {
       case 'normal':
-        if (JSIEnabled) {
+        if (JSIEnabled || global.isIOS) {
           nativeValue = AlignItems.Normal;
         } else {
           nativeValue = org.nativescript.mason.masonkit.AlignItems.Normal;
         }
         break;
       case 'baseline':
-        if (JSIEnabled) {
+        if (JSIEnabled || global.isIOS) {
           nativeValue = AlignItems.Baseline;
         } else {
           nativeValue = org.nativescript.mason.masonkit.AlignItems.Baseline;
@@ -1268,7 +1276,7 @@ export function _setAlignItems(value, instance: TSCView, initial = false) {
 
         break;
       case 'center':
-        if (JSIEnabled) {
+        if (JSIEnabled || global.isIOS) {
           nativeValue = AlignItems.Center;
         } else {
           nativeValue = org.nativescript.mason.masonkit.AlignItems.Center;
@@ -1277,7 +1285,7 @@ export function _setAlignItems(value, instance: TSCView, initial = false) {
         break;
       case 'flex-end':
       case 'end':
-        if (JSIEnabled) {
+        if (JSIEnabled || global.isIOS) {
           nativeValue = AlignItems.End;
         } else {
           nativeValue = org.nativescript.mason.masonkit.AlignItems.End;
@@ -1286,7 +1294,7 @@ export function _setAlignItems(value, instance: TSCView, initial = false) {
         break;
       case 'flex-start':
       case 'start':
-        if (JSIEnabled) {
+        if (JSIEnabled || global.isIOS) {
           nativeValue = AlignItems.Start;
         } else {
           nativeValue = org.nativescript.mason.masonkit.AlignItems.Start;
@@ -1294,7 +1302,7 @@ export function _setAlignItems(value, instance: TSCView, initial = false) {
 
         break;
       case 'stretch':
-        if (JSIEnabled) {
+        if (JSIEnabled || global.isIOS) {
           nativeValue = AlignItems.Stretch;
         } else {
           nativeValue = org.nativescript.mason.masonkit.AlignItems.Stretch;
@@ -1302,7 +1310,7 @@ export function _setAlignItems(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setAlignItems(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -1445,7 +1453,7 @@ export function _setAlignSelf(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setAlignSelf(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -1646,7 +1654,7 @@ export function _setAlignContent(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setAlignContent(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -1802,7 +1810,7 @@ export function _setJustifyItems(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setJustifyItems(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -1946,7 +1954,7 @@ export function _setJustifySelf(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setJustifySelf(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -2148,7 +2156,7 @@ export function _setJustifyContent(value, instance: TSCView, initial = false) {
         break;
     }
 
-    if (nativeValue) {
+    if (!Utils.isNullOrUndefined(nativeValue)) {
       if (JSIEnabled) {
         global.__Mason_setJustifyContent(instance._masonPtr, instance._masonNodePtr, instance._masonStylePtr, nativeValue, !instance._inBatch);
       } else {
@@ -3263,8 +3271,8 @@ export function _parseMinMaxValue(value: string): MinMaxType {
         max_type: MaxSizingType.MaxContent,
         max_value: 0,
       };
-    } else if (value.startsWith('flex')) {
-      const flex = parseInt(value.replace('flex(', '').replace(')', '').replace('fr', '').trim());
+    } else if (value.indexOf('fr') > -1) {
+      const flex = parseInt(value.replace('fr', '').trim());
       return {
         min_type: MinSizingType.Auto,
         min_value: 0,
