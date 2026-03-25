@@ -10,7 +10,6 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
-import android.util.Log
 import android.view.View
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
@@ -68,37 +67,40 @@ data class BackgroundLayer(
 class Background(
   val style: Style
 ) {
+
+  internal val bgPaint by lazy {
+    Paint().apply {
+      this.style = Paint.Style.FILL
+    }
+  }
+
   var color: Int?
     set(value) {
       if (value == null) {
         style.values.put(StyleKeys.BACKGROUND_COLOR_STATE, StyleState.INHERIT)
         style.values.putInt(StyleKeys.BACKGROUND_COLOR, 0)
-        style.values.putInt(StyleKeys.BACKGROUND_COLOR_TYPE, 0)
+        style.values.put(StyleKeys.BACKGROUND_COLOR_TYPE, 0)
         return
       }
 
       style.values.put(StyleKeys.BACKGROUND_COLOR_STATE, StyleState.SET)
       style.values.putInt(StyleKeys.BACKGROUND_COLOR, value)
-      style.values.putInt(StyleKeys.BACKGROUND_COLOR_TYPE, 1)
+      style.values.put(StyleKeys.BACKGROUND_COLOR_TYPE, 1)
     }
     get() {
-      val baseValue: Int? = if (style.values.get(StyleKeys.BACKGROUND_COLOR_STATE) == StyleState.INHERIT) {
-        null
-      } else {
-        style.values.getInt(StyleKeys.BACKGROUND_COLOR)
-      }
-      val mask = style.node.pseudoMask
-      if (mask == 0) return baseValue
-      var result = baseValue
-      for (state in PSEUDO_CSS_ORDER) {
-        if (mask and state.mask != 0) {
-          val buf = style.node.getPseudoBuffer(state.mask)
-          if (buf.capacity() > 0 && buf.get(StyleKeys.BACKGROUND_COLOR_STATE) != StyleState.INHERIT) {
-            result = buf.getInt(StyleKeys.BACKGROUND_COLOR)
-          }
+      val baseValue: Int =
+        if (style.values.get(StyleKeys.BACKGROUND_COLOR_STATE) == StyleState.SET) {
+          style.values.getInt(StyleKeys.BACKGROUND_COLOR)
+        } else {
+          0
         }
-      }
-      return result
+
+      return style.resolvePseudoInt(
+        StyleKeys.BACKGROUND_COLOR,
+        StyleKeys.BACKGROUND_COLOR_STATE,
+        baseValue,
+        StateKeys.BACKGROUND_COLOR
+      )
     }
 
   var layers: MutableList<BackgroundLayer> = mutableListOf()
@@ -109,7 +111,7 @@ class Background(
     parts.forEachIndexed { idx, rep ->
       layers[idx].repeat = parseRepeat(rep.trim())
     }
-    (style.node.view as? android.view.View)?.invalidate()
+    (style.node.view as? View)?.invalidate()
   }
 
   fun applyBackgroundPosition(value: String) {
@@ -193,7 +195,8 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
   // (which often happens at 0x0) would create a degenerate shader that never
   // updates when the view finally gets a proper size.
   if (layer.shader != null &&
-      (layer.shaderWidth != width || layer.shaderHeight != height)) {
+    (layer.shaderWidth != width || layer.shaderHeight != height)
+  ) {
     layer.shader = null
   }
 
@@ -255,7 +258,12 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
 
       "radial" -> {
         RadialGradient(
-          width / 2f, height / 2f, maxOf(width, height) / 2f, colorsArray, positionsArray, Shader.TileMode.CLAMP
+          width / 2f,
+          height / 2f,
+          maxOf(width, height) / 2f,
+          colorsArray,
+          positionsArray,
+          Shader.TileMode.CLAMP
         )
       }
 
@@ -327,10 +335,13 @@ private fun parseCssAngleToRadians(value: String): Double? {
   return when {
     v.endsWith("deg") -> v.removeSuffix("deg").toDoubleOrNull()
       ?.let { it * Math.PI / 180.0 }
+
     v.endsWith("grad") -> v.removeSuffix("grad").toDoubleOrNull()
       ?.let { it * Math.PI / 200.0 }
+
     v.endsWith("turn") -> v.removeSuffix("turn").toDoubleOrNull()
       ?.let { it * 2.0 * Math.PI }
+
     v.endsWith("rad") -> v.removeSuffix("rad").toDoubleOrNull()
     else -> null
   }
@@ -515,6 +526,7 @@ fun parseRgbColor(input: String): Int? {
       val a = parseAlpha(alphaPart)
       (a shl 24) or (r shl 16) or (g shl 8) or b
     }
+
     4 -> {
       // Legacy rgba(r, g, b, a) comma-separated format
       val r = parseColorChannel(components[0]) ?: return null
@@ -523,6 +535,7 @@ fun parseRgbColor(input: String): Int? {
       val a = if (alphaPart != null) parseAlpha(alphaPart) else parseAlpha(components[3])
       (a shl 24) or (r shl 16) or (g shl 8) or b
     }
+
     else -> null
   }
 }

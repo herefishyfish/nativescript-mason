@@ -67,7 +67,7 @@ data class TextDefaultAttributes(
     textShadow = style.resolvedTextShadow
   }
 
-  fun copy(attributes: TextDefaultAttributes) {
+  fun sync(attributes: TextDefaultAttributes) {
     color = attributes.color
     fontSize = attributes.fontSize
     fontWeight = attributes.fontWeight
@@ -99,8 +99,8 @@ data class TextDefaultAttributes(
       return TextDefaultAttributes(
         style.resolvedColor,
         style.resolvedFontSize,
-        style.fontWeight,
-        style.fontStyle,
+        style.resolvedFontWeight,
+        style.resolvedFontStyle,
         resolvedFont.fontFamily,
         resolvedFont,
         style.resolvedTextWrap,

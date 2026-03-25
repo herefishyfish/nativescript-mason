@@ -31,9 +31,7 @@ fn sample() {
         MeasureOutput::make(300., 300.)
     }
 
-
     mason.set_measure(child.id(), Some(image_measure), 0 as _);
-
 
     // mason.with_style_mut(child.id(), |style| {
     //     style.set_size(Size {
@@ -74,8 +72,8 @@ fn gc() {
     rx.recv().unwrap();
 }
 fn main() {
-   // gc()
-     // sample();
+    // gc()
+    // sample();
     // flex_example();
     //percent_example()
     // t();
@@ -111,7 +109,7 @@ fn main() {
     // inline();
     //  mixed();
     // inline_block();
-     inline_segments();
+    //  inline_segments();
 
     /*
     let mut mason = Mason::new();
@@ -198,6 +196,72 @@ fn main() {
     // li();
     // creation();
     // span()
+
+    list()
+}
+
+fn list() {
+    let mut mason = Mason::new();
+    let root = mason.create_node();
+
+    let content_root = mason.create_node();
+    mason.with_style_mut(content_root.id(), |style| {
+        style.set_display(Display::Flex);
+        style.set_size(Size {
+            width: Dimension::percent(1f32),
+            height: Dimension::percent(1f32),
+        })
+    });
+
+    let container = mason.create_node();
+    mason.with_style_mut(container.id(), |style| {
+        style.set_display(Display::Flex);
+        style.set_size(Size {
+            width: Dimension::percent(1f32),
+            height: Dimension::percent(1f32),
+        })
+    });
+
+    let list = mason.create_node();
+    mason.with_style_mut(list.id(), |style| {
+        style.set_item_is_list(true);
+        style.set_size(Size {
+            width: Dimension::percent(1f32),
+            height: Dimension::percent(1f32),
+        })
+    });
+    mason.add_child(container.id(), list.id());
+    mason.add_child(root.id(), container.id());
+    mason.add_child(root.id(), content_root.id());
+
+
+
+    mason.with_style_mut(content_root.id(), |style| {
+        style.set_display(Display::None);
+    });
+
+    mason.with_style_mut(list.id(), |style| {
+        style.set_display(Display::Flex);
+    });
+
+
+    mason.compute_wh(root.id(), 1080., 4000.);
+    mason.print_tree(root.id());
+
+
+
+    mason.with_style_mut(content_root.id(), |style| {
+        style.set_display(Display::Flex);
+    });
+
+    mason.with_style_mut(list.id(), |style| {
+        style.set_display(Display::None);
+    });
+
+    mason.mark_dirty(root.id());
+
+    mason.compute_wh(root.id(), 1080., 4000.);
+    mason.print_tree(root.id());
 }
 
 fn creation() {
@@ -439,8 +503,8 @@ fn inline_segments() {
     });
 
     mason.add_child(root.id(), inline_a.id());
-   // mason.add_child(root.id(), inline_b.id());
-   // mason.add_child(root.id(), c.id());
+    // mason.add_child(root.id(), inline_b.id());
+    // mason.add_child(root.id(), c.id());
 
     mason.compute_wh(root.id(), -2., -2.);
 

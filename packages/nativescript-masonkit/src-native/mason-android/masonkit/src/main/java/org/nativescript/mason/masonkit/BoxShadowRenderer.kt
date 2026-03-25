@@ -189,6 +189,7 @@ class BoxShadowRenderer(private val style: Style) {
     if (width <= 0f || height <= 0f) return
     val outsetShadows = style.boxShadows.filter { !it.inset }
     if (outsetShadows.isEmpty()) return
+    android.util.Log.d("mason", "BoxShadowRenderer.drawOutsetShadows -> view=${view.javaClass.simpleName} w=${width} h=${height} count=${outsetShadows.size} forceLegacy=${forceLegacy}")
 
     if (!forceLegacy && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       drawOutsetShadowsV31(view, canvas, width, height, borderRenderer, outsetShadows)
@@ -297,6 +298,7 @@ class BoxShadowRenderer(private val style: Style) {
 
     // Draw cached nodes (in reverse order so first shadow is on top)
     outsetShadowNodes?.reversed()?.forEach { node ->
+      android.util.Log.d("mason", "BoxShadowRenderer.drawOutsetShadowsV31 drawing node=${node.toString()}")
       canvas.drawRenderNode(node)
     }
   }
@@ -364,6 +366,7 @@ class BoxShadowRenderer(private val style: Style) {
 
     // Draw cached bitmaps (in reverse order so first shadow is on top)
     cachedOutsetShadows?.reversed()?.forEach { entry ->
+      android.util.Log.d("mason", "BoxShadowRenderer.drawOutsetShadowsLegacy drawing bitmap drawX=${entry.drawX} drawY=${entry.drawY} isInset=${entry.isInset}")
       canvas.drawBitmap(entry.bitmap, entry.drawX, entry.drawY, null)
     }
   }

@@ -1027,29 +1027,255 @@ class BorderRenderer(private val style: Style) {
     paint.color = color
     paint.strokeWidth = sideWidth
     paint.style = Paint.Style.STROKE
+
+    // choose stroke cap & pattern per style, scale pattern to stroke width for better visual parity
     when (style) {
       BorderStyle.Solid -> {
         paint.pathEffect = null
-        canvas.drawPath(path, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+        // draw on a path inset for this side so stroke centers match per-side widths
+        val sidePath = buildBorderPathInset(sideWidth / 2f, viewWidth, viewHeight)
+        canvas.drawPath(sidePath, paint)
       }
 
       BorderStyle.Dashed -> {
-        paint.pathEffect = DASH_EFFECT
-        canvas.drawPath(path, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+        val pattern = floatArrayOf(sideWidth * 3f, sideWidth * 2f)
+        paint.pathEffect = android.graphics.DashPathEffect(pattern, 0f)
+        val sidePath = buildStraightEdgePath(side, sideWidth / 2f, viewWidth, viewHeight)
+        canvas.drawPath(sidePath, paint)
       }
 
       BorderStyle.Dotted -> {
-        paint.pathEffect = DOT_EFFECT
-        canvas.drawPath(path, paint)
+        // use round caps with dash length ~ strokeWidth to create circular dots
+        paint.strokeCap = Paint.Cap.ROUND
+        val pattern = floatArrayOf(sideWidth, sideWidth * 2f)
+        paint.pathEffect = android.graphics.DashPathEffect(pattern, 0f)
+        val sidePath = buildStraightEdgePath(side, sideWidth / 2f, viewWidth, viewHeight)
+        canvas.drawPath(sidePath, paint)
+      }
+
+      BorderStyle.Double -> {
+        val total = sideWidth
+        if (total < 3f) {
+          // fallback to solid fill band
+          paint.pathEffect = null
+          paint.style = Paint.Style.FILL
+          val band = bandRectForSide(side, viewWidth, viewHeight, total)
+          canvas.drawRect(band, paint)
+        } else {
+          val line = total / 3f
+          val gap = total / 3f
+
+          // Outer stroke
+          paint.pathEffect = null
+          paint.style = Paint.Style.STROKE
+          paint.strokeWidth = line
+          paint.strokeCap = Paint.Cap.BUTT
+          val outerPath = buildBorderPathInset(line / 2f, viewWidth, viewHeight)
+          canvas.drawPath(outerPath, paint)
+
+          // Inner stroke
+          paint.strokeWidth = line
+          val innerCenter = line + gap
+          val innerPath = buildBorderPathInset(innerCenter + line / 2f, viewWidth, viewHeight)
+          canvas.drawPath(innerPath, paint)
+        }
+      }
+
+      BorderStyle.Groove -> {
+        val band = bandRectForSide(side, viewWidth, viewHeight, sideWidth)
+        val dark = darkenColor(color, 0.2f)
+        val light = lightenColor(color, 0.2f)
+        paint.style = Paint.Style.FILL
+        if (side == Side.Top || side == Side.Bottom) {
+          val half = band.width() / 2f
+          val leftRect = RectF(band.left, band.top, band.left + half, band.bottom)
+          val rightRect = RectF(band.left + half, band.top, band.right, band.bottom)
+          paint.color = dark
+          canvas.drawRect(leftRect, paint)
+          paint.color = light
+          canvas.drawRect(rightRect, paint)
+        } else {
+          val half = band.height() / 2f
+          val topRect = RectF(band.left, band.top, band.right, band.top + half)
+          val bottomRect = RectF(band.left, band.top + half, band.right, band.bottom)
+          paint.color = dark
+          canvas.drawRect(topRect, paint)
+          paint.color = light
+          canvas.drawRect(bottomRect, paint)
+        }
+      }
+
+      BorderStyle.Ridge -> {
+        val band = bandRectForSide(side, viewWidth, viewHeight, sideWidth)
+        val dark = darkenColor(color, 0.2f)
+        val light = lightenColor(color, 0.2f)
+        paint.style = Paint.Style.FILL
+        if (side == Side.Top || side == Side.Bottom) {
+          val half = band.width() / 2f
+          val leftRect = RectF(band.left, band.top, band.left + half, band.bottom)
+          val rightRect = RectF(band.left + half, band.top, band.right, band.bottom)
+          paint.color = light
+          canvas.drawRect(leftRect, paint)
+          paint.color = dark
+          canvas.drawRect(rightRect, paint)
+        } else {
+          val half = band.height() / 2f
+          val topRect = RectF(band.left, band.top, band.right, band.top + half)
+          val bottomRect = RectF(band.left, band.top + half, band.right, band.bottom)
+          paint.color = light
+          canvas.drawRect(topRect, paint)
+          paint.color = dark
+          canvas.drawRect(bottomRect, paint)
+        }
+      }
+
+      BorderStyle.Inset -> {
+        val band = bandRectForSide(side, viewWidth, viewHeight, sideWidth)
+        paint.style = Paint.Style.FILL
+        paint.color = darkenColor(color, 0.35f)
+        canvas.drawRect(band, paint)
+      }
+
+      BorderStyle.Outset -> {
+        val band = bandRectForSide(side, viewWidth, viewHeight, sideWidth)
+        paint.style = Paint.Style.FILL
+        paint.color = lightenColor(color, 0.35f)
+        canvas.drawRect(band, paint)
       }
 
       else -> {
         paint.pathEffect = null
-        canvas.drawPath(path, paint)
+        paint.strokeCap = Paint.Cap.BUTT
+        val sidePath = buildBorderPathInset(sideWidth / 2f, viewWidth, viewHeight)
+        canvas.drawPath(sidePath, paint)
       }
     }
 
     canvas.restore()
+  }
+
+  /**
+   * Build a border path inset by a custom half-stroke (ofs). This mirrors buildBorderPath
+   * but uses the provided offset so each side can be stroked centered at a different inset
+   * (matching CSS where each side's stroke is centered on a path inset by half that side's width).
+   */
+  private fun buildBorderPathInset(ofs: Float, width: Float, height: Float): Path {
+    val tl = topLeftCorner
+    val tr = topRightCorner
+    val br = bottomRightCorner
+    val bl = bottomLeftCorner
+
+    val p = Path()
+
+    val innerWidth = (width - ofs * 2).coerceAtLeast(0f)
+    val innerHeight = (height - ofs * 2).coerceAtLeast(0f)
+
+    // CSS spec proportional radius reduction applied to inner dimensions
+    val f = cssRadiusScale(innerWidth, innerHeight)
+    val tlX = tl.x * f
+    val tlY = tl.y * f
+    val trX = tr.x * f
+    val trY = tr.y * f
+    val brX = br.x * f
+    val brY = br.y * f
+    val blX = bl.x * f
+    val blY = bl.y * f
+
+    p.moveTo(ofs + tlX, ofs)
+    p.lineTo(ofs + innerWidth - trX, ofs)
+
+    tempRadius.set(trX, trY)
+    addCorner(p, Corner.TOP_RIGHT, tempRadius, topRightExponent, innerWidth, innerHeight)
+
+    p.lineTo(ofs + innerWidth, ofs + innerHeight - brY)
+
+    tempRadius.set(brX, brY)
+    addCorner(p, Corner.BOTTOM_RIGHT, tempRadius, bottomRightExponent, innerWidth, innerHeight)
+
+    p.lineTo(ofs + blX, ofs + innerHeight)
+
+    tempRadius.set(blX, blY)
+    addCorner(p, Corner.BOTTOM_LEFT, tempRadius, bottomLeftExponent, innerWidth, innerHeight)
+
+    p.lineTo(ofs, ofs + tlY)
+
+    tempRadius.set(tlX, tlY)
+    addCorner(p, Corner.TOP_LEFT, tempRadius, topLeftExponent, innerWidth, innerHeight)
+
+    p.close()
+    return p
+  }
+
+  /** Build a straight-edge centerline path for a single side (excludes corner arcs). */
+  private fun buildStraightEdgePath(side: Side, ofs: Float, width: Float, height: Float): Path {
+    val f = cssRadiusScale((width - ofs * 2).coerceAtLeast(0f), (height - ofs * 2).coerceAtLeast(0f))
+    val tlX = topLeftCorner.x * f
+    val tlY = topLeftCorner.y * f
+    val trX = topRightCorner.x * f
+    val trY = topRightCorner.y * f
+    val brX = bottomRightCorner.x * f
+    val brY = bottomRightCorner.y * f
+    val blX = bottomLeftCorner.x * f
+    val blY = bottomLeftCorner.y * f
+
+    val p = Path()
+    when (side) {
+      Side.Top -> {
+        val y = ofs
+        p.moveTo(ofs + tlX, y)
+        p.lineTo(ofs + (width - ofs * 2) - trX + ofs, y)
+      }
+      Side.Right -> {
+        val x = width - ofs
+        p.moveTo(x, ofs + trY)
+        p.lineTo(x, ofs + (height - ofs * 2) - brY + ofs)
+      }
+      Side.Bottom -> {
+        val y = height - ofs
+        p.moveTo(ofs + blX, y)
+        p.lineTo(ofs + (width - ofs * 2) - brX + ofs, y)
+      }
+      Side.Left -> {
+        val x = ofs
+        p.moveTo(x, ofs + tlY)
+        p.lineTo(x, ofs + (height - ofs * 2) - blY + ofs)
+      }
+    }
+    return p
+  }
+
+  /** Compute the RectF band for a given side and band thickness (in pixels) */
+  private fun bandRectForSide(side: Side, width: Float, height: Float, band: Float): RectF {
+    return when (side) {
+      Side.Top -> RectF(0f, 0f, width, band)
+      Side.Right -> RectF(width - band, 0f, width, height)
+      Side.Bottom -> RectF(0f, height - band, width, height)
+      Side.Left -> RectF(0f, 0f, band, height)
+    }
+  }
+
+  private fun clamp01(v: Float): Float = when {
+    v < 0f -> 0f
+    v > 1f -> 1f
+    else -> v
+  }
+
+  private fun darkenColor(color: Int, amount: Float): Int {
+    val a = Color.alpha(color)
+    val r = (Color.red(color) * (1f - clamp01(amount))).toInt().coerceIn(0, 255)
+    val g = (Color.green(color) * (1f - clamp01(amount))).toInt().coerceIn(0, 255)
+    val b = (Color.blue(color) * (1f - clamp01(amount))).toInt().coerceIn(0, 255)
+    return Color.argb(a, r, g, b)
+  }
+
+  private fun lightenColor(color: Int, amount: Float): Int {
+    val a = Color.alpha(color)
+    val r = (Color.red(color) + (255 - Color.red(color)) * clamp01(amount)).toInt().coerceIn(0, 255)
+    val g = (Color.green(color) + (255 - Color.green(color)) * clamp01(amount)).toInt().coerceIn(0, 255)
+    val b = (Color.blue(color) + (255 - Color.blue(color)) * clamp01(amount)).toInt().coerceIn(0, 255)
+    return Color.argb(a, r, g, b)
   }
 
   private fun getWidthForSide(side: Side): Float = when (side) {
@@ -1063,7 +1289,8 @@ class BorderRenderer(private val style: Style) {
 }
 
 private val lengthPercentageRegex = Regex("""^(-?\d+(?:\.\d+)?)(px|%|dip|em)?$""")
-private val colorRegex = Regex("""^(#\w{3,8}|[a-zA-Z]+)$""")
+// allow hex, simple names, and functional color forms like rgb(...), rgba(...), hsl(...)
+private val colorRegex = Regex("""^(#\w{3,8}|[a-zA-Z]+|(?:rgb|rgba|hsl|hsla|hsv|hsva)\([^)]*\))$""")
 
 fun parseLengthPercentage(value: String): LengthPercentage? {
   val match = lengthPercentageRegex.matchEntire(value.trim()) ?: return null
@@ -1098,6 +1325,39 @@ fun parseLength(style: Style, value: String): Float? {
 }
 
 private val SPLIT_REGEX = Regex("""\s+""")
+
+/**
+ * Split on top-level whitespace but preserve parentheses groups (e.g. "rgba(0, 1, 2)").
+ */
+private fun splitTopLevelWhitespace(input: String): List<String> {
+  val result = mutableListOf<String>()
+  val sb = StringBuilder()
+  var depth = 0
+  for (c in input) {
+    when (c) {
+      '(' -> {
+        depth++
+        sb.append(c)
+      }
+      ')' -> {
+        depth = maxOf(0, depth - 1)
+        sb.append(c)
+      }
+      else -> {
+        if (c.isWhitespace() && depth == 0) {
+          if (sb.isNotEmpty()) {
+            result.add(sb.toString())
+            sb.setLength(0)
+          }
+        } else {
+          sb.append(c)
+        }
+      }
+    }
+  }
+  if (sb.isNotEmpty()) result.add(sb.toString())
+  return result
+}
 fun parseBorderShorthand(style: Style, value: String) {
   if (value.isEmpty()) {
     style.mBorder = ""
@@ -1140,7 +1400,7 @@ fun parseBorderShorthand(style: Style, value: String) {
   // default to black
   var color: Int? = Color.BLACK
 
-  val split = value.split(SPLIT_REGEX)
+  val split = splitTopLevelWhitespace(value)
   split.forEach { part ->
     when {
       parseLengthPercentage(part) != null -> {
@@ -1256,7 +1516,7 @@ fun parseBorderSideShorthand(style: Style, side: Border.Side, value: String) {
   var color: Int? = Color.BLACK
   var valid = false
 
-  val split = value.split(SPLIT_REGEX)
+  val split = splitTopLevelWhitespace(value)
   split.forEach { part ->
     when {
       parseLengthPercentage(part) != null -> {
@@ -1375,49 +1635,44 @@ fun parseCornerShape(style: Style, value: String) {
 }
 
 fun parseBorderRadius(style: Style, value: String) {
-  val parts = SPLIT_REGEX
-    .split(value.trim().removeSuffix(";"))
-    .mapNotNull { parseLengthPercentage(it) }
+  val cleaned = value.trim().removeSuffix(";")
+  // Support slash syntax: 'horizontal / vertical'
+  val (hPart, vPart) = if (cleaned.contains('/')) {
+    val idx = cleaned.indexOf('/')
+    cleaned.substring(0, idx).trim() to cleaned.substring(idx + 1).trim()
+  } else {
+    cleaned to ""
+  }
 
-  when (parts.size) {
-    1 -> {
-      parts[0].let {
-        val point = Point(it, it)
-        style.borderTopLeftRadius = point.copy()
-        style.borderTopRightRadius = point.copy()
-        style.borderBottomRightRadius = point.copy()
-        style.borderBottomLeftRadius = point.copy()
-      }
-    }
+  val hTokens = SPLIT_REGEX.split(hPart).mapNotNull { parseLengthPercentage(it) }
+  val vTokens = if (vPart.isNotEmpty()) SPLIT_REGEX.split(vPart).mapNotNull { parseLengthPercentage(it) } else emptyList()
 
-    2 -> {
-      style.borderTopLeftRadius = Point(parts[0], parts[0])
-      style.borderTopRightRadius = Point(parts[1], parts[1])
-      style.borderBottomRightRadius = Point(parts[0], parts[0])
-      style.borderBottomLeftRadius = Point(parts[1], parts[1])
-    }
-
-    3 -> {
-      style.borderTopLeftRadius = Point(parts[0], parts[0])
-      style.borderTopRightRadius = Point(parts[1], parts[1])
-      style.borderBottomRightRadius = Point(parts[2], parts[2])
-      style.borderBottomLeftRadius = Point(parts[1], parts[1])
-    }
-
-    4 -> {
-      style.borderTopLeftRadius = Point(parts[0], parts[0])
-      style.borderTopRightRadius = Point(parts[1], parts[1])
-      style.borderBottomRightRadius = Point(parts[2], parts[2])
-      style.borderBottomLeftRadius = Point(parts[3], parts[3])
+  // Helper to map 1-4 tokens to per-corner values
+  fun mapTokens(tokens: List<LengthPercentage>): List<LengthPercentage> {
+    return when (tokens.size) {
+      1 -> listOf(tokens[0], tokens[0], tokens[0], tokens[0])
+      2 -> listOf(tokens[0], tokens[1], tokens[0], tokens[1])
+      3 -> listOf(tokens[0], tokens[1], tokens[2], tokens[1])
+      4 -> listOf(tokens[0], tokens[1], tokens[2], tokens[3])
+      else -> emptyList()
     }
   }
-  if (parts.isNotEmpty()) {
-    style.mBorderRenderer.invalidate()
 
-    if (!style.inBatch) {
-      style.isDirty = StateKeys.BORDER_RADIUS.bits
-      style.updateNativeStyle()
-    }
+  val hMapped = mapTokens(hTokens)
+  val vMapped = if (vTokens.isNotEmpty()) mapTokens(vTokens) else hMapped
+
+  if (hMapped.isEmpty() || vMapped.isEmpty()) return
+
+  // Assign elliptical radii per corner: (horizontal, vertical)
+  style.borderTopLeftRadius = Point(hMapped[0], vMapped[0])
+  style.borderTopRightRadius = Point(hMapped[1], vMapped[1])
+  style.borderBottomRightRadius = Point(hMapped[2], vMapped[2])
+  style.borderBottomLeftRadius = Point(hMapped[3], vMapped[3])
+  // Always invalidate renderer and notify native update for radius changes
+  style.mBorderRenderer.invalidate()
+  if (!style.inBatch) {
+    style.isDirty = StateKeys.BORDER_RADIUS.bits
+    style.updateNativeStyle()
   }
 }
 

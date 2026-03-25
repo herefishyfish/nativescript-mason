@@ -5,12 +5,18 @@
 //  Created by Osei Fortune on 28/11/2022.
 //
 
+import CoreText
 import XCTest
 @testable import Mason
 
 final class MasonTests: XCTestCase {
 
   private var mason: NSCMason!
+
+  private func typographicWidth(_ text: NSAttributedString) -> CGFloat {
+    let line = CTLineCreateWithAttributedString(text)
+    return ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
+  }
 
   override func setUpWithError() throws {
     mason = NSCMason.shared
@@ -213,6 +219,102 @@ final class MasonTests: XCTestCase {
     view.inBatch = false
 
     XCTAssertEqual(view.display, .Flex)
+  }
+
+  func test_text_engine_min_content_width_uses_widest_unbreakable_fragment() {
+    let attrs: [NSAttributedString.Key: Any] = [
+      .font: CTFontCreateWithName("Helvetica" as CFString, 17, nil)
+    ]
+
+    let short = NSAttributedString(string: "short", attributes: attrs)
+    let long = NSAttributedString(string: "loooooooooong", attributes: attrs)
+    let combined = NSAttributedString(string: "short loooooooooong", attributes: attrs)
+
+    let shortWidth = typographicWidth(short)
+    let longWidth = typographicWidth(long)
+    let minContentWidth = TextEngine.minContentWidth(for: combined)
+
+    XCTAssertGreaterThan(longWidth, shortWidth)
+    XCTAssertEqual(minContentWidth, longWidth, accuracy: 0.5)
+  }
+
+  func test_text_engine_inline_child_baseline_from_bottom_matches_css_alignment_defaults() {
+    let parentFont = FontMetrics(
+      ascent: 20,
+      descent: 6,
+      x_height: 10,
+      leading: 4,
+      cap_height: 14
+    )
+
+    let scale: CGFloat = 2
+    let height: CGFloat = 16
+
+    XCTAssertEqual(
+      TextEngine.inlineChildBaselineFromBottom(
+        height: height,
+        verticalAlign: .Baseline,
+        parentFont: parentFont,
+        scale: scale
+      ),
+      0,
+      accuracy: 0.001
+    )
+
+    XCTAssertEqual(
+      TextEngine.inlineChildBaselineFromBottom(
+        height: height,
+        verticalAlign: .TextBottom,
+        parentFont: parentFont,
+        scale: scale
+      ),
+      CGFloat(parentFont.descent) / scale,
+      accuracy: 0.001
+    )
+  }
+
+  func test_button_single_line_baseline_tracks_content_vertical_alignment() {
+    let button = mason.createButton()
+    let drawBounds = CGRect(x: 0, y: 0, width: 120, height: 40)
+    let ascent: CGFloat = 10
+    let descent: CGFloat = 4
+
+    button.contentVerticalAlignment = .center
+    XCTAssertEqual(
+      button.singleLineTextBaselineY(ascent: ascent, descent: descent, in: drawBounds),
+      23,
+      accuracy: 0.001
+    )
+
+    button.contentVerticalAlignment = .top
+    XCTAssertEqual(
+      button.singleLineTextBaselineY(ascent: ascent, descent: descent, in: drawBounds),
+      10,
+      accuracy: 0.001
+    )
+
+    button.contentVerticalAlignment = .bottom
+    XCTAssertEqual(
+      button.singleLineTextBaselineY(ascent: ascent, descent: descent, in: drawBounds),
+      36,
+      accuracy: 0.001
+    )
+  }
+
+  func test_text_engine_single_line_baseline_converts_top_origin_to_core_text_coordinates() {
+    let bounds = CGRect(x: 0, y: 0, width: 120, height: 40)
+
+    XCTAssertEqual(
+      TextEngine.coreTextSingleLineBaselineY(fromTop: 10, in: bounds),
+      30,
+      accuracy: 0.001
+    )
+
+    XCTAssertEqual(
+      TextEngine.coreTextSingleLineBaselineY(fromTop: 23, in: bounds),
+      17,
+      accuracy: 0.001
+    )
   }
 
   func test_updatePosition() {

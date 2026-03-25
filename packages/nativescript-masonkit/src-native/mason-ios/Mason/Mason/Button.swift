@@ -10,7 +10,7 @@ import UIKit
 
 @objcMembers
 @objc(MasonButton)
-public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc, StyleChangeListener, TextContainer {
+public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc, StyleChangeListener, TextContainer, SingleLineTextBaselineProviding {
   public let node: MasonNode
   public let mason: NSCMason
   
@@ -37,6 +37,22 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     }
     set {
       engine.textContent = newValue
+    }
+  }
+
+  func singleLineTextBaselineY(ascent: CGFloat, descent: CGFloat, in drawBounds: CGRect) -> CGFloat {
+    let lineHeight = ascent + descent
+    let centeredBaseline = drawBounds.minY + ((drawBounds.height - lineHeight) / 2) + ascent
+
+    switch contentVerticalAlignment {
+    case .top:
+      return drawBounds.minY + ascent
+    case .bottom:
+      return drawBounds.maxY - descent
+    case .fill, .center:
+      return max(drawBounds.minY + ascent, centeredBaseline)
+    @unknown default:
+      return max(drawBounds.minY + ascent, centeredBaseline)
     }
   }
   
@@ -152,6 +168,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     // Border drawn OUTSIDE any clip scope so strokes aren't clipped
     if hasBorder {
       style.mBorderRender.draw(in: context, rect: bounds)
+      context.restoreGState()
     }
 
     // CSS filter — applied last so it covers background, text, and border.
@@ -183,6 +200,8 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     let scale = Float((window?.screen.scale ?? CGFloat(NSCMason.scale)))
     let x =  6 * scale
     let y =  scale
+    
+    node.view = self
 
     configure { style in
       style.display = Display.InlineBlock
@@ -194,14 +213,26 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
       style.border = "1 solid #767676"
       style.borderRadius = "4"
     }
-    node.view = self
+
 
     // Default :active brightness is applied in draw() as a fallback only
     // when no explicit :active pseudo buffer has been set by the user.
 
     node.measureFunc = { [weak self] known, available in
       guard let self = self else { return .zero }
-      return TextEngine.measure(self.engine, true, isBlock: false, known, available)
+      
+      
+      var isBlock = false
+      var isInline = true
+      
+      if(style.isValueInitialized){
+        let mode = style.getInt8(StyleKeys.DISPLAY_MODE)
+        isBlock = mode == 0 && style.getInt8(StyleKeys.DISPLAY) == Display.Block.rawValue
+        isInline = mode == DisplayMode.Inline.rawValue || mode == DisplayMode.Box.rawValue
+      }
+      
+      
+      return TextEngine.measure(self.engine, isInline, isBlock: isBlock, known, available)
     }
     node.setMeasureFunction(node.measureFunc!)
   }
@@ -218,7 +249,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
   
   
   public override init(frame: CGRect) {
-    node = NSCMason.shared.createTextNode()
+    node = NSCMason.shared.createButtonNode()
     mason = NSCMason.shared
     super.init(frame: frame)
     setup()
@@ -226,7 +257,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
   
   
   init(mason doc: NSCMason) {
-    node = doc.createTextNode()
+    node = doc.createButtonNode()
     mason = doc
     super.init(frame: .zero)
     setup()
@@ -234,7 +265,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
   
   
   required init?(coder: NSCoder) {
-    node = NSCMason.shared.createTextNode()
+    node = NSCMason.shared.createButtonNode()
     mason = NSCMason.shared
     super.init(coder: coder)
     setup()

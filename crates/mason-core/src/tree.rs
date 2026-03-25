@@ -270,7 +270,7 @@ impl Tree {
     }
 
     #[inline(always)]
-   pub fn style_from_id(&self, node_id: NodeId) -> MappedRwLockReadGuard<'_, RawRwLock, Style> {
+    pub fn style_from_id(&self, node_id: NodeId) -> MappedRwLockReadGuard<'_, RawRwLock, Style> {
         RwLockReadGuard::map(self.0.read(), |v| {
             v.nodes.get(node_id.into()).unwrap().style()
         })
@@ -537,11 +537,7 @@ impl Tree {
                     // while holding `inner_mut()` or long-lived locks — the
                     // expectation is that callers snapshot required data then
                     // invoke the measure callback outside locks.
-                    #[cfg(test)]
-                    eprintln!(
-                        "TEST: calling measure for child_id={:?} in measure_place_floats",
-                        child_id
-                    );
+
                     measure.measure(final_known, container_space)
                 };
 
@@ -641,6 +637,22 @@ impl Tree {
                         y = y.max(max_bot);
                     }
 
+                    // Prevent later floats from being placed above any previously
+                    // placed float that itself had a `clear` for the same side.
+                    // This ensures floats that were pushed down by a clear create
+                    // a minimal baseline for subsequent floats on that side.
+                    let mut min_after_cleared = 0.0_f32;
+                    for p in &placed {
+                        if p.side == side {
+                            if let Some(c) = clear_map.get(&p.node) {
+                                if matches!(c, Clear::Left | Clear::Right | Clear::Both) {
+                                    min_after_cleared = min_after_cleared.max(p.top);
+                                }
+                            }
+                        }
+                    }
+                    y = y.max(min_after_cleared);
+
                     // Build finite set of candidate Y positions: current y plus
                     // tops and bottoms+margin of already placed floats. This
                     // guarantees the placement process checks a finite set and
@@ -660,6 +672,7 @@ impl Tree {
                     // Precompute margins for this float
                     let (ml, mr, mt, _mb) =
                         *margin_map.get(&fr.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+
                     let mut placed_this = false;
 
                     for cand in candidates.into_iter().filter(|v| *v >= y) {
@@ -686,6 +699,7 @@ impl Tree {
                             fr.left = ml;
                             fr.top = cand + mt;
                             placed.push(*fr);
+
                             placed_this = true;
                             break;
                         }
@@ -696,6 +710,7 @@ impl Tree {
                                 fr.left = x + ml;
                                 fr.top = cand + mt;
                                 placed.push(*fr);
+
                                 placed_this = true;
                                 break;
                             }
@@ -705,6 +720,7 @@ impl Tree {
                                 fr.left = x;
                                 fr.top = cand + mt;
                                 placed.push(*fr);
+
                                 placed_this = true;
                                 break;
                             }
@@ -1104,6 +1120,29 @@ impl Tree {
     pub fn create_image_node(&mut self) -> NodeRef {
         let mut node = Node::new_with_handle(self.get_arena(), StyleHandle::DEFAULT_IMG);
         node.type_ = NodeType::Image;
+        node.inner_style_mut().device_scale = Some(Arc::clone(&*self.density()));
+        let guard = node.guard.clone();
+        let id = {
+            let mut tree = self.inner_mut();
+            let id = tree.nodes.insert(node);
+            tree.parents.insert(id, None);
+            tree.children.insert(id, Vec::new());
+            id
+        };
+        self.2.write().insert(id, NodeData::default());
+        NodeRef {
+            id,
+            guard,
+            tree: Arc::clone(self.inner_ptr()),
+            deferred_cleanup: Arc::clone(self.deferred_cleanup_queue()),
+            node_data: Arc::clone(&self.2),
+        }
+    }
+
+    pub fn create_button_node(&mut self) -> NodeRef {
+        // Buttons behave like replaced inline elements by default;
+        let mut node = Node::new_with_handle(self.get_arena(), StyleHandle::DEFAULT_IMG);
+        node.type_ = NodeType::Button;
         node.inner_style_mut().device_scale = Some(Arc::clone(&*self.density()));
         let guard = node.guard.clone();
         let id = {
@@ -1710,30 +1749,19 @@ impl LayoutPartialTree for Tree {
 
 impl CacheTree for Tree {
     #[inline]
-    fn cache_get(
-        &self,
-        node_id: NodeId,
-        known_dimensions: Size<Option<f32>>,
-        available_space: Size<AvailableSpace>,
-        run_mode: taffy::RunMode,
-    ) -> Option<LayoutOutput> {
-        self.node_from_id(node_id)
-            .cache
-            .get(known_dimensions, available_space, run_mode)
+    fn cache_get(&self, node_id: NodeId, inputs: &LayoutInput) -> Option<LayoutOutput> {
+        self.node_from_id(node_id).cache.get(inputs)
     }
 
     #[inline]
     fn cache_store(
         &mut self,
         node_id: NodeId,
-        known_dimensions: Size<Option<f32>>,
-        available_space: Size<AvailableSpace>,
-        run_mode: taffy::RunMode,
+        inputs: &taffy::LayoutInput,
         layout_output: taffy::LayoutOutput,
     ) {
         let mut node = self.node_from_id_mut(node_id);
-        node.cache
-            .store(known_dimensions, available_space, run_mode, layout_output);
+        node.cache.store(inputs, layout_output);
         node.set_node_state(false);
     }
 
@@ -1850,6 +1878,10 @@ impl LayoutBlockContainer for Tree {
                 )
             };
 
+            if display == Display::None {
+                return LayoutOutput::HIDDEN;
+            }
+
             // For scroll/auto overflow containers, we need the layout engine
             // to compute the *unconstrained* content height so that native
             // scroll views know the full scrollable area.  We therefore do NOT
@@ -1861,7 +1893,8 @@ impl LayoutBlockContainer for Tree {
                 overflow.y,
                 crate::style::Overflow::Scroll | crate::style::Overflow::Auto
             );
-            let scroll_constraint_y: Option<f32> = if is_scroll_container_y && size.height.is_auto() {
+            let scroll_constraint_y: Option<f32> = if is_scroll_container_y && size.height.is_auto()
+            {
                 // Resolve the viewport constraint but do NOT apply it yet.
                 if let Some(h) = inputs.known_dimensions.height {
                     // Already has a definite height from the caller — use it
@@ -1900,8 +1933,10 @@ impl LayoutBlockContainer for Tree {
                         // having children (e.g. inline/text children), try the mixed
                         // layout path as a fallback so inline flows are handled.
                         if (computed_layout.size.height <= 1e-6) && analysis.has_children {
-                            let children = tree.inner().children.get(id).cloned().unwrap_or_default();
-                            let mixed_out = tree.compute_mixed_layout(id, children.as_slice(), inputs, None);
+                            let children =
+                                tree.inner().children.get(id).cloned().unwrap_or_default();
+                            let mixed_out =
+                                tree.compute_mixed_layout(id, children.as_slice(), inputs, None);
                             if mixed_out.size.height > 1e-6 {
                                 computed_layout = mixed_out;
                             }
@@ -2111,19 +2146,21 @@ impl LayoutBlockContainer for Tree {
                         tree.compute_inline_layout(node_id, inputs, block_ctx)
                     } else {
                         match (display, has_children) {
-                            (Display::Flex, true) => {
-                                compute_flexbox_layout(tree, node_id, inputs)
-                            }
-                            (Display::Grid, true) => {
-                                compute_grid_layout(tree, node_id, inputs)
-                            }
+                            (Display::Flex, true) => compute_flexbox_layout(tree, node_id, inputs),
+                            (Display::Grid, true) => compute_grid_layout(tree, node_id, inputs),
                             (Display::Block, true) => {
                                 let analysis = tree.analyze_subtree(id);
                                 if analysis.all_inline {
                                     tree.compute_inline_layout(node_id, inputs, block_ctx)
                                 } else if analysis.has_mixed_content {
-                                    let children = tree.inner().children.get(id).cloned().unwrap_or_default();
-                                    tree.compute_mixed_layout(id, children.as_slice(), inputs, block_ctx)
+                                    let children =
+                                        tree.inner().children.get(id).cloned().unwrap_or_default();
+                                    tree.compute_mixed_layout(
+                                        id,
+                                        children.as_slice(),
+                                        inputs,
+                                        block_ctx,
+                                    )
                                 } else {
                                     compute_block_layout(tree, node_id, inputs, block_ctx)
                                 }

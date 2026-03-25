@@ -235,6 +235,44 @@ pub extern "C" fn mason_node_new_image_node(mason: *mut CMason) -> *mut CMasonNo
 }
 
 #[no_mangle]
+pub extern "C" fn mason_node_new_button_node(mason: *mut CMason) -> *mut CMasonNode {
+    if mason.is_null() {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        let mason = &mut (*mason).0;
+        let ptr = Box::into_raw(Box::new(CMasonNode(mason.create_button_node())));
+        register_cnode(ptr);
+        ptr
+    }
+}
+
+
+#[cfg(not(target_os = "android"))]
+#[no_mangle]
+pub extern "C" fn mason_node_new_button_node_with_context(
+    mason: *mut CMason,
+    measure_data: *mut c_void,
+    measure: Option<extern "C" fn(*const c_void, c_float, c_float, c_float, c_float) -> c_longlong>,
+) -> *mut CMasonNode {
+    if mason.is_null() {
+        return std::ptr::null_mut();
+    }
+
+    unsafe {
+        let mason = &mut (*mason).0;
+
+        let node_id = mason.create_button_node();
+
+        mason.set_measure(node_id.id(), measure, measure_data);
+
+        let ptr = Box::into_raw(Box::new(CMasonNode(node_id)));
+        register_cnode(ptr);
+        ptr
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn mason_node_new_node(mason: *mut CMason, anonymous: bool) -> *mut CMasonNode {
     if mason.is_null() {
         return std::ptr::null_mut();

@@ -328,6 +328,10 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     }
   }
 
+  _setNativeViewFrame(nativeView: any, frame: CGRect): void {
+    // nativeView.frame = frame;
+  }
+
   public addEventListener(arg: string, callback: any, thisArg?: any) {
     if (typeof thisArg === 'boolean') {
       thisArg = {
@@ -737,17 +741,29 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     if (frameworkEl) {
       // Frameworks with childNodes array (Vue, React, Svelte, SolidJS)
       if (Array.isArray(frameworkEl.childNodes)) {
-        const childNodes = frameworkEl.childNodes as any[];
-        if (childNodes.length === 0) {
+        const rawChildNodes = frameworkEl.childNodes as any[];
+        if (rawChildNodes.length === 0) {
           this.replaceChild({ [text_]: value }, 0);
           return;
         }
 
-        for (let i = 0; i < childNodes.length; i++) {
-          const node = childNodes[i];
+        // Deduplicate nodes (some frameworks expose the same nodes via both
+        // `childNodes` array and linked `nextSibling` references). Preserve
+        // original order while skipping duplicate references.
+        const nodes: any[] = [];
+        const seen = new Set<any>();
+        for (let n of rawChildNodes) {
+          if (!seen.has(n)) {
+            seen.add(n);
+            nodes.push(n);
+          }
+        }
+
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
           const isTextNode = node.nodeType === 'text' || node.nodeType === 3;
           if (isTextNode) {
-            const type = i === 0 && childNodes.length === 1 && !this._children.length ? 'add' : 'replace';
+            const type = i === 0 && nodes.length === 1 && !this._children.length ? 'add' : 'replace';
             this._updateTextNode(node, { type, index: i, isBreak: node.nodeName === 'br' });
           }
         }
@@ -756,6 +772,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
       // Frameworks with linked-list traversal (Angular)
       if ('firstChild' in frameworkEl) {
+        console.log('vue 2?', frameworkEl.childNodes);
         const nodes = [];
         let child = frameworkEl.firstChild;
         while (child) {
@@ -776,6 +793,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
     // NativeScript Core: linked-list traversal on the view itself
     if ('firstChild' in this) {
+      console.log('vue3?', frameworkEl.childNodes);
       const nodes = [];
       let child = (this as any).firstChild;
       while (child) {
@@ -1810,6 +1828,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     if (style) {
       // @ts-ignore
       style.boxShadow = typeof value === 'string' ? value : `${value}`;
+      console.log('boxShadow set to', style.boxShadow);
     }
   }
 

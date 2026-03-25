@@ -278,6 +278,11 @@ impl Mason {
         self.0.create_list_item_node()
     }
 
+    #[track_caller]
+    pub fn create_button_node(&mut self) -> NodeRef {
+        self.0.create_button_node()
+    }
+
     pub fn prepare_mut(&mut self, node: &NodeRef) {
         self.0.prepare_mut(node.id.into())
     }
@@ -326,6 +331,24 @@ impl Mason {
                 unsafe { std::slice::from_raw_parts(ptr, len) }
             })
             .unwrap_or(&[])
+    }
+
+    /// Test helper: query whether a node has its virtual bit set.
+    pub fn is_node_virtual(&self, node: Id) -> bool {
+        self.0
+            .nodes()
+            .get(node)
+            .map(|n| n.is_virtual())
+            .unwrap_or(false)
+    }
+
+    /// Test helper: query whether a node's style marks it as a list-item.
+    pub fn is_node_list_item(&self, node: Id) -> bool {
+        self.0
+            .nodes()
+            .get(node)
+            .map(|n| n.style().get_item_is_list_item())
+            .unwrap_or(false)
     }
 
     #[cfg(target_os = "android")]
@@ -924,13 +947,6 @@ impl Mason {
             } else {
                 AvailableSpace::Definite(height)
             };
-            log::debug!(
-                "compute_wh called: raw (w,h) = ({},{}) -> ({:?},{:?})",
-                width,
-                height,
-                width_space,
-                height_space
-            );
         }
 
         let size = Size {
@@ -979,6 +995,7 @@ impl Mason {
 
     pub fn set_segments(&mut self, node: Id, segments: Vec<InlineSegment>) {
         if let Some(data) = self.0.node_data().get(node) {
+            
             *data.inline_segments.lock() = segments;
         }
     }
@@ -1499,17 +1516,17 @@ mod tests {
         let pout = mason.layout(pid);
         let parent_h = pout[4];
         let parent_w = pout[3];
-        eprintln!("compute(-1,-2): parent w={} h={} h_bits=0x{:08x}", parent_w, parent_h, parent_h.to_bits());
+        
 
         let cout = mason.layout(cid);
         let child_h = cout[4];
         let child_w = cout[3];
-        eprintln!("compute(-1,-2): child  w={} h={}", child_w, child_h);
+        
 
         // Print all computed sizes
         let computed = sizes.lock().unwrap();
         for &(id, w, h) in computed.iter() {
-            eprintln!("set_computed_size: id={:?} w={} h={} h_bits=0x{:08x}", id, w, h, h.to_bits());
+            
         }
         drop(computed);
 

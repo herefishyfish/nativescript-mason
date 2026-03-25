@@ -286,6 +286,21 @@ class Mason {
     return node
   }
 
+  fun createButtonNode(measure: MeasureFunc): Node {
+    val func = MeasureFuncImpl(WeakReference(measure))
+    val nodePtr = NativeHelpers.nativeNodeNewButtonWithContext(nativePtr, func.objectId)
+    val node = Node(this, nodePtr).apply {
+      nodes[nodePtr] = WeakReference(this)
+      measureFunc = measure
+      measureFuncImpl = func
+    }
+    NativeHelpers.nativeSetAndroidNode(nativePtr, node.nativePtr, node.objectId)
+
+    track(node)
+
+    return node
+  }
+
   fun createLineBreakNode(measure: MeasureFunc): Node {
     val func = MeasureFuncImpl(WeakReference(measure))
     val nodePtr = NativeHelpers.nativeNodeNewLineBreakWithContext(nativePtr, func.objectId)

@@ -2,7 +2,7 @@ import { CSSType, Utils, View } from '@nativescript/core';
 import { ViewBase } from '../common';
 import { Style } from '../style';
 import { Tree } from '../tree';
-import { style_, isMasonView_, native_, isPlaceholder_ } from '../symbols';
+import { style_, isMasonView_, native_, isPlaceholder_, isText_ } from '../symbols';
 
 @CSSType('Scroll')
 export class Scroll extends ViewBase {
@@ -49,13 +49,45 @@ export class Scroll extends ViewBase {
       return;
     }
 
+    console.log(this._children);
+
     for (const child of this._viewChildren) {
-      layout = children.objectAtIndex(i);
       const x = layout.x;
       const y = layout.y;
-      const width = x + layout.width;
-      const height = y + layout.height;
-      View.layoutChild(this as never, child as never, x, y, width, height);
+      const w = layout.width;
+      const h = layout.height;
+
+      // // Measure the child so NativeScript's layout system is satisfied
+      // const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      // const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      // View.measureChild(this as never, child as never, wSpec, hSpec);
+      // return;
+
+      // Use child.layout() directly — Mason already computed final positions
+      // including margins. View.layoutChild would double-count margins and
+      // override Mason's alignment.
+      (child as any).layout(x, top + y, x + w, top + y + h, false);
+      i++;
+    }
+  }
+
+  private _measureChildren(layout) {
+    const children = layout.children;
+    let i = 0;
+    if (children.count === 0) {
+      return;
+    }
+
+    for (const child of this._viewChildren) {
+      layout = children.objectAtIndex(i);
+      const w = layout.width;
+      const h = layout.height;
+
+      // Measure the child so NativeScript's layout system is satisfied
+      const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      View.measureChild(this as never, child as never, wSpec, hSpec);
+
       i++;
     }
   }
@@ -77,17 +109,21 @@ export class Scroll extends ViewBase {
           // @ts-ignore
           this.ios.mason_computeWithSize(specWidth, specHeight);
           // this.ios.computeWithSize(specWidth, specHeight);
+          // _setNativeViewFrame
+
           // @ts-ignore
-          const layout = this.ios.mason_layout();
+          var layout = this.ios.mason_layout();
           //const layout = this.ios.layout();
           const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
           const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
 
-          this.eachLayoutChild((child) => {
-            ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
-          });
+          // this.eachLayoutChild((child) => {
+          //   ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
+          // });
 
           this.setMeasuredDimension(w, h);
+
+          this._measureChildren(layout);
 
           return;
         } else {
@@ -96,28 +132,27 @@ export class Scroll extends ViewBase {
           this.ios.mason_computeWithMaxContent();
           // // @ts-ignore
           // this.ios.computeWithMaxContent();
-          const layout = this.ios.node.computedLayout;
+          var layout = this.ios.node.computedLayout;
 
           const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
           const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
 
           this.setMeasuredDimension(w, h);
 
-          this.eachLayoutChild((child) => {
-            ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
-          });
+          // this.eachLayoutChild((child) => {
+          //   ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
+          // });
+
+          this._measureChildren(layout);
         }
       } else {
         // @ts-ignore
-        const layout = this.ios.node.computedLayout;
+        var layout = this.ios.node.computedLayout;
         const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
         const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
-
         this.setMeasuredDimension(w, h);
 
-        this.eachLayoutChild((child) => {
-          ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
-        });
+        this._measureChildren(layout);
       }
     }
   }
@@ -140,6 +175,8 @@ export class Scroll extends ViewBase {
 
     return false;
   }
+
+  _setNativeViewFrame(nativeView: any, frame: any): void {}
 
   // @ts-ignore
   public _removeViewFromNativeVisualTree(view: MasonChild): void {

@@ -483,6 +483,29 @@ open class Node internal constructor(
     return if (state.mask == 0) pseudoMask == 0 else (pseudoMask and state.mask) != 0
   }
 
+  /**
+   * Returns true when any active pseudo buffer explicitly set the given StateKeys.
+   * This checks the PSEUDO_SET_MASK bits stored inside each pseudo style buffer.
+   */
+  fun hasPseudoSetFor(key: StateKeys): Boolean {
+    val mask = pseudoMask
+    if (mask == 0) return false
+    for (state in PseudoState.entries) {
+      if (state.mask == 0) continue
+      if (mask and state.mask != 0) {
+        val buf = getPseudoBuffer(state.mask)
+        if (buf.capacity() >= StyleKeys.PSEUDO_SET_MASK_HIGH + 8) {
+          val setLow = buf.getLong(StyleKeys.PSEUDO_SET_MASK_LOW)
+          val setHigh = buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH)
+          if ((setLow and key.low) != 0L || (setHigh and key.high) != 0L) {
+            return true
+          }
+        }
+      }
+    }
+    return false
+  }
+
   fun setPseudo(state: PseudoState, enabled: Boolean) {
     setPseudo(state, enabled, true)
   }
@@ -491,7 +514,6 @@ open class Node internal constructor(
     if (nativePtr == 0L) return
     val buf = stateValue
     if (buf.capacity() >= NodeStateKeys.NODE_STATE_BUFFER_SIZE) {
-      buf.order(ByteOrder.nativeOrder())
       val orig = buf.getShort(NodeStateKeys.PSEUDO_FLAGS_INDEX).toInt() and 0xFFFF
       val updated = if (enabled) orig or state.mask else orig and state.mask.inv()
       buf.putShort(NodeStateKeys.PSEUDO_FLAGS_INDEX, updated.toShort())

@@ -29,14 +29,8 @@ private func measure(_ node: UnsafeRawPointer?, _ knownDimensionsWidth: Float, _
     }
   }
 
-  // Use -3.0 to represent undefined, matching Android/Rust
-  let knownWidth = knownDimensionsWidth == -3.0 ? nil : CGFloat(knownDimensionsWidth)
-  let knownHeight = knownDimensionsHeight == -3.0 ? nil : CGFloat(knownDimensionsHeight)
-  let availableWidth = availableSpaceWidth == -3.0 ? nil : CGFloat(availableSpaceWidth)
-  let availableHeight = availableSpaceHeight == -3.0 ? nil : CGFloat(availableSpaceHeight)
-
-  guard let size = node.measureFunc?(CGSize(width: knownWidth ?? 0, height: knownHeight ?? 0), CGSize(width: availableWidth ?? 0, height: availableHeight ?? 0)) else {
-    return MeasureOutput.make(-3.0, -3.0)
+  guard let size = node.measureFunc?(CGSize(width: CGFloat(knownDimensionsWidth), height: CGFloat(knownDimensionsHeight)), CGSize(width: CGFloat(availableSpaceWidth), height: CGFloat(availableSpaceHeight))) else {
+    return MeasureOutput.make(Float.nan, Float.nan)
   }
 
   return MeasureOutput.make(width: size.width, height: size.height)
@@ -267,6 +261,14 @@ public class MasonNode: NSObject {
     super.init()
     mason_node_set_apple_node(mason.nativePtr, nativePtr, Unmanaged.passRetained(self).toOpaque())
   }
+
+  internal init(masonButton doc: NSCMason) {
+    mason = doc
+    nativePtr = mason_node_new_button_node(mason.nativePtr)
+    type = .element
+    super.init()
+    mason_node_set_apple_node(mason.nativePtr, nativePtr, Unmanaged.passRetained(self).toOpaque())
+  }
   
   
   internal init(mason doc: NSCMason, _ isAnonymous: Bool = false) {
@@ -408,8 +410,6 @@ public class MasonNode: NSObject {
       // Font
       let fontSize = style.resolvedFontSize
       let scale = NSCMason.scale
-      // Debug log: `resolvedFontSize` is in points; compute engine pixels as points * scale
-      print("MASON_DEBUG: resolvedFontSize=\(fontSize) scale=\(scale) fontPoints=\(CGFloat(fontSize)) enginePixels=\(CGFloat(fontSize) * CGFloat(scale))")
       let weight = style.resolvedFontWeight
       let fontStyle = style.resolvedInternalFontStyle
       var font = ctFont(from: font, fontSize: CGFloat(fontSize), weight: weight.uiFontWeight, style: fontStyle)

@@ -1716,6 +1716,7 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, strong) NSCMason * _Nonnull sh
 - (void)printTree:(MasonNode * _Nonnull)node;
 - (MasonNode * _Nonnull)createTextNode SWIFT_WARN_UNUSED_RESULT;
 - (MasonNode * _Nonnull)createImageNode SWIFT_WARN_UNUSED_RESULT;
+- (MasonNode * _Nonnull)createButtonNode SWIFT_WARN_UNUSED_RESULT;
 - (MasonNode * _Nonnull)createLineBreakNode SWIFT_WARN_UNUSED_RESULT;
 - (MasonList * _Nonnull)createListViewWithIsOrdered:(BOOL)isOrdered SWIFT_WARN_UNUSED_RESULT;
 - (MasonNode * _Nonnull)createListItemNode SWIFT_WARN_UNUSED_RESULT;

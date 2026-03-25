@@ -66,6 +66,8 @@ public final class CSSBorderRenderer {
         self = .ridge
       case 8:
         self = .inset
+      case 9:
+        self = .outset
       default:
         return nil
       }
@@ -337,7 +339,7 @@ public final class CSSBorderRenderer {
     }
   }
   
-  public struct BorderRadius {
+  public struct BorderRadius: Equatable {
     public var topLeft: CornerRadius
     public var topRight: CornerRadius
     public var bottomRight: CornerRadius
@@ -401,12 +403,16 @@ public final class CSSBorderRenderer {
 
   /// Returns a cached clip path for the given rect and inner radius, avoiding UIBezierPath allocation every frame.
   public func getClipPath(rect: CGRect, radius: BorderRadius) -> UIBezierPath {
-    if !clipPathDirty, let cached = cachedClipPath, cachedClipRect == rect {
+    if !clipPathDirty,
+       let cached = cachedClipPath,
+       cachedClipRect == rect,
+       cachedClipRadius == radius {
       return cached
     }
     let path = buildRoundedPath(in: rect, radius: radius)
     cachedClipPath = path
     cachedClipRect = rect
+    cachedClipRadius = radius
     clipPathDirty = false
     return path
   }
@@ -415,6 +421,7 @@ public final class CSSBorderRenderer {
     lastHash = 0
     clipPathDirty = true
     cachedClipPath = nil
+    cachedClipRadius = .zero
   }
 
   internal func resetAllBorders(){
@@ -538,10 +545,11 @@ public final class CSSBorderRenderer {
       ctx.addPath(strokePath.cgPath)
       ctx.strokePath()
     } else {
-      paintSide(.top, ctx: ctx, rect: rect, width: cachedWidths.top, side: top, outerPath: outerPath)
-      paintSide(.right, ctx: ctx, rect: rect, width: cachedWidths.right, side: right, outerPath: outerPath)
-      paintSide(.bottom, ctx: ctx, rect: rect, width: cachedWidths.bottom, side: bottom, outerPath: outerPath)
-      paintSide(.left, ctx: ctx, rect: rect, width: cachedWidths.left, side: left, outerPath: outerPath)
+      let vis = (top: topVisible, right: rightVisible, bottom: bottomVisible, left: leftVisible)
+      paintSide(.top, ctx: ctx, rect: rect, width: cachedWidths.top, side: top, outerPath: outerPath, visibility: vis)
+      paintSide(.right, ctx: ctx, rect: rect, width: cachedWidths.right, side: right, outerPath: outerPath, visibility: vis)
+      paintSide(.bottom, ctx: ctx, rect: rect, width: cachedWidths.bottom, side: bottom, outerPath: outerPath, visibility: vis)
+      paintSide(.left, ctx: ctx, rect: rect, width: cachedWidths.left, side: left, outerPath: outerPath, visibility: vis)
     }
 
     ctx.restoreGState()
@@ -552,34 +560,50 @@ public final class CSSBorderRenderer {
   public enum Side { case top, right, bottom, left }
   
   private func drawGroove(_ ctx: CGContext, _ band: CGRect, _ color: UIColor, _ width: CGFloat) {
-    let half = width/2
     let dark = color.darker()
     let light = color.lighter()
-    
-    let topLeft = CGRect(x: band.minX, y: band.minY, width: band.width, height: half)
-    let bottomRight = CGRect(x: band.minX, y: band.minY + half, width: band.width, height: half)
-    
-    ctx.setFillColor(dark.cgColor)
-    ctx.fill(topLeft)
-    
-    ctx.setFillColor(light.cgColor)
-    ctx.fill(bottomRight)
+
+    if band.width >= band.height {
+      // horizontal band: split left/right
+      let leftRect = CGRect(x: band.minX, y: band.minY, width: band.width / 2.0, height: band.height)
+      let rightRect = CGRect(x: band.minX + band.width / 2.0, y: band.minY, width: band.width / 2.0, height: band.height)
+      ctx.setFillColor(dark.cgColor)
+      ctx.fill(leftRect)
+      ctx.setFillColor(light.cgColor)
+      ctx.fill(rightRect)
+    } else {
+      // vertical band: split top/bottom
+      let topRect = CGRect(x: band.minX, y: band.minY, width: band.width, height: band.height / 2.0)
+      let bottomRect = CGRect(x: band.minX, y: band.minY + band.height / 2.0, width: band.width, height: band.height / 2.0)
+      ctx.setFillColor(dark.cgColor)
+      ctx.fill(topRect)
+      ctx.setFillColor(light.cgColor)
+      ctx.fill(bottomRect)
+    }
   }
   
   
   private func drawRidge(_ ctx: CGContext, _ band: CGRect, _ color: UIColor, _ width: CGFloat) {
-    let half = width/2
     let dark = color.darker()
     let light = color.lighter()
-    
-    let topLeft = CGRect(x: band.minX, y: band.minY, width: band.width, height: half)
-    let bottomRight = CGRect(x: band.minX, y: band.minY + half, width: band.width, height: half)
-    
-    ctx.setFillColor(light.cgColor)
-    ctx.fill(topLeft)
-    
-    ctx.setFillColor(dark.cgColor)
-    ctx.fill(bottomRight)
+
+    if band.width >= band.height {
+      // horizontal band: split left/right
+      let leftRect = CGRect(x: band.minX, y: band.minY, width: band.width / 2.0, height: band.height)
+      let rightRect = CGRect(x: band.minX + band.width / 2.0, y: band.minY, width: band.width / 2.0, height: band.height)
+      ctx.setFillColor(light.cgColor)
+      ctx.fill(leftRect)
+      ctx.setFillColor(dark.cgColor)
+      ctx.fill(rightRect)
+    } else {
+      // vertical band: split top/bottom
+      let topRect = CGRect(x: band.minX, y: band.minY, width: band.width, height: band.height / 2.0)
+      let bottomRect = CGRect(x: band.minX, y: band.minY + band.height / 2.0, width: band.width, height: band.height / 2.0)
+      ctx.setFillColor(light.cgColor)
+      ctx.fill(topRect)
+      ctx.setFillColor(dark.cgColor)
+      ctx.fill(bottomRect)
+    }
   }
   
   
@@ -712,29 +736,267 @@ public final class CSSBorderRenderer {
 
 
   
-  private func paintSide(_ s: Side, ctx: CGContext, rect: CGRect, width: CGFloat, side: BorderSide, outerPath: UIBezierPath) {
+  private func needsCurvedCornerCoverage(
+    for side: Side,
+    rect: CGRect,
+    visibility: (top: Bool, right: Bool, bottom: Bool, left: Bool)
+  ) -> Bool {
+    switch side {
+    case .top:
+      let topLeft = radius.topLeft.resolved(rect: rect)
+      let topRight = radius.topRight.resolved(rect: rect)
+      return (!visibility.left && (topLeft.x > 0 || topLeft.y > 0))
+        || (!visibility.right && (topRight.x > 0 || topRight.y > 0))
+    case .right:
+      let topRight = radius.topRight.resolved(rect: rect)
+      let bottomRight = radius.bottomRight.resolved(rect: rect)
+      return (!visibility.top && (topRight.x > 0 || topRight.y > 0))
+        || (!visibility.bottom && (bottomRight.x > 0 || bottomRight.y > 0))
+    case .bottom:
+      let bottomRight = radius.bottomRight.resolved(rect: rect)
+      let bottomLeft = radius.bottomLeft.resolved(rect: rect)
+      return (!visibility.right && (bottomRight.x > 0 || bottomRight.y > 0))
+        || (!visibility.left && (bottomLeft.x > 0 || bottomLeft.y > 0))
+    case .left:
+      let topLeft = radius.topLeft.resolved(rect: rect)
+      let bottomLeft = radius.bottomLeft.resolved(rect: rect)
+      return (!visibility.top && (topLeft.x > 0 || topLeft.y > 0))
+        || (!visibility.bottom && (bottomLeft.x > 0 || bottomLeft.y > 0))
+    }
+  }
+
+  private func roundedSideCoverageClipPath(
+    for side: Side,
+    rect: CGRect,
+    width: CGFloat,
+    visibility: (top: Bool, right: Bool, bottom: Bool, left: Bool)
+  ) -> UIBezierPath {
+    let path = UIBezierPath(rect: bandRect(for: side, rect: rect, width: width))
+
+    func appendCornerRect(origin: CGPoint, size: CGSize) {
+      guard size.width > 0 || size.height > 0 else { return }
+      path.append(UIBezierPath(rect: CGRect(origin: origin, size: size)))
+    }
+
+    switch side {
+    case .top:
+      if !visibility.left {
+        let topLeft = radius.topLeft.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.minX, y: rect.minY),
+          size: CGSize(width: topLeft.x, height: topLeft.y)
+        )
+      }
+      if !visibility.right {
+        let topRight = radius.topRight.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.maxX - topRight.x, y: rect.minY),
+          size: CGSize(width: topRight.x, height: topRight.y)
+        )
+      }
+    case .right:
+      if !visibility.top {
+        let topRight = radius.topRight.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.maxX - topRight.x, y: rect.minY),
+          size: CGSize(width: topRight.x, height: topRight.y)
+        )
+      }
+      if !visibility.bottom {
+        let bottomRight = radius.bottomRight.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.maxX - bottomRight.x, y: rect.maxY - bottomRight.y),
+          size: CGSize(width: bottomRight.x, height: bottomRight.y)
+        )
+      }
+    case .bottom:
+      if !visibility.right {
+        let bottomRight = radius.bottomRight.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.maxX - bottomRight.x, y: rect.maxY - bottomRight.y),
+          size: CGSize(width: bottomRight.x, height: bottomRight.y)
+        )
+      }
+      if !visibility.left {
+        let bottomLeft = radius.bottomLeft.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.minX, y: rect.maxY - bottomLeft.y),
+          size: CGSize(width: bottomLeft.x, height: bottomLeft.y)
+        )
+      }
+    case .left:
+      if !visibility.top {
+        let topLeft = radius.topLeft.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.minX, y: rect.minY),
+          size: CGSize(width: topLeft.x, height: topLeft.y)
+        )
+      }
+      if !visibility.bottom {
+        let bottomLeft = radius.bottomLeft.resolved(rect: rect)
+        appendCornerRect(
+          origin: CGPoint(x: rect.minX, y: rect.maxY - bottomLeft.y),
+          size: CGSize(width: bottomLeft.x, height: bottomLeft.y)
+        )
+      }
+    }
+
+    return path
+  }
+
+  private func strokeRoundedSide(
+    _ side: Side,
+    ctx: CGContext,
+    rect: CGRect,
+    width: CGFloat,
+    color: UIColor,
+    dashPattern: [CGFloat] = [],
+    lineCap: CGLineCap = .butt
+  ) {
+    let half = width / 2.0
+    let inset = UIEdgeInsets(top: half, left: half, bottom: half, right: half)
+    let insetRect = rect.inset(by: inset)
+    guard insetRect.width > 0, insetRect.height > 0 else { return }
+
+    let insetRadius = radius.insetByBorderWidths((half, half, half, half))
+    let strokePath = buildRoundedPath(in: insetRect, radius: insetRadius)
+
+    ctx.addPath(strokePath.cgPath)
+    ctx.setStrokeColor(color.cgColor)
+    ctx.setLineWidth(width)
+    ctx.setLineCap(lineCap)
+    if !dashPattern.isEmpty {
+      ctx.setLineDash(phase: 0, lengths: dashPattern)
+    }
+    ctx.strokePath()
+    if !dashPattern.isEmpty {
+      ctx.setLineDash(phase: 0, lengths: [])
+    }
+  }
+
+  private func paintSide(_ s: Side, ctx: CGContext, rect: CGRect, width: CGFloat, side: BorderSide, outerPath: UIBezierPath, visibility: (top: Bool, right: Bool, bottom: Bool, left: Bool)) {
     guard width > 0, side.style != .none, side.color.cgColor.alpha > 0 else { return }
       ctx.saveGState()
+      let band = bandRect(for: s, rect: rect, width: width)
+      let curvedCoverage = needsCurvedCornerCoverage(for: s, rect: rect, visibility: visibility)
+
       ctx.addPath(outerPath.cgPath)
       ctx.clip()
 
-      // Clip to this side's band so the fill/stroke doesn't bleed into other sides
-      let band = bandRect(for: s, rect: rect, width: width)
-      ctx.clip(to: band)
+      if curvedCoverage {
+        let coveragePath = roundedSideCoverageClipPath(for: s, rect: rect, width: width, visibility: visibility)
+        ctx.addPath(coveragePath.cgPath)
+        ctx.clip()
+      } else {
+        ctx.clip(to: band)
+      }
 
       switch side.style {
-      case .double(let spacing):
+      case .double:
         // use resolved radius — you already have `radius` member resolved in resolve(for:)
         drawDoubleBorder(ctx, sideEdge: s, rect: rect, totalWidth: width, side: side, outerRadius: radius)
       case .solid:
-        ctx.setFillColor(side.color.cgColor)
-        ctx.fill(band)
-      case .dashed(let dash, let gap):
-      //  strokeBandCenterline(band: bandRect(for: s, rect: rect, width: width), side: s, ctx: ctx, color: side.color, lineWidth: width, dash: dash, gap: gap)
-        break
-      case .dotted(let dot, let gap):
-      //  strokeBandCenterline(band: bandRect(for: s, rect: rect, width: width), side: s, ctx: ctx, color: side.color, lineWidth: dot, dash: dot, gap: gap)
-        break
+        if curvedCoverage {
+          strokeRoundedSide(s, ctx: ctx, rect: rect, width: width, color: side.color)
+        } else {
+          ctx.setFillColor(side.color.cgColor)
+          ctx.fill(band)
+        }
+      case .dashed:
+        let dashLen = max(1.0, width * 3.0)
+        let gapLen = max(1.0, width * 2.0)
+        if curvedCoverage {
+          strokeRoundedSide(s, ctx: ctx, rect: rect, width: width, color: side.color, dashPattern: [dashLen, gapLen], lineCap: .butt)
+        } else {
+          // Stroke centered on a path inset by half the stroke width so the stroke
+          // aligns per-side similar to CSS (stroke centered on edge band).
+          // Draw only the straight edge centerline (exclude corner arcs) so dashes
+          // are uniform and don't follow corner arcs (matches browser behavior).
+          let half = width / 2.0
+          let inset = insetForSide(s, amount: half)
+          let insetRect = rect.inset(by: inset)
+          let insetRadius = radius.inset(by: inset)
+
+          // Build a straight-line path for this side (exclude corner arcs)
+          let strokePath = UIBezierPath()
+          switch s {
+          case .top:
+            let startX = insetRect.minX + insetRadius.topLeft.resolved(rect: insetRect).0
+            let endX = insetRect.maxX - insetRadius.topRight.resolved(rect: insetRect).0
+            strokePath.move(to: CGPoint(x: startX, y: insetRect.minY))
+            strokePath.addLine(to: CGPoint(x: endX, y: insetRect.minY))
+          case .right:
+            let startY = insetRect.minY + insetRadius.topRight.resolved(rect: insetRect).1
+            let endY = insetRect.maxY - insetRadius.bottomRight.resolved(rect: insetRect).1
+            strokePath.move(to: CGPoint(x: insetRect.maxX, y: startY))
+            strokePath.addLine(to: CGPoint(x: insetRect.maxX, y: endY))
+          case .bottom:
+            let startX = insetRect.minX + insetRadius.bottomLeft.resolved(rect: insetRect).0
+            let endX = insetRect.maxX - insetRadius.bottomRight.resolved(rect: insetRect).0
+            strokePath.move(to: CGPoint(x: startX, y: insetRect.maxY))
+            strokePath.addLine(to: CGPoint(x: endX, y: insetRect.maxY))
+          case .left:
+            let startY = insetRect.minY + insetRadius.topLeft.resolved(rect: insetRect).1
+            let endY = insetRect.maxY - insetRadius.bottomLeft.resolved(rect: insetRect).1
+            strokePath.move(to: CGPoint(x: insetRect.minX, y: startY))
+            strokePath.addLine(to: CGPoint(x: insetRect.minX, y: endY))
+          }
+
+          ctx.addPath(strokePath.cgPath)
+          ctx.setStrokeColor(side.color.cgColor)
+          ctx.setLineWidth(width)
+          ctx.setLineCap(.butt)
+          ctx.setLineDash(phase: 0, lengths: [dashLen, gapLen])
+          ctx.strokePath()
+          ctx.setLineDash(phase: 0, lengths: [])
+        }
+      case .dotted:
+        let dotLen = max(1.0, width)
+        let gapLen = max(1.0, width * 2.0)
+        if curvedCoverage {
+          strokeRoundedSide(s, ctx: ctx, rect: rect, width: width, color: side.color, dashPattern: [dotLen, gapLen], lineCap: .round)
+        } else {
+          // Stroke along straight-edge centerline (exclude corner arcs) and use
+          // round caps so dash segments become circular dots — matches Android/web.
+          let half = width / 2.0
+          let inset = insetForSide(s, amount: half)
+          let insetRect = rect.inset(by: inset)
+          let insetRadius = radius.inset(by: inset)
+
+          // Build a straight-line path for this side (exclude corner arcs)
+          let strokePath = UIBezierPath()
+          switch s {
+          case .top:
+            let startX = insetRect.minX + insetRadius.topLeft.resolved(rect: insetRect).0
+            let endX = insetRect.maxX - insetRadius.topRight.resolved(rect: insetRect).0
+            strokePath.move(to: CGPoint(x: startX, y: insetRect.minY))
+            strokePath.addLine(to: CGPoint(x: endX, y: insetRect.minY))
+          case .right:
+            let startY = insetRect.minY + insetRadius.topRight.resolved(rect: insetRect).1
+            let endY = insetRect.maxY - insetRadius.bottomRight.resolved(rect: insetRect).1
+            strokePath.move(to: CGPoint(x: insetRect.maxX, y: startY))
+            strokePath.addLine(to: CGPoint(x: insetRect.maxX, y: endY))
+          case .bottom:
+            let startX = insetRect.minX + insetRadius.bottomLeft.resolved(rect: insetRect).0
+            let endX = insetRect.maxX - insetRadius.bottomRight.resolved(rect: insetRect).0
+            strokePath.move(to: CGPoint(x: startX, y: insetRect.maxY))
+            strokePath.addLine(to: CGPoint(x: endX, y: insetRect.maxY))
+          case .left:
+            let startY = insetRect.minY + insetRadius.topLeft.resolved(rect: insetRect).1
+            let endY = insetRect.maxY - insetRadius.bottomLeft.resolved(rect: insetRect).1
+            strokePath.move(to: CGPoint(x: insetRect.minX, y: startY))
+            strokePath.addLine(to: CGPoint(x: insetRect.minX, y: endY))
+          }
+
+          ctx.addPath(strokePath.cgPath)
+          ctx.setStrokeColor(side.color.cgColor)
+          ctx.setLineWidth(width)
+          // rounded caps give circular dots
+          ctx.setLineCap(.round)
+          ctx.setLineDash(phase: 0, lengths: [dotLen, gapLen])
+          ctx.strokePath()
+          ctx.setLineDash(phase: 0, lengths: [])
+        }
       case .groove:
         drawGroove(ctx, bandRect(for: s, rect: rect, width: width), side.color, width)
       case .ridge:

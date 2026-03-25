@@ -108,9 +108,9 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     style.updateShadowLayer(for: bounds)
     autoComputeIfRoot()
     #if DEBUG
-    if !(superview is MasonElement) {
+   // if !(superview is MasonElement) {
       node.mason.printTree(node)
-    }
+   // }
     #endif
 
     // Optimize compositing: set isOpaque for solid opaque backgrounds

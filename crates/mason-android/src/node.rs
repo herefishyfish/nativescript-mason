@@ -9,7 +9,7 @@ use jni::sys::{
     JNI_TRUE,
 };
 use jni::JNIEnv;
-use mason_core::{AvailableSpace, Id, InlineSegment, Mason, MeasureOutput, NodeRef, Size};
+use mason_core::{AvailableSpace, Id, InlineSegment, Mason, NodeRef, Size};
 
 #[no_mangle]
 pub extern "system" fn NodeNativeDestroy(node: jlong) {
@@ -1362,6 +1362,61 @@ pub extern "system" fn NodeNativeNewImageNode(taffy: jlong) -> jlong {
 }
 
 #[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNode(taffy: jlong) -> jlong {
+    if taffy == 0 {
+        return 0;
+    }
+
+    unsafe {
+        let mason = &mut *(taffy as *mut Mason);
+        Box::into_raw(Box::new(mason.create_button_node())) as jlong
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNodeNormal(_: JNIEnv, _: JClass, taffy: jlong) -> jlong {
+    if taffy == 0 {
+        return 0;
+    }
+
+    unsafe {
+        let mason = &mut *(taffy as *mut Mason);
+        Box::into_raw(Box::new(mason.create_button_node())) as jlong
+    }
+}
+
+fn native_new_button_node_with_context(taffy: jlong, measure: jint) -> jlong {
+    if taffy == 0 {
+        return 0;
+    }
+
+    unsafe {
+        let mason = &mut *(taffy as *mut Mason);
+
+        let node = mason.create_button_node();
+
+        mason.setup(node.id(), measure);
+
+        Box::into_raw(Box::new(node)) as jlong
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNodeWithContext(taffy: jlong, measure: jint) -> jlong {
+    native_new_button_node_with_context(taffy, measure)
+}
+
+#[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNodeWithContextNormal(
+    _: JNIEnv,
+    _: JClass,
+    taffy: jlong,
+    measure: jint,
+) -> jlong {
+    native_new_button_node_with_context(taffy, measure)
+}
+
+#[no_mangle]
 pub extern "system" fn NodeNativeNewImageNodeNormal(_: JNIEnv, _: JClass, taffy: jlong) -> jlong {
     if taffy == 0 {
         return 0;
@@ -1594,14 +1649,17 @@ pub extern "system" fn NodeNativeGetPseudoStyleBuffer(
                         match env.new_direct_byte_buffer(ptr as _, len) {
                             Ok(buffer) => match mason_core::JVM_CACHE.get() {
                                 Some(cache) => {
-                                    let manager =
-                                        unsafe { JClass::from_raw(cache.object_manager_clazz.as_raw()) };
+                                    let manager = unsafe {
+                                        JClass::from_raw(cache.object_manager_clazz.as_raw())
+                                    };
                                     let result = unsafe {
                                         env.call_static_method_unchecked(
                                             manager,
                                             cache.object_manager_add_id,
                                             ReturnType::Primitive(jni::signature::Primitive::Int),
-                                            &[jni::sys::jvalue { l: buffer.into_raw() }],
+                                            &[jni::sys::jvalue {
+                                                l: buffer.into_raw(),
+                                            }],
                                         )
                                     };
 
@@ -1675,14 +1733,17 @@ pub extern "system" fn NodeNativePreparePseudoMut(
                         match env.new_direct_byte_buffer(ptr as _, len) {
                             Ok(buffer) => match mason_core::JVM_CACHE.get() {
                                 Some(cache) => {
-                                    let manager =
-                                        unsafe { JClass::from_raw(cache.object_manager_clazz.as_raw()) };
+                                    let manager = unsafe {
+                                        JClass::from_raw(cache.object_manager_clazz.as_raw())
+                                    };
                                     let result = unsafe {
                                         env.call_static_method_unchecked(
                                             manager,
                                             cache.object_manager_add_id,
                                             ReturnType::Primitive(jni::signature::Primitive::Int),
-                                            &[jni::sys::jvalue { l: buffer.into_raw() }],
+                                            &[jni::sys::jvalue {
+                                                l: buffer.into_raw(),
+                                            }],
                                         )
                                     };
 

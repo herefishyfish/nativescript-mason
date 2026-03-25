@@ -627,9 +627,9 @@ class MasonElementHelpers: NSObject {
       
       let heightIsNan = realLayout.height.isNaN
       
-      var x = CGFloat(realLayout.x.isNaN ? 0 : realLayout.x/NSCMason.scale)
+      let x = CGFloat(realLayout.x.isNaN ? 0 : realLayout.x/NSCMason.scale)
       
-      var y = CGFloat(realLayout.y.isNaN ? 0 : realLayout.y/NSCMason.scale)
+      let y = CGFloat(realLayout.y.isNaN ? 0 : realLayout.y/NSCMason.scale)
       
       var width = CGFloat(widthIsNan ? 0 : realLayout.width/NSCMason.scale)
       
@@ -649,7 +649,33 @@ class MasonElementHelpers: NSObject {
       
       let size = CGSizeMake(width, height)
       
-      let newFrame = CGRect(origin: point, size: size)
+      var newFrame = CGRect(origin: point, size: size)
+      
+      if(!realLayout.paddingIsEmpty){
+        var top: CGFloat = 0
+        if !realLayout.paddingTop.isZero {
+          top = CGFloat(realLayout.paddingTop / NSCMason.scale)
+        }
+        
+        var left: CGFloat = 0
+        if !realLayout.paddingLeft.isZero {
+          left = CGFloat(realLayout.paddingLeft / NSCMason.scale)
+        }
+        
+        var bottom: CGFloat = 0
+        if !realLayout.paddingBottom.isZero {
+          bottom = CGFloat(realLayout.paddingBottom / NSCMason.scale)
+        }
+        
+        var right: CGFloat = 0
+        if !realLayout.paddingRight.isZero {
+          right = CGFloat(realLayout.paddingRight / NSCMason.scale)
+        }
+        
+        let insets = UIEdgeInsets(top: top, left: left, bottom: bottom, right: right)
+        newFrame.inset(by: insets)
+      }
+      
       if view.frame != newFrame {
         view.frame = newFrame
       }
@@ -714,7 +740,7 @@ class MasonElementHelpers: NSObject {
         } else {
           let maskLayer = (view.layer.mask as? CAShapeLayer) ?? CAShapeLayer()
           maskLayer.path = UIBezierPath(rect: clipRect).cgPath
-          view.layer.mask = maskLayer
+         // view.layer.mask = maskLayer
         }
       } else {
         view.clipsToBounds = false

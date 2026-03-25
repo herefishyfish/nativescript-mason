@@ -1,4 +1,4 @@
-import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator } from '@nativescript/core';
+import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
 import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
@@ -347,6 +347,23 @@ fontSizeProperty.overrideHandlers({
     }
   },
 });
+
+// marginTopProperty.overrideHandlers({
+//   name: 'marginTop',
+//   cssName: 'margin-top',
+//   valueChanged(target, oldValue, newValue) {
+//     const view = getViewStyle(target.viewRef);
+//     if (view) {
+//       if (newValue) {
+//         view.marginTop = newValue as never;
+//       } else {
+//         // Revert to old value if newValue is invalid
+//         // @ts-ignore
+//         target.marginTop = oldValue as never;
+//       }
+//     }
+//   },
+// });
 
 export const rowGapProperty = new CssProperty<Style, Length>({
   name: 'rowGap',

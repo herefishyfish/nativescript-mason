@@ -5,12 +5,71 @@
 //  Tests for the superellipse curve implementation in CSSBorderRenderer.
 //
 
+import UIKit
 import XCTest
 @testable import Mason
 
 final class SuperellipseTests: XCTestCase {
 
   private let epsilon: CGFloat = 1e-5
+
+  private struct RenderedImage {
+    let width: Int
+    let height: Int
+    let pixels: [UInt8]
+  }
+
+  private func render(_ view: UIView) throws -> RenderedImage {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = false
+
+    let image = UIGraphicsImageRenderer(size: view.bounds.size, format: format).image { _ in
+      view.draw(view.bounds)
+    }
+
+    let cgImage = try XCTUnwrap(image.cgImage)
+    let width = cgImage.width
+    let height = cgImage.height
+    let bytesPerRow = width * 4
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+
+    let rendered = pixels.withUnsafeMutableBytes { rawBuffer -> Bool in
+      guard let context = CGContext(
+        data: rawBuffer.baseAddress,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: bytesPerRow,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      ) else {
+        return false
+      }
+
+      context.translateBy(x: 0, y: CGFloat(height))
+      context.scaleBy(x: 1, y: -1)
+      context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+      return true
+    }
+
+    XCTAssertTrue(rendered, "Expected bitmap render context")
+    return RenderedImage(width: width, height: height, pixels: pixels)
+  }
+
+  private func pixel(at point: CGPoint, in image: RenderedImage) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
+    let x = max(0, min(image.width - 1, Int(point.x.rounded(.down))))
+    let y = max(0, min(image.height - 1, Int(point.y.rounded(.down))))
+    let row = image.height - 1 - y
+    let offset = ((row * image.width) + x) * 4
+    return (
+      r: image.pixels[offset],
+      g: image.pixels[offset + 1],
+      b: image.pixels[offset + 2],
+      a: image.pixels[offset + 3]
+    )
+  }
 
   // MARK: - Superellipse math helpers (mirrors Border.swift logic)
 
@@ -119,10 +178,10 @@ final class SuperellipseTests: XCTestCase {
   func test_buildRoundedPath_withExponent1_producesNonEmptyPath() {
     let mason = NSCMason.shared
     let view = MasonUIView(mason: mason)
-    let renderer = view.style.borderRenderer
+    let renderer = view.style.mBorderRender
 
     // Set border radius
-    view.style.borderRenderer.radius = CSSBorderRenderer.BorderRadius(
+    view.style.mBorderRender.radius = CSSBorderRenderer.BorderRadius(
       topLeft: CSSBorderRenderer.CornerRadius(horizontal: .Points(10), vertical: .Points(10), exponent: 1.0),
       topRight: CSSBorderRenderer.CornerRadius(horizontal: .Points(10), vertical: .Points(10), exponent: 1.0),
       bottomRight: CSSBorderRenderer.CornerRadius(horizontal: .Points(10), vertical: .Points(10), exponent: 1.0),
@@ -140,7 +199,7 @@ final class SuperellipseTests: XCTestCase {
   func test_buildRoundedPath_withSuperellipse_producesNonEmptyPath() {
     let mason = NSCMason.shared
     let view = MasonUIView(mason: mason)
-    let renderer = view.style.borderRenderer
+    let renderer = view.style.mBorderRender
 
     renderer.radius = CSSBorderRenderer.BorderRadius(
       topLeft: CSSBorderRenderer.CornerRadius(horizontal: .Points(20), vertical: .Points(20), exponent: 0.5),
@@ -160,7 +219,7 @@ final class SuperellipseTests: XCTestCase {
   func test_buildRoundedPath_superellipse_boundsContainedInRect() {
     let mason = NSCMason.shared
     let view = MasonUIView(mason: mason)
-    let renderer = view.style.borderRenderer
+    let renderer = view.style.mBorderRender
 
     let exponents: [CGFloat] = [0.3, 0.5, 1.0, 2.0, 4.0]
     let rect = CGRect(x: 0, y: 0, width: 200, height: 150)
@@ -188,7 +247,7 @@ final class SuperellipseTests: XCTestCase {
   func test_buildRoundedPath_zeroRadius_producesRectangle() {
     let mason = NSCMason.shared
     let view = MasonUIView(mason: mason)
-    let renderer = view.style.borderRenderer
+    let renderer = view.style.mBorderRender
 
     renderer.radius = .zero
 
@@ -203,7 +262,7 @@ final class SuperellipseTests: XCTestCase {
   func test_buildRoundedPath_mixedExponents() {
     let mason = NSCMason.shared
     let view = MasonUIView(mason: mason)
-    let renderer = view.style.borderRenderer
+    let renderer = view.style.mBorderRender
 
     // Mix of circular and superellipse corners
     renderer.radius = CSSBorderRenderer.BorderRadius(
@@ -222,7 +281,7 @@ final class SuperellipseTests: XCTestCase {
   func test_buildRoundedPath_radiusExceedingBox_getsScaledDown() {
     let mason = NSCMason.shared
     let view = MasonUIView(mason: mason)
-    let renderer = view.style.borderRenderer
+    let renderer = view.style.mBorderRender
 
     // Radius larger than half the box — CSS spec says scale down
     let corner = CSSBorderRenderer.CornerRadius(horizontal: .Points(80), vertical: .Points(80), exponent: 0.5)
@@ -237,5 +296,42 @@ final class SuperellipseTests: XCTestCase {
     XCTAssertFalse(path.isEmpty)
     XCTAssertLessThanOrEqual(path.bounds.maxX, rect.maxX + 1)
     XCTAssertLessThanOrEqual(path.bounds.maxY, rect.maxY + 1)
+  }
+
+  func test_getClipPath_cacheDistinguishesRadius() {
+    let mason = NSCMason.shared
+    let view = MasonUIView(mason: mason)
+    let renderer = view.style.mBorderRender
+    let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
+    let rounded = CSSBorderRenderer.BorderRadius(
+      topLeft: .zero,
+      topRight: CSSBorderRenderer.CornerRadius(horizontal: .Points(50), vertical: .Points(50), exponent: 1.0),
+      bottomRight: .zero,
+      bottomLeft: .zero
+    )
+
+    let probe = CGPoint(x: 99, y: 1)
+    let squarePath = renderer.getClipPath(rect: rect, radius: .zero)
+    let roundedPath = renderer.getClipPath(rect: rect, radius: rounded)
+
+    XCTAssertTrue(squarePath.contains(probe), "Square clip should include the top-right probe point")
+    XCTAssertFalse(roundedPath.contains(probe), "Rounded clip should exclude the top-right probe point")
+  }
+
+  func test_topBorder_keepsRoundedCornerWhenAdjacentSideIsMissing() throws {
+    let mason = NSCMason.shared
+    let view = MasonUIView(mason: mason)
+    view.frame = CGRect(x: 0, y: 0, width: 100, height: 100)
+    view.style.borderTop = "4px red solid"
+    view.style.borderRadius = "0 50% 0 0"
+
+    let image = try render(view)
+    let arcPixel = pixel(at: CGPoint(x: 80, y: 10), in: image)
+    let interiorPixel = pixel(at: CGPoint(x: 80, y: 20), in: image)
+
+    XCTAssertGreaterThan(arcPixel.a, 0, "Top border should reach the rounded top-right arc")
+    XCTAssertGreaterThan(arcPixel.r, arcPixel.g, "Arc pixel should be red-dominant")
+    XCTAssertGreaterThan(arcPixel.r, arcPixel.b, "Arc pixel should be red-dominant")
+    XCTAssertEqual(interiorPixel.a, 0, "Rounded corner should remain clipped inside the arc")
   }
 }

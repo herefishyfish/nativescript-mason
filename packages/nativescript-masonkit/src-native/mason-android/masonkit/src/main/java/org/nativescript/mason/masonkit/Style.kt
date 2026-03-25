@@ -487,7 +487,6 @@ internal object StyleState {
 
 class Style internal constructor(@Transient internal var node: Node) {
   internal var isValueInitialized: Boolean = false
-  internal var isTextValueInitialized: Boolean = false
   internal var gridState = GridState()
 
   internal var fontDirty = false
@@ -1975,7 +1974,8 @@ class Style internal constructor(@Transient internal var node: Node) {
       prepareMut()
       values.put(StyleKeys.DISPLAY_MODE, displayMode.value)
       values.put(StyleKeys.DISPLAY, display)
-      setOrAppendState(arrayOf(StateKeys.DISPLAY_MODE, StateKeys.DISPLAY))
+
+      setOrAppendState(StateKeys.DISPLAY.and(StateKeys.DISPLAY_MODE))
     }
 
   var position: Position
@@ -2660,8 +2660,10 @@ class Style internal constructor(@Transient internal var node: Node) {
   var boxShadow: String
     get() = mBoxShadowRaw
     set(value) {
+      Log.d("mason", "Style.boxShadow set raw=${value}")
       mBoxShadowRaw = value
       boxShadows = Shadow.parseBoxShadow(this, value)
+      Log.d("mason", "Style.boxShadow parsed count=${boxShadows.size}")
       mBoxShadowRenderer.invalidate()
       val view = node.view as? View
       if (view != null) {
@@ -4125,7 +4127,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       var parent = node.parent
       while (parent != null) {
         // Check if parent has text values initialized
-        if (parent.style.isTextValueInitialized) {
+        if (parent.style.isValueInitialized) {
           return parent.style
         }
         parent = parent.parent
@@ -4210,7 +4212,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   // Uses PSEUDO_SET_MASK bitmask to determine if the property was explicitly set
   // in the pseudo buffer (pseudo buffers are cloned from base, so state bytes alone
   // are unreliable).
-  private fun resolvePseudoInt(valueKey: Int, stateKey: Int, base: Int, key: StateKeys): Int {
+  internal fun resolvePseudoInt(valueKey: Int, stateKey: Int, base: Int, key: StateKeys): Int {
     val mask = node.pseudoMask
     if (mask == 0) return base
     var result = base
@@ -4317,7 +4319,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       // PERCENT == 1
       if (type == StyleState.SET) {
         val parentFontSize =
-          node.parent?.takeIf { it.style.isTextValueInitialized }?.style?.resolvedFontSize
+          node.parent?.takeIf { it.style.isValueInitialized }?.style?.resolvedFontSize
             ?: Constants.DEFAULT_FONT_SIZE
         val base = resolvePercentageFontSize(parentFontSize, values.getInt(StyleKeys.FONT_SIZE))
         return resolvePseudoInt(
@@ -4756,10 +4758,11 @@ class Style internal constructor(@Transient internal var node: Node) {
     internal fun applyClip(
       canvas: Canvas,
       clip: BackgroundClip,
-      node: Node,
+      style: Style,
       width: Float,
       height: Float
     ) {
+      val node = style.node
       // fall back to computed dimensions only if the passed values are <= 0
       val w = if (width > 0f) width else node.computedWidth
       val h = if (height > 0f) height else node.computedHeight
@@ -4777,17 +4780,12 @@ class Style internal constructor(@Transient internal var node: Node) {
       when (clip) {
         BackgroundClip.BORDER_BOX -> {
           // Border box = full view bounds
-          canvas.clipRect(0f, 0f, w, h)
+          canvas.clipPath(style.mBorderRenderer.getOuterClipPath(w, h))
         }
 
         BackgroundClip.PADDING_BOX -> {
           // Padding box = inset by border widths
-          canvas.clipRect(
-            borderLeft,
-            borderTop,
-            w - borderRight,
-            h - borderBottom
-          )
+          canvas.clipPath(style.mBorderRenderer.getClipPath(w, h))
         }
 
         BackgroundClip.CONTENT_BOX -> {

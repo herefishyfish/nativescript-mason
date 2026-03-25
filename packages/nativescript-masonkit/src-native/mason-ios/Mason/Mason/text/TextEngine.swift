@@ -61,6 +61,11 @@ extension TextContainer {
   }
 }
 
+internal protocol SingleLineTextBaselineProviding: AnyObject {
+  /// Returns the baseline position in the view's normal top-origin coordinate space.
+  func singleLineTextBaselineY(ascent: CGFloat, descent: CGFloat, in drawBounds: CGRect) -> CGFloat
+}
+
 
 @objc(MasonTextEngine)
 public class TextEngine: NSObject {
@@ -213,13 +218,62 @@ public class TextEngine: NSObject {
     }
 
     return result
-}
+  }
   
   private static func desiredWidth(_ text: NSAttributedString) -> CGFloat {
     let line = CTLineCreateWithAttributedString(text)
     let width = CTLineGetTypographicBounds(line, nil, nil, nil)
     return ceil(width)
-}
+  }
+
+  internal static func minContentWidth(for text: NSAttributedString) -> CGFloat {
+    var maxWidth: CGFloat = 0
+
+    for fragment in splitByWhitespace(text) {
+      maxWidth = max(maxWidth, desiredWidth(fragment))
+    }
+
+    if maxWidth == 0, text.length > 0 {
+      return desiredWidth(text)
+    }
+
+    return maxWidth
+  }
+
+  internal static func inlineChildBaselineFromBottom(
+    height: CGFloat,
+    verticalAlign: MasonVerticalAlignValue,
+    parentFont: FontMetrics,
+    scale: CGFloat
+  ) -> CGFloat {
+    let fontAscent = CGFloat(parentFont.ascent) / scale
+    let fontDescent = CGFloat(parentFont.descent) / scale
+    let xHeight = CGFloat(parentFont.x_height) / scale
+    let lineHeight = CGFloat(parentFont.ascent + parentFont.descent + parentFont.leading) / scale
+
+    switch verticalAlign.align {
+    case .Baseline:
+      return 0
+    case .TextTop:
+      return max(fontDescent, height - fontAscent)
+    case .TextBottom:
+      return fontDescent
+    case .Middle:
+      return (height / 2) - (xHeight / 2)
+    case .Top:
+      return 0
+    case .Bottom:
+      return height
+    case .Sub:
+      return fontDescent
+    case .Super:
+      return -(fontAscent * 0.5)
+    case .Length:
+      return -CGFloat(verticalAlign.offset) / scale
+    case .Percent:
+      return -(lineHeight * CGFloat(verticalAlign.offset) / 100)
+    }
+  }
   
   // MARK: - Measurement
   
@@ -240,7 +294,7 @@ public class TextEngine: NSObject {
     let hasExplicitLineBreaks = text.string.contains("\n")
     
     var allowWrap = true
-    if engine.node.style.isTextValueInitialized {
+    if engine.node.style.isValueInitialized {
       let ws = engine.node.style.whiteSpace
       // No wrap for pre / nowrap - but still allow if there are explicit line breaks
       if (ws == .Pre || ws == .NoWrap) && !hasExplicitLineBreaks { allowWrap = false }
@@ -254,6 +308,29 @@ public class TextEngine: NSObject {
         maxWidth = available.width / CGFloat(NSCMason.scale)
       }
     }
+
+    // For inline-level, non-block elements (inline-block), use a
+    // shrink-to-fit algorithm (preferred-min / available / preferred) so
+    // inline children size to their content rather than expanding to the
+    // full available width. This mirrors CSS's shrink-to-fit behavior and
+    // avoids buttons stretching like blocks.
+    /*
+    if isInLine && !isBlock {
+      let preferredMin = Self.minContentWidth(for: text)
+      let preferredMax = Self.desiredWidth(text)
+
+      if preferredMax.isFinite && preferredMax > 0 {
+        if available.width.isFinite && available.width > 0 {
+          // width = min(max(preferredMin, available), preferredMax)
+          let avail = available.width / CGFloat(NSCMason.scale)
+          maxWidth = min(max(preferredMin, avail), preferredMax)
+        } else {
+          // No finite available width: use preferred (max-content)
+          maxWidth = preferredMax
+        }
+      }
+    }
+    */
     
     if let known = known {
       if(isBlock && known.height.isFinite && known.height > 0){
@@ -263,9 +340,7 @@ public class TextEngine: NSObject {
     
     if(maxWidth == CGFloat.greatestFiniteMagnitude){
       if(available.width == -1){
-        if let min = splitByWhitespace(text).first {
-          maxWidth = desiredWidth(min)
-        }
+        maxWidth = minContentWidth(for: text)
       }
       
       if (available.width == -2){
@@ -275,6 +350,7 @@ public class TextEngine: NSObject {
     
     // Create framesetter
     let framesetter = CTFramesetterCreateWithAttributedString(text)
+  
 
     var constraintSize = CGSize(width: maxWidth, height: maxHeight)
     // Avoid passing infinite height to CoreText framesetter — use a large finite fallback.
@@ -382,6 +458,29 @@ public class TextEngine: NSObject {
   // attributedStringVersion == segmentsInvalidateVersion
   private var segmentsInvalidateVersion: UInt64 = 0
   private var attributedStringVersion: UInt64 = 0
+
+  private func currentFontMetrics() -> FontMetrics {
+    let metrics = style.fontMetrics
+    if metrics.ascent > 0 || metrics.descent > 0 {
+      return metrics
+    }
+
+    if let fontValue = node.getDefaultAttributes()[.font],
+       CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID() {
+      let font = fontValue as! CTFont
+      let scale = NSCMason.scale
+
+      return FontMetrics(
+        ascent: Float(CTFontGetAscent(font)) * scale,
+        descent: Float(CTFontGetDescent(font)) * scale,
+        x_height: Float(CTFontGetXHeight(font)) * scale,
+        leading: Float(CTFontGetLeading(font)) * scale,
+        cap_height: Float(CTFontGetCapHeight(font)) * scale
+      )
+    }
+
+    return metrics
+  }
   
   
   
@@ -533,7 +632,23 @@ public class TextEngine: NSObject {
     default: return fontSize * 0.15
     }
   }
-  
+
+  internal static func coreTextSingleLineBaselineY(fromTop baselineY: CGFloat, in bounds: CGRect) -> CGFloat {
+    return bounds.height - baselineY
+  }
+
+  private func singleLineBaselineY(ascent: CGFloat, descent: CGFloat, in drawBounds: CGRect, bounds: CGRect) -> CGFloat {
+    let topBaselineY: CGFloat
+    if let provider = container as? SingleLineTextBaselineProviding {
+      topBaselineY = provider.singleLineTextBaselineY(ascent: ascent, descent: descent, in: drawBounds)
+    } else {
+      // Default text containers stay top-aligned to preserve block text behavior.
+      topBaselineY = drawBounds.minY + ascent
+    }
+
+    return Self.coreTextSingleLineBaselineY(fromTop: topBaselineY, in: bounds)
+  }
+
   internal func drawSingleLine(text: NSAttributedString, in context: CGContext, bounds: CGRect) {
     var drawBounds = bounds
     let computedPadding = node.computedLayout.padding
@@ -557,8 +672,7 @@ public class TextEngine: NSObject {
     var leading: CGFloat = 0
     let _ = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
 
-    // Top-align the text (matching CSS block-level behavior): baseline sits ascent distance from the top
-    let baselineY = drawBounds.minY + ascent
+    let baselineY = singleLineBaselineY(ascent: ascent, descent: descent, in: drawBounds, bounds: bounds)
     let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     var horizontalOffset: CGFloat = 0
     switch style.resolvedTextAlign {
@@ -1277,9 +1391,16 @@ public class TextEngine: NSObject {
         // Check if this is an inline child placeholder
         if let helper = attrs[Constants.VIEW_PLACEHOLDER_KEY] as? ViewHelper {
           if let childPtr = helper.node.nativePtr {
+            let childHeight = max(CGFloat(helper.node.cachedHeight) / scale, ascent)
+            let baselineFromBottom = Self.inlineChildBaselineFromBottom(
+              height: childHeight,
+              verticalAlign: helper.node.style.verticalAlign,
+              parentFont: currentFontMetrics(),
+              scale: scale
+            )
             var segment = CMasonSegment()
             segment.tag = InlineChild
-            segment.inline_child = CMasonInlineChildSegment(node: childPtr, descent: Float(ascent * scale).rounded(.up))
+            segment.inline_child = CMasonInlineChildSegment(node: childPtr, descent: Float(baselineFromBottom * scale))
             segments.append(segment)
           }
         } else {

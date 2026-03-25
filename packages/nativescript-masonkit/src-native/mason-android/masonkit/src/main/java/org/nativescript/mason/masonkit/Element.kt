@@ -1,6 +1,7 @@
 package org.nativescript.mason.masonkit
 
 import android.os.Build
+import android.util.Log
 import android.util.SizeF
 import android.view.View
 import android.view.View.MeasureSpec

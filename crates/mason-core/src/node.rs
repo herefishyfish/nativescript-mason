@@ -444,6 +444,7 @@ pub enum NodeType {
     Text,
     Image,
     LineBreak,
+    Button,
 }
 
 #[repr(usize)]

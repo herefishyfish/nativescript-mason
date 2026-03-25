@@ -178,6 +178,17 @@ public class NativeHelpers {
     int context
   );
 
+  @CriticalNative
+  static native long nativeNodeNewButton(
+    long mason
+  );
+
+  @CriticalNative
+  static native long nativeNodeNewButtonWithContext(
+    long mason,
+    int context
+  );
+
   @FastNative
   static native int nativeGetStateBuffer(long mason, long node);
 

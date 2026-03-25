@@ -101,6 +101,18 @@ void mason_node_destroy(struct CMasonNode *node);
 
 struct CMasonNode *mason_node_new_image_node(struct CMason *mason);
 
+struct CMasonNode *mason_node_new_button_node(struct CMason *mason);
+
+#if !defined(TARGET_OS_ANDROID)
+struct CMasonNode *mason_node_new_button_node_with_context(struct CMason *mason,
+                                                           void *measure_data,
+                                                           long long (*measure)(const void*,
+                                                                                float,
+                                                                                float,
+                                                                                float,
+                                                                                float));
+#endif
+
 struct CMasonNode *mason_node_new_node(struct CMason *mason, bool anonymous);
 
 #if !defined(TARGET_OS_ANDROID)

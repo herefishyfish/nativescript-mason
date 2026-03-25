@@ -10,7 +10,6 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.LineHeightSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.UnderlineSpan
-import android.util.Log
 
 
 open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData {
@@ -154,14 +153,24 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
   }
 
   // Build attributed string from this text node's data and attributes
-  fun attributed(): SpannableStringBuilder {
+  fun attributed(ignoreBackground: Boolean = false): SpannableStringBuilder {
     val processed = this.container?.let {
       processText(data, it.style)
     } ?: data
     val spannable = SpannableStringBuilder(processed)
 
+    val previousBG = attributes.backgroundColor
+
+    if (attributes.backgroundColor != null) {
+      attributes.backgroundColor = null
+    }
+
     // Apply attributes as spans
     applyAttributes(spannable, 0, spannable.length, attributes)
+
+    if (ignoreBackground && previousBG != null) {
+      attributes.backgroundColor = previousBG
+    }
 
     return spannable
   }
@@ -180,7 +189,7 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       // Apply color
       attributes.color?.let { color ->
         if (color != 0) {
-          spannable.setSpan(ForegroundColorSpan(color), start, end, flags)
+          spannable.setSpan(Spans.ForegroundColorSpan(attributes), start, end, flags)
         }
       }
 
@@ -266,7 +275,7 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       // Apply backgroundColor only when alpha is non-zero (ARGB format: alpha in high 8 bits)
       attributes.backgroundColor?.let { color ->
         if (color != 0 && ((color shr 24) and 0xFF) != 0) {
-          spannable.setSpan(Spans.BackgroundColorSpan(color), start, end, flags)
+          spannable.setSpan(Spans.BackgroundColorSpan(attributes), start, end, flags)
         }
       }
 

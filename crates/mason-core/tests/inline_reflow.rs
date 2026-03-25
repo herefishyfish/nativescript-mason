@@ -125,6 +125,8 @@ fn inline_block_increases_line_height_for_baseline() {
         s.set_display_mode(mason_core::style::DisplayMode::Box);
     });
 
+    // Quick check immediately after creation
+    println!("after create: mason.is_node_virtual(cid) = {}", mason.is_node_virtual(cid));
     // Place the inline-child into the parent's segments
     mason.set_segments(pid, vec![InlineSegment::InlineChild { id: Some(cid), baseline: 0.0 }]);
     mason.append_node(pid, &[cid]);
@@ -132,6 +134,15 @@ fn inline_block_increases_line_height_for_baseline() {
 
     // Compute starting at the parent text container so inline measurements
     // are resolved in the same available width context.
+    // Diagnostic: print node state and style flags for the child to trace
+    // why it might be marked virtual. Handle platform differences (Apple
+    // returns raw pointers for these helpers).
+    use mason_core::style::StyleKeys;
+
+    // Use test helpers to query node flags safely.
+    println!("mason.is_node_virtual(cid) = {}", mason.is_node_virtual(cid));
+    println!("mason.is_node_list_item(cid) = {}", mason.is_node_list_item(cid));
+
     mason.compute_wh(pid, 200.0, f32::NAN);
 
     let child_layout = mason.layout_raw(cid);
@@ -142,5 +153,6 @@ fn inline_block_increases_line_height_for_baseline() {
 
     let lay = mason.layout_raw(pid);
     // Parent's computed height should be at least the child's height (line expanded)
+    println!("parent layout: w={} h={}", lay.size.width, lay.size.height);
     assert!(lay.size.height + 1e-3 >= 50.0, "parent should accommodate inline-block height");
 }

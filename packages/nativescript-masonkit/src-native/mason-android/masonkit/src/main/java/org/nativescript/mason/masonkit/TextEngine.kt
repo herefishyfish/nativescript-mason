@@ -16,7 +16,6 @@ import android.text.style.ReplacementSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.UpdateLayout
 import android.util.DisplayMetrics
-import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.view.View.MeasureSpec
@@ -32,7 +31,6 @@ import org.nativescript.mason.masonkit.enums.FontVariantNumeric
 import org.nativescript.mason.masonkit.enums.TextAlign
 import org.nativescript.mason.masonkit.enums.VerticalAlign
 import kotlin.math.ceil
-import kotlin.math.abs
 
 class TextEngine(val container: TextContainer) {
 
@@ -99,7 +97,7 @@ class TextEngine(val container: TextContainer) {
       if (child is TextNode && child.container === container) {
         // Only update TextNodes that belong to THIS TextView
         // Don't touch TextNodes that belong to child TextViews
-        child.attributes.copy(attributes = defaultAttrs)
+        child.attributes.sync(defaultAttrs)
       }
     }
   }
@@ -156,55 +154,19 @@ class TextEngine(val container: TextContainer) {
     }
 
 
-    if (
-      StateKeys.hasFlag(
-        low, high, StateKeys.TEXT_WRAP
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.WHITE_SPACE
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.TEXT_TRANSFORM
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.DECORATION_LINE
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.DECORATION_COLOR
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.DECORATION_STYLE
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.LETTER_SPACING
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.TEXT_JUSTIFY
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.BACKGROUND_COLOR
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.LINE_HEIGHT
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.TEXT_ALIGN
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.TEXT_OVERFLOW
-      ) ||
-      StateKeys.hasFlag(
-        low, high, StateKeys.TEXT_SHADOWS
-      )
-
-    ) {
+    // Compute whether any text-related style flags changed. If none of
+    // these changed we can skip the expensive span/attribute rebuild.
+    val textStyleChanged = hasTextStyleFlags(low, high)
+    if (textStyleChanged) {
       dirty = true
     }
 
 
     if (dirty) {
-      updateStyleOnTextNodes()
-      invalidateInlineSegments()
+      if (textStyleChanged) {
+        updateStyleOnTextNodes()
+        invalidateInlineSegments()
+      }
       if (layout) {
         if (node.isAnonymous) {
           node.layoutParent?.dirty()
@@ -212,6 +174,31 @@ class TextEngine(val container: TextContainer) {
         (node.view as? Element)?.invalidateLayout()
       }
     }
+  }
+
+  // Return true when any flags that affect text spans/attributes changed.
+  private fun hasTextStyleFlags(low: Long, high: Long): Boolean {
+    return (
+      StateKeys.hasFlag(low, high, StateKeys.FONT_COLOR) ||
+        StateKeys.hasFlag(low, high, StateKeys.FONT_SIZE) ||
+        StateKeys.hasFlag(low, high, StateKeys.FONT_WEIGHT) ||
+        StateKeys.hasFlag(low, high, StateKeys.FONT_STYLE) ||
+        StateKeys.hasFlag(low, high, StateKeys.FONT_FAMILY) ||
+        StateKeys.hasFlag(low, high, StateKeys.FONT_VARIANT_NUMERIC) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_WRAP) ||
+        StateKeys.hasFlag(low, high, StateKeys.WHITE_SPACE) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_TRANSFORM) ||
+        StateKeys.hasFlag(low, high, StateKeys.DECORATION_LINE) ||
+        StateKeys.hasFlag(low, high, StateKeys.DECORATION_COLOR) ||
+        StateKeys.hasFlag(low, high, StateKeys.DECORATION_STYLE) ||
+        StateKeys.hasFlag(low, high, StateKeys.LETTER_SPACING) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_JUSTIFY) ||
+        StateKeys.hasFlag(low, high, StateKeys.BACKGROUND_COLOR) ||
+        StateKeys.hasFlag(low, high, StateKeys.LINE_HEIGHT) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_ALIGN) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_OVERFLOW) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_SHADOWS)
+      )
   }
 
   private fun measureLayout(
@@ -287,7 +274,7 @@ class TextEngine(val container: TextContainer) {
     }
 
     var allowWrap = true
-    if (node.style.isTextValueInitialized) {
+    if (node.style.isValueInitialized) {
       val ws = node.style.whiteSpace
       // No wrap for pre / nowrap
       if (ws == Styles.WhiteSpace.Pre || ws == Styles.WhiteSpace.NoWrap) {
@@ -482,7 +469,7 @@ class TextEngine(val container: TextContainer) {
       }
     }
 
-    if (widthConstraint == Int.MAX_VALUE){
+    if (widthConstraint == Int.MAX_VALUE) {
       // rebuild static layout with the measuredWidth
       layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
 
@@ -642,11 +629,19 @@ class TextEngine(val container: TextContainer) {
       if (child.type != NodeType.Element) continue
       val childView = child.view as? View ?: continue
       if (!child.style.isValueInitialized) continue
-      val floatSide = try { child.style.float } catch (_: Throwable) { continue }
+      val floatSide = try {
+        child.style.float
+      } catch (_: Throwable) {
+        continue
+      }
       if (floatSide == org.nativescript.mason.masonkit.enums.Float.None) continue
 
       // Read margins from the float's style to expand the exclusion to the margin box
-      val margin = try { child.style.margin } catch (_: Throwable) { null }
+      val margin = try {
+        child.style.margin
+      } catch (_: Throwable) {
+        null
+      }
       val ml = resolveMarginValue(margin?.left)
       val mr = resolveMarginValue(margin?.right)
       val mt = resolveMarginValue(margin?.top)
@@ -986,6 +981,30 @@ class TextEngine(val container: TextContainer) {
     } else {
       -1
     }
+  }
+
+  // Resolve an int value taking pseudo-set buffers into account. If a
+  // pseudo-style has explicitly set the given key, prefer that value.
+  private fun resolvePseudoInt(valueKey: Int, key: StateKeys, base: Int): Int {
+    val mask = node.pseudoMask
+    if (mask == 0) return base
+    var result = base
+    for (state in PSEUDO_CSS_ORDER) {
+      if (mask and state.mask != 0) {
+        val buf = node.getPseudoBuffer(state.mask)
+        if (buf.capacity() >= StyleKeys.PSEUDO_SET_MASK_HIGH + 8) {
+          val setLow = buf.getLong(StyleKeys.PSEUDO_SET_MASK_LOW)
+          val setHigh = buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH)
+          if ((setLow and key.low) != 0L || (setHigh and key.high) != 0L) {
+            try {
+              result = buf.getInt(valueKey)
+            } catch (_: Throwable) {
+            }
+          }
+        }
+      }
+    }
+    return result
   }
 
 
@@ -1406,8 +1425,9 @@ class TextEngine(val container: TextContainer) {
 
     val flags = Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
 
-    val color = container.style.resolvedColor
-    // Apply color
+    val colorBase = container.style.resolvedColor
+    // Prefer pseudo-set color values (e.g. :pressed) when present
+    val color = resolvePseudoInt(StyleKeys.FONT_COLOR, StateKeys.FONT_COLOR, colorBase)
     if (color != 0) {
       spannable.setSpan(
         ForegroundColorSpan(color), start, end, flags
@@ -1419,13 +1439,15 @@ class TextEngine(val container: TextContainer) {
     // via ViewUtils/mBackground — adding a BackgroundColorSpan creates a
     // redundant colored rect behind the text glyphs ("cutout" artifact).
     if (container.node.view == null) {
-      val bgColor = container.style.resolvedBackgroundColor
+      val bgBase = container.style.resolvedBackgroundColor
+      val bgColor = resolvePseudoInt(StyleKeys.BACKGROUND_COLOR, StateKeys.BACKGROUND_COLOR, bgBase)
       if (bgColor != 0 && ((bgColor shr 24) and 0xFF) != 0) {
-        spannable.setSpan(Spans.BackgroundColorSpan(bgColor), start, end, flags)
+        spannable.setSpan(android.text.style.BackgroundColorSpan(bgColor), start, end, flags)
       }
     }
 
-    val fontSize = container.style.resolvedFontSize
+    val fontSizeBase = container.style.resolvedFontSize
+    val fontSize = resolvePseudoInt(StyleKeys.FONT_SIZE, StateKeys.FONT_SIZE, fontSizeBase)
 
     // Apply font size (convert SP -> px and apply as absolute px to respect
     // system font scaling). Use dip=false because we're passing px.
@@ -1659,7 +1681,7 @@ class TextEngine(val container: TextContainer) {
         }
 
         child is TextNode -> {
-          composed.append(child.attributed())
+          composed.append(child.attributed(true))
         }
 
         child.view is TextContainer -> {

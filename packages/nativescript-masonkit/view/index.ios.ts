@@ -55,9 +55,18 @@ export class View extends ViewBase {
       layout = children.objectAtIndex(i);
       const x = layout.x;
       const y = layout.y;
-      const width = x + layout.width;
-      const height = y + layout.height;
-      View.layoutChild(this as never, child as never, x, y, width, height);
+      const w = layout.width;
+      const h = layout.height;
+
+      // Measure the child so NativeScript's layout system is satisfied
+      const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      // View.measureChild(this as never, child as never, wSpec, hSpec);
+
+      // Use child.layout() directly — Mason already computed final positions
+      // including margins. View.layoutChild would double-count margins and
+      // override Mason's alignment.
+      (child as any).layout(x, y, x + w, y + h);
       i++;
     }
   }
@@ -139,7 +148,7 @@ export class View extends ViewBase {
   }
 
   _setNativeViewFrame(nativeView: any, frame: CGRect): void {
-    nativeView.frame = frame;
+    // nativeView.frame = frame;
   }
 
   // @ts-ignore

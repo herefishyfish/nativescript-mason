@@ -1027,8 +1027,8 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     NSCMason.shared.setDeviceScale(Float(UIScreen.main.scale))
     super.viewDidLoad()
     // Add a simple demo picker at the top and the Mason body below it
-    let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle"])
-    demoPicker.selectedSegmentIndex = 7
+    let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle","Shadow","Display"])
+    demoPicker.selectedSegmentIndex = 5
     demoPicker.addTarget(self, action: #selector(demoChanged(_:)), for: .valueChanged)
     demoPicker.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(demoPicker)
@@ -1118,6 +1118,10 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     case 7:
       //renderSuperellipseDemo(body)
       renderPseudoDemo(body)
+    case 8:
+      renderShadowDemo(body)
+    case 9:
+      renderDisplayDemo(body)
     default:
       renderSuperellipseDemo(body)
     }
@@ -1153,6 +1157,66 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     body.addView(root)
     
    // body.computeWithSize(scale * Float( self.body.bounds.width), scale * Float( self.body.bounds.height))
+  }
+
+  // MARK: - Shadow Demo
+
+  func renderShadowDemo(_ parent: MasonElement) {
+    let v = mason.createView()
+    v.display = .Flex
+    v.flexDirection = .Column
+    v.style.background = "linear-gradient(to right, rgb(255,53,26), rgb(0,235,235))"
+    v.style.borderRadius = "0 50% 0 0"
+    v.style.boxShadow = "3 5 5 black"
+    v.style.borderLeft = "2 rgb(0,235,235) dotted"
+    v.style.borderTop = "2 rgb(255,53,26) dashed"
+    v.style.setSizeWidth(MasonDimension.Points(toPx(150)))
+    v.style.setSizeHeight(MasonDimension.Points(toPx(150)))
+    v.style.marginTop = .Percent(0.5)
+    v.style.marginLeft = .Points(toPx(50))
+
+    parent.addView(v)
+  }
+  
+  func renderDisplayDemo(_ parent: MasonElement) {
+    let container = mason.createView()
+    container.configure { style in
+      style.display = .Block
+      style.padding = MasonRect(uniform: .Points(toPx(16)))
+      style.background = "#FFFFFF"
+    }
+
+    let demo = mason.createView()
+    demo.display = .Flex
+    demo.flexDirection = .Column
+    demo.style.background = "linear-gradient(to right, rgb(255,53,26), rgb(0,235,235))"
+    demo.style.borderRadius = "0 50% 0 0"
+    demo.style.boxShadow = "3 5 5 black"
+    demo.style.borderLeft = "2 rgb(0,235,235) dotted"
+    demo.style.borderTop = "2 rgb(255,53,26) dashed"
+    demo.style.setSizeWidth(MasonDimension.Points(toPx(150)))
+    demo.style.setSizeHeight(MasonDimension.Points(toPx(150)))
+
+    let toggle = mason.createButton()
+    toggle.textContent = "Hide"
+    toggle.configure { style in
+      style.marginTop = .Points(toPx(12))
+      style.textAlign = .Left
+    }
+
+    toggle.addEventListener("click") { _ in
+      if demo.style.display == .None {
+        demo.style.display = .Flex
+        toggle.textContent = "Hide"
+      } else {
+        demo.style.display = .None
+        toggle.textContent = "Show"
+      }
+    }
+
+    container.addView(demo)
+    container.addView(toggle)
+    parent.addView(container)
   }
   
   
@@ -2396,7 +2460,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     let container = mason.createView()
     container.configure { style in
       style.display = .Block
-      style.padding = MasonRect(uniform: .Points(toPx(16)))
+     style.padding = MasonRect(uniform: .Points(toPx(16)))
       style.background = "#FFFFFF"
     }
 
@@ -2422,12 +2486,10 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       radius: String? = nil,
       paddingH: Float = 16,
       paddingV: Float = 10,
-      fullWidth: Bool = true
     ) -> Button {
       let btn = mason.createButton()
       btn.textContent = label
       btn.configure { style in
-        style.display = fullWidth ? .Block : .InlineBlock
         if let bg = bg { style.background = bg }
         if let fg = fg { style.color = self.argb(fg) }
         if let border = border { style.border = border }
@@ -2516,7 +2578,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     let pill = styledButton("Subscribe",
       bg: "#7C3AED", fg: "#FFFFFF",
       border: "0 solid #7C3AED", radius: "999",
-      paddingH: 24, paddingV: 10, fullWidth: false)
+      paddingH: 24, paddingV: 10)
     container.addView(pill)
 
     let pillHover = pill.node.preparePseudoBuffer(PseudoState.hover.rawValue)

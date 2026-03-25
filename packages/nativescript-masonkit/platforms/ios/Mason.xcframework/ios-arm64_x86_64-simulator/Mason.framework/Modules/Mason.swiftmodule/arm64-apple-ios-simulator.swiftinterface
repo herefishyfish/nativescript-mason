@@ -242,7 +242,7 @@ final public class CSSBorderRenderer {
     }
     public static func == (a: Mason.CSSBorderRenderer.CornerRadius, b: Mason.CSSBorderRenderer.CornerRadius) -> Swift.Bool
   }
-  public struct BorderRadius {
+  public struct BorderRadius : Swift.Equatable {
     public var topLeft: Mason.CSSBorderRenderer.CornerRadius
     public var topRight: Mason.CSSBorderRenderer.CornerRadius
     public var bottomRight: Mason.CSSBorderRenderer.CornerRadius
@@ -250,6 +250,7 @@ final public class CSSBorderRenderer {
     public static var zero: Mason.CSSBorderRenderer.BorderRadius {
       get
     }
+    public static func == (a: Mason.CSSBorderRenderer.BorderRadius, b: Mason.CSSBorderRenderer.BorderRadius) -> Swift.Bool
   }
   final public var top: Mason.CSSBorderRenderer.BorderSide
   final public var right: Mason.CSSBorderRenderer.BorderSide
@@ -558,6 +559,7 @@ extension Mason.TextContainer {
   @objc public func printTree(_ node: Mason.MasonNode)
   @objc public func createTextNode() -> Mason.MasonNode
   @objc public func createImageNode() -> Mason.MasonNode
+  @objc public func createButtonNode() -> Mason.MasonNode
   @objc public func createLineBreakNode() -> Mason.MasonNode
   @objc public func createListView(isOrdered: Swift.Bool = false) -> Mason.MasonList
   public func createListItemNode(measure: @escaping Mason.MasonNode.MeasureFunc) -> Mason.MasonNode

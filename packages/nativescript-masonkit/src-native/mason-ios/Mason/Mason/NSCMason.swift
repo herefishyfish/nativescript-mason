@@ -238,6 +238,10 @@ public class NSCMason: NSObject {
   public func createImageNode() -> MasonNode {
     return MasonNode(masonImage: self)
   }
+
+  public func createButtonNode() -> MasonNode {
+    return MasonNode(masonButton: self)
+  }
   
   public func createLineBreakNode() -> MasonNode {
     return MasonNode(masonLineBreak: self)

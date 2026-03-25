@@ -192,10 +192,10 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(danger, matchWrap())
 
     danger.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#B91C1C"))
+      setBg("#B91C1C".toColorInt())
     }
     danger.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
-      setBg(Color.parseColor("#991B1B"))
+      setBg("#991B1B".toColorInt())
     }
 
     // ===============================================================
@@ -211,10 +211,10 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(success, matchWrap())
 
     success.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#047857"))
+      setBg("#047857".toColorInt())
     }
     success.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
-      setBg(Color.parseColor("#065F46"))
+      setBg("#065F46".toColorInt())
     }
 
     // ===============================================================
@@ -231,10 +231,10 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(pill, matchWrap())
 
     pill.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#6D28D9"))
+      setBg("#6D28D9".toColorInt())
     }
     pill.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
-      setBg(Color.parseColor("#5B21B6"))
+      setBg("#5B21B6".toColorInt())
       setBorderRadius(12f * density)
     }
 
@@ -251,7 +251,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(ghost, matchWrap())
 
     ghost.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#F3F4F6"))
+      setBg("#F3F4F6".toColorInt())
       setFontColor(Color.parseColor("#111827"))
     }
     ghost.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {

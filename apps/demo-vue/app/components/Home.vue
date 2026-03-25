@@ -6,80 +6,21 @@
       </ActionBar>
       <div class="page">
 
-        <!-- Hero -->
-        <div class="hero">
-          <p style="font-size: 28; font-weight: bold; color: white;">NativeScript Mason</p>
-          <p style="font-size: 14; color: rgba(255,255,255,0.75); margin-top: 4;">CSS Layout Engine</p>
-        </div>
 
-        <!-- Demo Grid -->
-        <div class="demo-grid">
-
-          <div class="demo-card" @tap="navigate('flexbox')">
-            <div class="icon-circle" style="background-color: #FF6B6B;">
-              <p class="icon-text">F</p>
-            </div>
-            <p class="card-title">Flexbox</p>
-            <p class="card-desc">Direction, wrap, alignment</p>
-          </div>
-
-          <div class="demo-card" @tap="navigate('grid')">
-            <div class="icon-circle" style="background-color: #00B894;">
-              <p class="icon-text">G</p>
-            </div>
-            <p class="card-title">Grid</p>
-            <p class="card-desc">Templates, areas, spans</p>
-          </div>
-
-          <div class="demo-card" @tap="navigate('shadows')">
-            <div class="icon-circle" style="background-color: #6C5CE7;">
-              <p class="icon-text">S</p>
-            </div>
-            <p class="card-title">Shadows</p>
-            <p class="card-desc">Box shadow, inset, glow</p>
-          </div>
-
-          <div class="demo-card" @tap="navigate('transforms')">
-            <div class="icon-circle" style="background-color: #0984E3;">
-              <p class="icon-text">T</p>
-            </div>
-            <p class="card-title">Transforms</p>
-            <p class="card-desc">Rotate, scale, skew</p>
-          </div>
-
-          <div class="demo-card" @tap="navigate('typography')">
-            <div class="icon-circle" style="background-color: #E84393;">
-              <p class="icon-text">A</p>
-            </div>
-            <p class="card-title">Typography</p>
-            <p class="card-desc">Fonts, weights, styles</p>
-          </div>
-
-          <div class="demo-card" @tap="navigate('spacing')">
-            <div class="icon-circle" style="background-color: #FDCB6E;">
-              <p class="icon-text">S</p>
-            </div>
-            <p class="card-title">Spacing</p>
-            <p class="card-desc">Padding, margin, sizing</p>
-          </div>
-
-          <div class="demo-card" @tap="navigate('showcase')">
-            <div class="icon-circle" style="background-color: #2D3436;">
-              <p class="icon-text">*</p>
-            </div>
-            <p class="card-title">Showcase</p>
-            <p class="card-desc">Combined feature demo</p>
-          </div>
-
-          <div class="demo-card" @tap="navigate('grid-area')">
-            <div class="icon-circle" style="background-color: #636E72;">
-              <p class="icon-text">A</p>
-            </div>
-            <p class="card-title">Grid Areas</p>
-            <p class="card-desc">Named grid areas</p>
-          </div>
-
-        </div>
+        <view style="
+        flex-direction: column;
+        background: linear-gradient(to right, rgb(255,53,26), rgb(0,235,235));
+        border-radius: 0 50% 0 0;
+        box-shadow: 3 5 5 black;
+        border-left: 2 rgb(0,235,235) dotted;
+        border-top: 2 rgb(255,53,26) dashed;
+        margin-top: 50%;
+        transform: translate(-50%, -50%);
+        margin-left: 50%;
+        width: 150;
+        height: 150;
+      ">
+        </view>
 
       </div>
     </Page>
@@ -96,6 +37,8 @@ import TypographyDemo from '~/plugin-demos/TypographyDemo.vue';
 import SpacingDemo from '~/plugin-demos/SpacingDemo.vue';
 import ShowcaseDemo from '~/plugin-demos/ShowcaseDemo.vue';
 import GridArea from '~/plugin-demos/Grid-Area.vue';
+import WebSamplesIndex from '~/web-samples/WebSamplesIndex.vue';
+import ProfessionList from '~/web-samples/ProfessionList.vue';
 
 const navigate = (demo: string) => {
   const demos = {
@@ -107,6 +50,8 @@ const navigate = (demo: string) => {
     spacing: SpacingDemo,
     showcase: ShowcaseDemo,
     'grid-area': GridArea,
+    'web-samples': WebSamplesIndex,
+    professions: ProfessionList,
   };
   $navigateTo(demos[demo]);
 };

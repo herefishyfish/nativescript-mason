@@ -128,6 +128,28 @@ func parseLength(_ style: MasonStyle, _ value: String, scale: Float = NSCMason.s
 // Split regex
 private let splitRegex = try! NSRegularExpression(pattern: "\\s+", options: [])
 
+/// Split on top-level whitespace but preserve parentheses groups (e.g. "rgba(0, 1, 2)").
+func splitTopLevelWhitespace(_ input: String) -> [String] {
+  var result: [String] = []
+  var current = ""
+  var depth = 0
+  for ch in input {
+    if ch == "(" { depth += 1; current.append(ch); continue }
+    if ch == ")" { depth = max(0, depth - 1); current.append(ch); continue }
+
+    if ch.isWhitespace && depth == 0 {
+      let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty { result.append(trimmed) }
+      current = ""
+    } else {
+      current.append(ch)
+    }
+  }
+  let finalTrim = current.trimmingCharacters(in: .whitespacesAndNewlines)
+  if !finalTrim.isEmpty { result.append(finalTrim) }
+  return result
+}
+
 
 // MARK: - Parsing
 
@@ -245,9 +267,11 @@ extension CSSBorderRenderer {
     var style: BorderStyle? = nil
     var color: UIColor? = nil
 
-    let tokens = value.split(separator: " ").map { String($0).lowercased() }
-    for t in tokens {
-      if let s = BorderStyle(name: t) { style = s; continue }
+    let tokens = splitTopLevelWhitespace(value)
+    for raw in tokens {
+      let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+      let lower = t.lowercased()
+      if let s = BorderStyle(name: lower) { style = s; continue }
       if let w = parseLengthPercentage(t) { widths.append(w); continue }
       if let c = parseColor(t) { color = c; continue }
     }
@@ -257,27 +281,49 @@ extension CSSBorderRenderer {
   
   
   static func parseBorderRadius(_ style: MasonStyle, _ value: String) {
-      let parts = value
-          .split(whereSeparator: { $0.isWhitespace })
-          .compactMap { parseLengthPercentage(String($0)) }
+      // Support horizontal/vertical slash syntax: e.g. "10px 20px / 5px 6px"
+      let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+      let horizPart: String
+      let vertPart: String
+      if let slashRange = cleaned.range(of: "/") {
+        horizPart = cleaned[..<slashRange.lowerBound].trimmingCharacters(in: .whitespaces)
+        vertPart = cleaned[slashRange.upperBound...].trimmingCharacters(in: .whitespaces)
+      } else {
+        horizPart = cleaned
+        vertPart = ""
+      }
 
-      // Map 1-4 values to corners per CSS spec
-      let corners: [(MasonLengthPercentage, MasonLengthPercentage)]
-      switch parts.count {
-      case 1:
-        corners = Array(repeating: (parts[0], parts[0]), count: 4)
-      case 2:
-        corners = [(parts[0], parts[0]), (parts[1], parts[1]),
-                   (parts[0], parts[0]), (parts[1], parts[1])]
-      case 3:
-        corners = [(parts[0], parts[0]), (parts[1], parts[1]),
-                   (parts[2], parts[2]), (parts[1], parts[1])]
-      case 4:
-        corners = [(parts[0], parts[0]), (parts[1], parts[1]),
-                   (parts[2], parts[2]), (parts[3], parts[3])]
-      default:
+      let hTokens = horizPart.split(whereSeparator: { $0.isWhitespace }).compactMap { parseLengthPercentage(String($0)) }
+      let vTokens = vertPart.isEmpty ? [] : vertPart.split(whereSeparator: { $0.isWhitespace }).compactMap { parseLengthPercentage(String($0)) }
+
+      func mapTokens(_ tokens: [MasonLengthPercentage]) -> [(MasonLengthPercentage, MasonLengthPercentage)]? {
+        switch tokens.count {
+        case 1:
+          return Array(repeating: (tokens[0], tokens[0]), count: 4)
+        case 2:
+          return [(tokens[0], tokens[0]), (tokens[1], tokens[1]), (tokens[0], tokens[0]), (tokens[1], tokens[1])]
+        case 3:
+          return [(tokens[0], tokens[0]), (tokens[1], tokens[1]), (tokens[2], tokens[2]), (tokens[1], tokens[1])]
+        case 4:
+          return [(tokens[0], tokens[0]), (tokens[1], tokens[1]), (tokens[2], tokens[2]), (tokens[3], tokens[3])]
+        default:
+          return nil
+        }
+      }
+
+      guard let hMapped = mapTokens(hTokens) else { return }
+      let vMappedPairs: [(MasonLengthPercentage, MasonLengthPercentage)]
+      if vTokens.isEmpty {
+        vMappedPairs = hMapped
+      } else if let vm = mapTokens(vTokens) {
+        // vm currently pairs each token with itself; we need separate horizontal/vertical
+        // We'll combine: hMapped contains (h,h) pairs; vm contains (v,v) pairs
+        vMappedPairs = zip(hMapped, vm).map { (hpair, vpair) in (hpair.0, vpair.0) }
+      } else {
         return
       }
+
+      let corners = vMappedPairs
 
       // Write to style buffer and update struct
       let cornerKeys: [(xType: Int, xValue: Int, yType: Int, yValue: Int, exp: Int)] = [

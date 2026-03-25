@@ -571,7 +571,6 @@ public class MasonStyle: NSObject {
   }
   
   internal var isValueInitialized: Bool  = false
-  internal var isTextValueInitialized: Bool = false
   
   private weak var styleChangeListener: StyleChangeListener? = nil
   
@@ -2725,17 +2724,26 @@ public class MasonStyle: NSObject {
   public var boxShadow: String = "" {
     didSet {
       boxShadows = ShadowParser.parseBoxShadow(style: self, value: boxShadow)
+      print("[mason][ios] MasonStyle.boxShadow set -> raw: \(boxShadow) parsedCount: \(boxShadows.count)")
       
       if let view = node.view {
         let hasOutsetShadows = boxShadows.contains { !$0.inset }
         
         if hasOutsetShadows {
           // Add shadow layer to superview's layer so it can extend beyond view bounds
-          // without affecting the view's own clipping
+          // without affecting the view's own clipping. Insert it BELOW the child's
+          // layer so the shadow appears above the parent's background but beneath
+          // the child's content (matches browser behavior).
           if let superview = view.superview {
             if !shadowLayerAdded || shadowLayerParent !== superview.layer {
               mShadowLayer.removeFromSuperlayer()
-              superview.layer.insertSublayer(mShadowLayer, at: 0)
+              // Try to insert below the child's layer to sit between parent and child
+              if let childLayer = view.layer as CALayer?, superview.layer.sublayers?.contains(childLayer) == true {
+                superview.layer.insertSublayer(mShadowLayer, below: childLayer)
+              } else {
+                // Fallback to insert at index 0 if child's layer can't be located
+                superview.layer.insertSublayer(mShadowLayer, at: 0)
+              }
               shadowLayerAdded = true
               shadowLayerParent = superview.layer
             }
@@ -2766,7 +2774,11 @@ public class MasonStyle: NSObject {
     if !shadowLayerAdded || shadowLayerParent !== view.superview?.layer {
       if let superview = view.superview {
         mShadowLayer.removeFromSuperlayer()
-        superview.layer.insertSublayer(mShadowLayer, at: 0)
+        if let childLayer = view.layer as CALayer?, superview.layer.sublayers?.contains(childLayer) == true {
+          superview.layer.insertSublayer(mShadowLayer, below: childLayer)
+        } else {
+          superview.layer.insertSublayer(mShadowLayer, at: 0)
+        }
         shadowLayerAdded = true
         shadowLayerParent = superview.layer
       }
@@ -4027,7 +4039,7 @@ extension MasonStyle {
     var parent = node.parent
     while (parent != nil) {
       // Check if parent has text values initialized
-      if (parent?.style.isTextValueInitialized == true) {
+      if (parent?.style.isValueInitialized == true) {
         return parent?.style
       }
       parent = parent?.parent
@@ -4177,7 +4189,7 @@ extension MasonStyle {
     // PERCENT == 1
     if (type == StyleState.SET) {
       let parentFontSize = {
-        if let parent = node.parent as? MasonTextNode, parent.style.isTextValueInitialized  {
+        if let parent = node.parent as? MasonTextNode, parent.style.isValueInitialized  {
           return parent.style.resolvedFontSize
         }else {
           return Constants.DEFAULT_FONT_SIZE

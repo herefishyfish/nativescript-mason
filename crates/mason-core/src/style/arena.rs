@@ -1,6 +1,6 @@
 use crate::style::utils::{set_style_data_i32, set_style_data_u32};
 use crate::style::{DisplayMode, StyleKeys};
-use crate::utils::{display_mode_to_enum, display_to_enum};
+use crate::utils::{display_mode_to_enum, display_to_enum, text_align_to_enum};
 use crate::Style;
 #[cfg(target_vendor = "apple")]
 use objc2::AllocAnyThread;
@@ -8,7 +8,7 @@ use objc2::AllocAnyThread;
 use objc2_foundation::NSMutableData;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use taffy::Display;
+use taffy::{Display, TextAlign};
 
 // always keep aligned 4
 pub const STYLE_BUFFER_SIZE: usize = 560;
@@ -23,6 +23,7 @@ pub enum Handle {
     Grid,
     List,
     ListItem,
+    Button,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -45,6 +46,7 @@ impl StyleHandle {
     pub const DEFAULT_GRID: Self = StyleHandle::new(Handle::Grid);
     pub const DEFAULT_LIST: Self = StyleHandle::new(Handle::List);
     pub const DEFAULT_LIST_ITEM: Self = StyleHandle::new(Handle::ListItem);
+    pub const DEFAULT_BUTTON: Self = StyleHandle::new(Handle::Button);
 
     #[inline]
     pub fn index(self) -> usize {
@@ -122,8 +124,8 @@ impl StyleBuffer {
     }
 }
 
-/// Number of built-in default handles (Default, Inline, Img, Flex, Grid, List, ListItem).
-const NUM_DEFAULTS: usize = 7;
+/// Number of built-in default handles (Default, Inline, Img, Flex, Grid, List, ListItem, Button).
+const NUM_DEFAULTS: usize = 8;
 
 #[derive(Debug)]
 pub struct StyleArena {
@@ -222,6 +224,22 @@ impl StyleArena {
         }
         list_item.ref_count = 1;
 
+        let mut button = StyleBuffer::new(default_data);
+        {
+            let data = img.mut_bytes();
+            Style::init_default_data(data);
+            // Center
+            crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_REPLACED, 1);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY_MODE,
+                display_mode_to_enum(DisplayMode::Inline),
+            );
+            set_style_data_i32(data, StyleKeys::REF_COUNT, 1);
+        }
+        button.ref_count = 1;
+
         // Capture pristine snapshots of each default buffer before any JS writes
         let mut default_snapshots = [[0u8; STYLE_BUFFER_SIZE]; NUM_DEFAULTS];
         default_snapshots[Handle::Default as usize].copy_from_slice(default_buffer.bytes());
@@ -231,6 +249,7 @@ impl StyleArena {
         default_snapshots[Handle::Grid as usize].copy_from_slice(grid.bytes());
         default_snapshots[Handle::List as usize].copy_from_slice(list.bytes());
         default_snapshots[Handle::ListItem as usize].copy_from_slice(list_item.bytes());
+        default_snapshots[Handle::Button as usize].copy_from_slice(button.bytes());
 
         Self {
             buffers: vec![default_buffer, inline, img, flex, grid, list, list_item],
@@ -278,6 +297,7 @@ impl StyleArena {
             Handle::Grid => StyleHandle::DEFAULT_GRID,
             Handle::List => StyleHandle::DEFAULT_LIST,
             Handle::ListItem => StyleHandle::DEFAULT_LIST_ITEM,
+            Handle::Button => StyleHandle::DEFAULT_BUTTON,
         }
     }
 

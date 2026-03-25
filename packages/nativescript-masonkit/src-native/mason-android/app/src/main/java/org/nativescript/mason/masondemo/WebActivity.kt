@@ -46,7 +46,6 @@ class WebActivity : AppCompatActivity() {
   }
 
   lateinit var body: Scroll
-  lateinit var root: View
   lateinit var contentRoot: View
   lateinit var container: View
   lateinit var demoList: ListView
@@ -64,7 +63,8 @@ class WebActivity : AppCompatActivity() {
     "FAQ",
     "Grid Demo",
     "Gallery",
-    "Hacker News"
+    "Hacker News",
+    "Box Shadow"
   )
 
   private fun clearContent() {
@@ -97,6 +97,7 @@ class WebActivity : AppCompatActivity() {
     body.style.padding = Rect.withPx(0f, 0f, 0f, 0f)
     contentRoot.style.display = Display.None
     demoList.style.display = Display.Flex
+    demoList.reload()
   }
 
   private fun showDemo(index: Int) {
@@ -109,6 +110,7 @@ class WebActivity : AppCompatActivity() {
       3 -> gridDemoSample()
       4 -> galleryDemoSample()
       5 -> hackerNewsSample()
+      6 -> boxShadowSample()
     }
   }
 
@@ -121,18 +123,16 @@ class WebActivity : AppCompatActivity() {
     container.style.size = Size(Dimension.Percent(1f), Dimension.Percent(1f))
 
     body = mason.createScrollView(this)
-    root = mason.createView(this)
     contentRoot = mason.createView(this)
-    body.addView(root)
     body.style.overflowY = Overflow.Scroll
 
     body.addView(container)
 
     enableEdgeToEdge()
     setContentView(body)
-    ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+    ViewCompat.setOnApplyWindowInsetsListener(body) { v, insets ->
       val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      root.style.setPadding(
+      body.style.setPadding(
         systemBars.left, systemBars.top, systemBars.right, systemBars.bottom
       )
       insets
@@ -141,7 +141,7 @@ class WebActivity : AppCompatActivity() {
     // ── Demo selection list ─────────────────────────────────────────────
     demoList = mason.createListView(this)
     demoList.configure {
-      it.size = Size(Dimension.Percent(1f), Dimension.Percent(1f))
+      it.size = Size(Dimension.Percent(1f), Dimension.Points(resources.displayMetrics.heightPixels.toFloat()))
     }
     demoList.count = demoNames.size
 
@@ -192,7 +192,7 @@ class WebActivity : AppCompatActivity() {
 
     // contentRoot starts hidden; shown when a demo is selected
     contentRoot.style.display = Display.None
-    root.addView(contentRoot)
+    body.addView(contentRoot)
 
     // Add a back button area above contentRoot
     showDemoList()
@@ -759,6 +759,28 @@ class WebActivity : AppCompatActivity() {
 
     pricingSection.addView(row)
     contentRoot.append(pricingSection)
+  }
+
+  private fun boxShadowSample() {
+    clearContent()
+    contentRoot.style.display = Display.Flex
+    contentRoot.style.background = "#FAFBFC"
+
+    val demo = mason.createView(this)
+    demo.display = Display.Flex
+    demo.flexDirection = FlexDirection.Column
+    demo.style.background = "linear-gradient(to right, rgb(255,53,26), rgb(0,235,235))"
+    demo.style.borderRadius = "0 50% 0 0"
+    demo.style.boxShadow = "3 5 5 black"
+    demo.style.borderLeft = "2 rgb(0,235,235) dotted"
+    demo.style.borderTop = "2 rgb(255,53,26) dashed"
+    demo.style.setSizeWidth(toPx(150f), 1.toByte())
+    demo.style.setSizeHeight(toPx(150f), 1.toByte())
+    // position roughly in the middle area for visibility
+    demo.style.marginTop = LengthPercentageAuto.Points(toPx(200f))
+    demo.style.marginLeft = LengthPercentageAuto.Points(toPx(100f))
+
+    contentRoot.append(demo)
   }
 
   private fun faqSample() {

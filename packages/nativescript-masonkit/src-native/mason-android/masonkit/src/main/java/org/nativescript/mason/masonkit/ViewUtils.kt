@@ -1,10 +1,10 @@
 package org.nativescript.mason.masonkit
 
 import android.graphics.Canvas
-import android.graphics.Paint
 import android.os.Build
 import android.view.ViewGroup
 import androidx.core.graphics.withSave
+import androidx.core.graphics.withTranslation
 
 class ViewUtils {
   companion object {
@@ -32,18 +32,17 @@ class ViewUtils {
             val outsetShadows = childStyle.boxShadows.filter { !it.inset }
             if (outsetShadows.isEmpty()) continue
 
-            canvas.save()
-            canvas.translate(child.left.toFloat(), child.top.toFloat())
-            childStyle.mBorderRenderer.updateCache(child.width.toFloat(), child.height.toFloat())
-            childStyle.mBoxShadowRenderer.drawOutsetShadows(
-              child,
-              canvas,
-              child.width.toFloat(),
-              child.height.toFloat(),
-              childStyle.mBorderRenderer,
-              forceLegacy = true  // Use bitmap-based rendering from parent context
-            )
-            canvas.restore()
+            canvas.withTranslation(child.left.toFloat(), child.top.toFloat()) {
+              childStyle.mBorderRenderer.updateCache(child.width.toFloat(), child.height.toFloat())
+              childStyle.mBoxShadowRenderer.drawOutsetShadows(
+                child,
+                this,
+                child.width.toFloat(),
+                child.height.toFloat(),
+                childStyle.mBorderRenderer,
+                forceLegacy = true  // Use bitmap-based rendering from parent context
+              )
+            }
           }
         }
         return
@@ -56,18 +55,21 @@ class ViewUtils {
         val outsetShadows = childStyle.boxShadows.filter { !it.inset }
         if (outsetShadows.isEmpty()) continue
 
-        canvas.save()
-        canvas.translate(child.left.toFloat(), child.top.toFloat())
-        childStyle.mBorderRenderer.updateCache(child.width.toFloat(), child.height.toFloat())
-        childStyle.mBoxShadowRenderer.drawOutsetShadows(
-          child,
-          canvas,
-          child.width.toFloat(),
-          child.height.toFloat(),
-          childStyle.mBorderRenderer,
-          forceLegacy = true  // Use bitmap-based rendering from parent context
-        )
-        canvas.restore()
+        canvas.withTranslation(child.left.toFloat(), child.top.toFloat()) {
+          android.util.Log.d(
+            "mason",
+            "ViewUtils.drawChildrenOutsetShadows drawing child=${child.javaClass.simpleName} at (${child.left},${child.top}) size=(${child.width}x${child.height})"
+          )
+          childStyle.mBorderRenderer.updateCache(child.width.toFloat(), child.height.toFloat())
+          childStyle.mBoxShadowRenderer.drawOutsetShadows(
+            child,
+            this,
+            child.width.toFloat(),
+            child.height.toFloat(),
+            childStyle.mBorderRenderer,
+            forceLegacy = true  // Use bitmap-based rendering from parent context
+          )
+        }
       }
     }
 
@@ -90,30 +92,29 @@ class ViewUtils {
       style.mBorderRenderer.updateCache(width, height)
 
       val hasRadii = style.mBorderRenderer.hasRadii()
-      val hasBackground = style.mBackground?.let { it.color != null || it.layers.isNotEmpty() } ?: false
+      val hasBackground =
+        style.mBackground?.let { it.color != null || it.layers.isNotEmpty() } ?: false
       val hasBoxShadow = style.boxShadows.isNotEmpty()
 
       // Block 1: Background clipped to outer border-radius (CSS background-clip: border-box)
       if (hasBackground) {
         canvas.withSave {
-          if (hasRadii) {
-            canvas.clipPath(style.mBorderRenderer.getOuterClipPath(width, height))
+          val outerPath = style.mBorderRenderer.getOuterClipPath(width, height)
+          if (!outerPath.isEmpty) {
+            canvas.clipPath(outerPath)
           }
 
           style.mBackground?.let { background ->
             background.color?.let { color ->
-              val bgPaint = Paint().apply {
-                this.style = Paint.Style.FILL
-                this.color = color
-              }
-              canvas.drawRect(0f, 0f, width, height, bgPaint)
+              background.bgPaint.color = color
+              canvas.drawRect(0f, 0f, width, height, background.bgPaint)
             }
 
             background.layers.forEach { layer ->
               canvas.withSave {
                 // pass measured bounds so clip uses the real size instead of the
                 // potentially-zero computedWidth/Height stored on the node
-                Style.applyClip(canvas, layer.clip, style.node, width, height)
+                Style.applyClip(canvas, layer.clip, style, width, height)
                 drawBackground(view.context, view, layer, canvas, width.toInt(), height.toInt())
               }
             }
@@ -123,7 +124,13 @@ class ViewUtils {
 
       // Block 1.5: Inset box shadows (render on top of background)
       if (hasBoxShadow) {
-        style.mBoxShadowRenderer.drawInsetShadows(view, canvas, width, height, style.mBorderRenderer)
+        style.mBoxShadowRenderer.drawInsetShadows(
+          view,
+          canvas,
+          width,
+          height,
+          style.mBorderRenderer
+        )
       }
 
       // Border draws freely — the path itself is rounded, no clip needed

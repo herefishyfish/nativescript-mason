@@ -888,7 +888,7 @@ export class Style {
       } else {
         this.isDirty = this.isDirty | StateKeys.DISPLAY_MODE.bits;
       }
-      this.setOrAppendState(StateKeys.DISPLAY);
+      this.setOrAppendState(StateKeys.DISPLAY.and(StateKeys.DISPLAY_MODE));
     }
   }
 
@@ -3477,6 +3477,7 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setBoxShadow(this.nativeView, value);
     }
