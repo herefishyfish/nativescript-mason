@@ -92,7 +92,10 @@
     </activity>
     <activity
       android:name=".PseudoDemoActivity"
-      android:exported="false" />
+      android:exported="true" />
+    <activity
+      android:name=".MinimalReproActivity"
+      android:exported="true" />
     <activity
       android:name=".NumericDemoActivity"
       android:exported="false" />

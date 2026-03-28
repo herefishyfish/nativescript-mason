@@ -2101,6 +2101,44 @@ impl Tree {
             }
         };
 
+        // Compute content-box dimensions for children.  Block-level
+        // containers resolve children's percentage sizes against the content
+        // box (border-box minus padding+border).  Inline containers do not
+        // establish a content box for this purpose and pass through the
+        // parent's dimensions unchanged.
+        let is_inline_container = matches!(style.display_mode(), DisplayMode::Inline);
+        let content_box_child_base = if !is_inline_container {
+            let content_box_parent_size = Size {
+                width: _node_size.width
+                    .or(known_dimensions.width)
+                    .map(|w| (w - pb.left - pb.right).max(0.0)),
+                height: _node_size.height
+                    .or(known_dimensions.height)
+                    .map(|h| (h - pb.top - pb.bottom).max(0.0)),
+            };
+            let content_box_available_space = Size {
+                width: match available_space.width {
+                    AvailableSpace::Definite(w) => AvailableSpace::Definite((w - pb.left - pb.right).max(0.0)),
+                    other => other,
+                },
+                height: match available_space.height {
+                    AvailableSpace::Definite(h) => AvailableSpace::Definite((h - pb.top - pb.bottom).max(0.0)),
+                    other => other,
+                },
+            };
+            LayoutInput {
+                known_dimensions: Size::NONE,
+                parent_size: content_box_parent_size,
+                available_space: content_box_available_space,
+                ..inputs
+            }
+        } else {
+            LayoutInput {
+                known_dimensions: Size::NONE,
+                ..inputs
+            }
+        };
+
         if is_text_container {
             let sizing_mode = match inputs.available_space.width {
                 AvailableSpace::Definite(_) => SizingMode::InherentSize,
@@ -2108,9 +2146,8 @@ impl Tree {
             };
 
             let child_inputs = LayoutInput {
-                known_dimensions: Size::NONE,
                 sizing_mode,
-                ..inputs
+                ..content_box_child_base
             };
 
             // Phase 1: Measure non-pure-inline children first.
@@ -2125,7 +2162,7 @@ impl Tree {
                 if self.is_inline_level(child_id) {
                     self.measure_inline_child(child_id, child_inputs);
                 } else {
-                    self.measure_block_child(child_id, child_inputs.available_space.width, inputs);
+                    self.measure_block_child(child_id, child_inputs.available_space.width, content_box_child_base);
                 }
             }
 
@@ -2161,6 +2198,9 @@ impl Tree {
                     // Measure callback must be invoked outside of long-held
                     // tree locks; we copy the measure earlier to enforce this.
                     let meas = measure.measure(measure_known, available_space);
+                    #[cfg(test)]
+                    eprintln!("MEASURE_TRACE node={:?} known={:?} avail={:?} => size={:?}",
+                        node_id, measure_known, available_space, meas);
                     meas
                 },
             );
@@ -2442,16 +2482,15 @@ impl Tree {
         };
 
         let child_inputs = LayoutInput {
-            known_dimensions: Size::NONE,
             sizing_mode,
-            ..inputs
+            ..content_box_child_base
         };
 
         for &child_id in &child_ids {
             if self.is_inline_level(child_id) {
                 self.measure_inline_child(child_id, child_inputs);
             } else {
-                self.measure_block_child(child_id, child_inputs.available_space.width, inputs);
+                self.measure_block_child(child_id, child_inputs.available_space.width, content_box_child_base);
             }
         }
 

@@ -365,6 +365,126 @@ extension CSSBorderRenderer {
       }
   }
 
+  static func parsePaddingShorthand(_ style: MasonStyle, _ value: String) {
+    let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+    if cleaned.isEmpty {
+      style.prepareMut()
+      let zero = MasonLengthPercentage.Points(0)
+      style.setInt8(StyleKeys.PADDING_LEFT_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_LEFT_VALUE, zero.value)
+      style.setInt8(StyleKeys.PADDING_RIGHT_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_RIGHT_VALUE, zero.value)
+      style.setInt8(StyleKeys.PADDING_TOP_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_TOP_VALUE, zero.value)
+      style.setInt8(StyleKeys.PADDING_BOTTOM_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_BOTTOM_VALUE, zero.value)
+      style.setOrAppendState(.padding)
+      return
+    }
+
+    let tokens = splitTopLevelWhitespace(cleaned).compactMap { parseLengthPercentage($0) }
+    if tokens.isEmpty { return }
+
+    let mapped: [MasonLengthPercentage]
+    switch tokens.count {
+    case 1: mapped = [tokens[0], tokens[0], tokens[0], tokens[0]]
+    case 2: mapped = [tokens[0], tokens[1], tokens[0], tokens[1]]
+    case 3: mapped = [tokens[0], tokens[1], tokens[2], tokens[1]]
+    default: mapped = [tokens[0], tokens[1], tokens[2], tokens[3]]
+    }
+
+    style.prepareMut()
+    style.setInt8(StyleKeys.PADDING_LEFT_TYPE, mapped[3].type)
+    style.setFloat(StyleKeys.PADDING_LEFT_VALUE, mapped[3].value)
+    style.setInt8(StyleKeys.PADDING_RIGHT_TYPE, mapped[1].type)
+    style.setFloat(StyleKeys.PADDING_RIGHT_VALUE, mapped[1].value)
+    style.setInt8(StyleKeys.PADDING_TOP_TYPE, mapped[0].type)
+    style.setFloat(StyleKeys.PADDING_TOP_VALUE, mapped[0].value)
+    style.setInt8(StyleKeys.PADDING_BOTTOM_TYPE, mapped[2].type)
+    style.setFloat(StyleKeys.PADDING_BOTTOM_VALUE, mapped[2].value)
+    style.setOrAppendState(.padding)
+  }
+
+  static func parseMarginShorthand(_ style: MasonStyle, _ value: String) {
+    let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+    if cleaned.isEmpty {
+      style.prepareMut()
+      let zero = MasonLengthPercentageAuto.Points(0)
+      style.setInt8(StyleKeys.MARGIN_LEFT_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_LEFT_VALUE, zero.value)
+      style.setInt8(StyleKeys.MARGIN_RIGHT_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_RIGHT_VALUE, zero.value)
+      style.setInt8(StyleKeys.MARGIN_TOP_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_TOP_VALUE, zero.value)
+      style.setInt8(StyleKeys.MARGIN_BOTTOM_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_BOTTOM_VALUE, zero.value)
+      style.setOrAppendState(.margin)
+      return
+    }
+
+    let tokens = splitTopLevelWhitespace(cleaned).compactMap { parseLengthPercentageAuto($0) }
+    if tokens.isEmpty { return }
+
+    let mapped: [MasonLengthPercentageAuto]
+    switch tokens.count {
+    case 1: mapped = [tokens[0], tokens[0], tokens[0], tokens[0]]
+    case 2: mapped = [tokens[0], tokens[1], tokens[0], tokens[1]]
+    case 3: mapped = [tokens[0], tokens[1], tokens[2], tokens[1]]
+    default: mapped = [tokens[0], tokens[1], tokens[2], tokens[3]]
+    }
+
+    style.prepareMut()
+    style.setInt8(StyleKeys.MARGIN_LEFT_TYPE, mapped[3].type)
+    style.setFloat(StyleKeys.MARGIN_LEFT_VALUE, mapped[3].value)
+    style.setInt8(StyleKeys.MARGIN_RIGHT_TYPE, mapped[1].type)
+    style.setFloat(StyleKeys.MARGIN_RIGHT_VALUE, mapped[1].value)
+    style.setInt8(StyleKeys.MARGIN_TOP_TYPE, mapped[0].type)
+    style.setFloat(StyleKeys.MARGIN_TOP_VALUE, mapped[0].value)
+    style.setInt8(StyleKeys.MARGIN_BOTTOM_TYPE, mapped[2].type)
+    style.setFloat(StyleKeys.MARGIN_BOTTOM_VALUE, mapped[2].value)
+    style.setOrAppendState(.margin)
+  }
+
+  static func parseInsetShorthand(_ style: MasonStyle, _ value: String) {
+    let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+    if cleaned.isEmpty {
+      style.prepareMut()
+      let zero = MasonLengthPercentageAuto.Points(0)
+      style.setInt8(StyleKeys.INSET_LEFT_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_LEFT_VALUE, zero.value)
+      style.setInt8(StyleKeys.INSET_RIGHT_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_RIGHT_VALUE, zero.value)
+      style.setInt8(StyleKeys.INSET_TOP_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_TOP_VALUE, zero.value)
+      style.setInt8(StyleKeys.INSET_BOTTOM_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_BOTTOM_VALUE, zero.value)
+      style.setOrAppendState(.inset)
+      return
+    }
+
+    let tokens = splitTopLevelWhitespace(cleaned).compactMap { parseLengthPercentageAuto($0) }
+    if tokens.isEmpty { return }
+
+    let mapped: [MasonLengthPercentageAuto]
+    switch tokens.count {
+    case 1: mapped = [tokens[0], tokens[0], tokens[0], tokens[0]]
+    case 2: mapped = [tokens[0], tokens[1], tokens[0], tokens[1]]
+    case 3: mapped = [tokens[0], tokens[1], tokens[2], tokens[1]]
+    default: mapped = [tokens[0], tokens[1], tokens[2], tokens[3]]
+    }
+
+    style.prepareMut()
+    style.setInt8(StyleKeys.INSET_LEFT_TYPE, mapped[3].type)
+    style.setFloat(StyleKeys.INSET_LEFT_VALUE, mapped[3].value)
+    style.setInt8(StyleKeys.INSET_RIGHT_TYPE, mapped[1].type)
+    style.setFloat(StyleKeys.INSET_RIGHT_VALUE, mapped[1].value)
+    style.setInt8(StyleKeys.INSET_TOP_TYPE, mapped[0].type)
+    style.setFloat(StyleKeys.INSET_TOP_VALUE, mapped[0].value)
+    style.setInt8(StyleKeys.INSET_BOTTOM_TYPE, mapped[2].type)
+    style.setFloat(StyleKeys.INSET_BOTTOM_VALUE, mapped[2].value)
+    style.setOrAppendState(.inset)
+  }
+
   // ─── corner-shape ────────────────────────────────────────────────────────
   // CSS syntax:
   //   corner-shape: round                      → exponent 1 on all corners (default)

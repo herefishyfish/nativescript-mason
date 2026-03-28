@@ -717,7 +717,7 @@ public class MasonStyle: NSObject {
     }
   }
   
-  private func setOrAppendState(_ value: StateKeys) {
+  internal func setOrAppendState(_ value: StateKeys) {
     setStateFromHalves(value.low, value.high)
   }
 
@@ -2893,6 +2893,33 @@ public class MasonStyle: NSObject {
     }
     set {
       mBorderRender.parseBorderShorthand(newValue)
+    }
+  }
+
+  public var paddingCss: String {
+    get {
+      return padding.cssValue
+    }
+    set {
+      CSSBorderRenderer.parsePaddingShorthand(self, newValue)
+    }
+  }
+
+  public var marginCss: String {
+    get {
+      return margin.cssValue
+    }
+    set {
+      CSSBorderRenderer.parseMarginShorthand(self, newValue)
+    }
+  }
+
+  public var insetCss: String {
+    get {
+      return inset.cssValue
+    }
+    set {
+      CSSBorderRenderer.parseInsetShorthand(self, newValue)
     }
   }
 

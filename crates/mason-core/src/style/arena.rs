@@ -226,15 +226,14 @@ impl StyleArena {
 
         let mut button = StyleBuffer::new(default_data);
         {
-            let data = img.mut_bytes();
+            let data = button.mut_bytes();
             Style::init_default_data(data);
-            // Center
+            // CSS spec: button { display: inline-block; text-align: center; box-sizing: border-box }
             crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
-            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_REPLACED, 1);
             crate::style::utils::set_style_data_i8(
                 data,
                 StyleKeys::DISPLAY_MODE,
-                display_mode_to_enum(DisplayMode::Inline),
+                display_mode_to_enum(DisplayMode::Box),
             );
             set_style_data_i32(data, StyleKeys::REF_COUNT, 1);
         }
@@ -252,7 +251,7 @@ impl StyleArena {
         default_snapshots[Handle::Button as usize].copy_from_slice(button.bytes());
 
         Self {
-            buffers: vec![default_buffer, inline, img, flex, grid, list, list_item],
+            buffers: vec![default_buffer, inline, img, flex, grid, list, list_item, button],
             free_list: Vec::new(),
             default_snapshots,
         }

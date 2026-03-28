@@ -4,23 +4,55 @@
       <ActionBar>
         <Label text="Mason Demos" class="text-white" style="font-size: 20; font-weight: bold;" />
       </ActionBar>
-      <div class="page">
+      <div class="page" style="overflow-y: scroll;">
+        <div class="hero">
+          <p style="font-size: 18; font-weight: bold; color: white;">Mason Demos — Examples</p>
+          <p style="font-size: 12; color: #eee; margin-top: 6">Quick access to plugin demos and web-style samples</p>
+        </div>
 
+        <div class="demo-grid">
+            <div class="demo-card">
+            <p class="card-title">Flexbox</p>
+            <p class="card-desc">Flex layout patterns</p>
+            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('flexbox')" />
+          </div>
 
-        <view style="
-        flex-direction: column;
-        background: linear-gradient(to right, rgb(255,53,26), rgb(0,235,235));
-        border-radius: 0 50% 0 0;
-        box-shadow: 3 5 5 black;
-        border-left: 2 rgb(0,235,235) dotted;
-        border-top: 2 rgb(255,53,26) dashed;
-        margin-top: 50%;
-        transform: translate(-50%, -50%);
-        margin-left: 50%;
-        width: 150;
-        height: 150;
-      ">
-        </view>
+            <div class="demo-card">
+            <p class="card-title">Grid</p>
+            <p class="card-desc">Grid layout examples</p>
+            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('grid')" />
+          </div>
+
+            <div class="demo-card">
+            <p class="card-title">Web Samples</p>
+            <p class="card-desc">100+ web-style samples</p>
+            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('web-samples')" />
+          </div>
+
+            <div class="demo-card">
+            <p class="card-title">Professions</p>
+            <p class="card-desc">10 profession examples</p>
+            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('professions')" />
+          </div>
+
+            <div class="demo-card">
+            <p class="card-title">Lynx Examples</p>
+            <p class="card-desc">Styling & animation ports</p>
+            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('lynx')" />
+          </div>
+
+            <div class="demo-card">
+            <p class="card-title">Showcase</p>
+            <p class="card-desc">Mason Showcase</p>
+            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('showcase')" />
+          </div>
+
+            <div class="demo-card">
+            <p class="card-title">React Native</p>
+            <p class="card-desc">React Native examples</p>
+            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('react-native')" />
+          </div>
+        </div>
 
       </div>
     </Page>
@@ -39,6 +71,8 @@ import ShowcaseDemo from '~/plugin-demos/ShowcaseDemo.vue';
 import GridArea from '~/plugin-demos/Grid-Area.vue';
 import WebSamplesIndex from '~/web-samples/WebSamplesIndex.vue';
 import ProfessionList from '~/web-samples/ProfessionList.vue';
+import LynxIndex from '~/lynx/LynxIndex.vue';
+import ReactNative from '~/react-native/sample.vue';
 
 const navigate = (demo: string) => {
   const demos = {
@@ -52,8 +86,10 @@ const navigate = (demo: string) => {
     'grid-area': GridArea,
     'web-samples': WebSamplesIndex,
     professions: ProfessionList,
-  };
-  $navigateTo(demos[demo]);
+    lynx: LynxIndex,
+    'react-native': ReactNative
+};
+$navigateTo(demos[demo]);
 };
 </script>
 
@@ -61,7 +97,7 @@ const navigate = (demo: string) => {
 .page {
   padding: 16;
   background-color: #fafafa;
-  overflow-y: scroll;
+  overflow-y: auto;
 }
 
 .hero {
@@ -86,7 +122,7 @@ const navigate = (demo: string) => {
   flex-direction: column;
   align-items: center;
   gap: 6;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.045);
 }
 
 .icon-circle {
@@ -114,5 +150,17 @@ const navigate = (demo: string) => {
   font-size: 10;
   color: #888;
   text-align: center;
+}
+
+.btn-primary {
+  background-color: #1a73e8;
+  color: #ffffff;
+  padding: 10 18;
+  border-radius: 10;
+  font-weight: 600;
+}
+
+.demo-card Button {
+  width: 80;
 }
 </style>

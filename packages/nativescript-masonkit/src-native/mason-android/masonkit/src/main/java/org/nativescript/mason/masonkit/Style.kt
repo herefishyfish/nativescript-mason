@@ -3,7 +3,6 @@ package org.nativescript.mason.masonkit
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.text.TextPaint
-import android.util.Log
 import android.view.View
 import dalvik.annotation.optimization.FastNative
 import org.nativescript.mason.masonkit.Border.IKeyCorner
@@ -15,6 +14,7 @@ import org.nativescript.mason.masonkit.enums.AlignItems
 import org.nativescript.mason.masonkit.enums.AlignSelf
 import org.nativescript.mason.masonkit.enums.BorderStyle
 import org.nativescript.mason.masonkit.enums.BoxSizing
+import org.nativescript.mason.masonkit.enums.Clear
 import org.nativescript.mason.masonkit.enums.Direction
 import org.nativescript.mason.masonkit.enums.Display
 import org.nativescript.mason.masonkit.enums.DisplayMode
@@ -34,7 +34,13 @@ import org.nativescript.mason.masonkit.enums.TextAlign
 import org.nativescript.mason.masonkit.enums.VerticalAlign
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.math.tan
 
 
 internal fun Int.rgbaToHexCSS(): String {
@@ -49,6 +55,191 @@ internal fun Int.rgbaToHexCSS(): String {
   return "#%02X%02X%02X%02X".format(
     r.toInt(), g.toInt(), b.toInt(), a
   )
+}
+
+/**
+ * Parse CSS shorthand for padding (1-4 values) and apply to style.padding
+ */
+fun parsePaddingShorthand(style: Style, value: String) {
+  val cleaned = value.trim().removeSuffix(";")
+  if (cleaned.isEmpty()) {
+    if (!style.inBatch) style.inBatch = true
+    style.setPaddingWithValueType(0f, LengthPercentage.Kind.Points.value)
+    if (style.inBatch) style.inBatch = false
+    return
+  }
+
+  val tokens = SPLIT_REGEX.split(cleaned).mapNotNull { parseLengthPercentage(it) }
+  if (tokens.isEmpty()) return
+
+  var topType: Byte
+  var topValue: Float
+  var rightType: Byte
+  var rightValue: Float
+  var bottomType: Byte
+  var bottomValue: Float
+  var leftType: Byte
+  var leftValue: Float
+
+  when (tokens.size) {
+    1 -> {
+      val padding = tokens[0]
+      topType = padding.type
+      topValue = padding.value
+
+      rightType = padding.type
+      rightValue = padding.value
+
+      bottomType = padding.type
+      bottomValue = padding.value
+
+      leftType = padding.type
+      leftValue = padding.value
+    }
+
+    2 -> {
+      val tb = tokens[0]
+      val rl = tokens[1]
+
+
+      topType = tb.type
+      topValue = tb.value
+
+      rightType = rl.type
+      rightValue = rl.value
+
+      bottomType = tb.type
+      bottomValue = tb.value
+
+      leftType = rl.type
+      leftValue = rl.value
+
+    }
+
+    3 -> {
+
+      val top = tokens[0]
+      val right = tokens[1]
+      val bottom = tokens[2]
+
+      topType = top.type
+      topValue = top.value
+
+      rightType = right.type
+      rightValue = right.value
+
+      bottomType = bottom.type
+      bottomValue = bottom.value
+
+      leftType = right.type
+      leftValue = right.value
+    }
+
+    else -> {
+      val top = tokens[0]
+      val right = tokens[1]
+      val bottom = tokens[2]
+      val left = tokens[3]
+
+
+      topType = top.type
+      topValue = top.value
+
+      rightType = right.type
+      rightValue = right.value
+
+      bottomType = bottom.type
+      bottomValue = bottom.value
+
+      leftType = left.type
+      leftValue = left.value
+
+    }
+  }
+
+
+
+  style.prepareMut()
+  style.values.put(StyleKeys.PADDING_LEFT_TYPE, leftType)
+  style.values.putFloat(StyleKeys.PADDING_LEFT_VALUE, leftValue)
+
+  style.values.put(StyleKeys.PADDING_RIGHT_TYPE, rightType)
+  style.values.putFloat(StyleKeys.PADDING_RIGHT_VALUE, rightValue)
+
+  style.values.put(StyleKeys.PADDING_TOP_TYPE, topType)
+  style.values.putFloat(StyleKeys.PADDING_TOP_VALUE, topValue)
+
+  style.values.put(StyleKeys.PADDING_BOTTOM_TYPE, bottomType)
+  style.values.putFloat(StyleKeys.PADDING_BOTTOM_VALUE, bottomValue)
+  style.setOrAppendState(StateKeys.PADDING)
+
+}
+
+/**
+ * Parse CSS shorthand for margin (1-4 values) and apply to style.margin
+ * margin accepts auto so use parseLengthPercentageAuto
+ */
+fun parseMarginShorthand(style: Style, value: String) {
+  val cleaned = value.trim().removeSuffix(";")
+  if (cleaned.isEmpty()) {
+    if (!style.inBatch) style.inBatch = true
+    style.margin = Rect(
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero
+    )
+    if (style.inBatch) style.inBatch = false
+    return
+  }
+
+  val parts = SPLIT_REGEX.split(cleaned)
+  val tokens = parts.mapNotNull { parseLengthPercentageAuto(it) }
+  if (tokens.isEmpty()) return
+
+  val rect = when (tokens.size) {
+    1 -> Rect.uniform(tokens[0])
+    2 -> Rect(tokens[0], tokens[1], tokens[0], tokens[1])
+    3 -> Rect(tokens[0], tokens[1], tokens[2], tokens[1])
+    else -> Rect(tokens[0], tokens[1], tokens[2], tokens[3])
+  }
+
+  if (!style.inBatch) style.inBatch = true
+  style.margin = rect
+  if (style.inBatch) style.inBatch = false
+}
+
+/**
+ * Parse CSS shorthand for inset/position (1-4 values) and apply to style.inset
+ */
+fun parseInsetShorthand(style: Style, value: String) {
+  val cleaned = value.trim().removeSuffix(";")
+  if (cleaned.isEmpty()) {
+    if (!style.inBatch) style.inBatch = true
+    style.inset = Rect(
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero
+    )
+    if (style.inBatch) style.inBatch = false
+    return
+  }
+
+  val parts = SPLIT_REGEX.split(cleaned)
+  val tokens = parts.mapNotNull { parseLengthPercentageAuto(it) }
+  if (tokens.isEmpty()) return
+
+  val rect = when (tokens.size) {
+    1 -> Rect.uniform(tokens[0])
+    2 -> Rect(tokens[0], tokens[1], tokens[0], tokens[1])
+    3 -> Rect(tokens[0], tokens[1], tokens[2], tokens[1])
+    else -> Rect(tokens[0], tokens[1], tokens[2], tokens[3])
+  }
+
+  if (!style.inBatch) style.inBatch = true
+  style.inset = rect
+  if (style.inBatch) style.inBatch = false
 }
 
 
@@ -388,6 +579,13 @@ class StateKeys internal constructor(val low: Long, val high: Long) {
     val LETTER_SPACING = flag(70)
     val FONT_VARIANT_NUMERIC = flag(71)
 
+    /** Pre-computed union of all text-related flags. Computed once at class-init. */
+    val ALL_TEXT: StateKeys = FONT_COLOR or FONT_SIZE or FONT_WEIGHT or FONT_STYLE or
+      FONT_FAMILY or FONT_VARIANT_NUMERIC or TEXT_WRAP or WHITE_SPACE or
+      TEXT_TRANSFORM or DECORATION_LINE or DECORATION_COLOR or DECORATION_STYLE or
+      LETTER_SPACING or TEXT_JUSTIFY or BACKGROUND_COLOR or LINE_HEIGHT or
+      TEXT_ALIGN or TEXT_OVERFLOW or TEXT_SHADOWS
+
     fun hasFlag(low: Long, high: Long, flag: StateKeys): Boolean =
       ((low and flag.low) != 0L) || ((high and flag.high) != 0L)
 
@@ -484,6 +682,10 @@ internal object StyleState {
   const val INHERIT: Byte = 0
   const val SET: Byte = 1
 }
+
+// Cached regex patterns for transform parsing (avoid per-call compilation)
+private val TRANSFORM_FN_REGEX = Regex("(\\w+)\\(([^)]*)\\)")
+private val TRANSFORM_WS_REGEX = Regex("\\s+")
 
 class Style internal constructor(@Transient internal var node: Node) {
   internal var isValueInitialized: Boolean = false
@@ -602,7 +804,7 @@ class Style internal constructor(@Transient internal var node: Node) {
     val fm = paint.fontMetrics
 
     // Use absolute ascent (Android reports negative ascent); sanitize tiny/NaN values
-    var ascent = kotlin.math.abs(fm.ascent)
+    var ascent = abs(fm.ascent)
     var descent = fm.descent
     val leading = fm.leading
 
@@ -995,13 +1197,13 @@ class Style internal constructor(@Transient internal var node: Node) {
       setOrAppendState(StateKeys.FLOAT)
     }
 
-  var clear: org.nativescript.mason.masonkit.enums.Clear
+  var clear: Clear
     get() {
-      val base = org.nativescript.mason.masonkit.enums.Clear.from(values.get(StyleKeys.CLEAR))
+      val base = Clear.from(values.get(StyleKeys.CLEAR))
       return resolvePseudo(
         StateKeys.CLEAR,
         base
-      ) { buf -> org.nativescript.mason.masonkit.enums.Clear.from(buf.get(StyleKeys.CLEAR)) }
+      ) { buf -> Clear.from(buf.get(StyleKeys.CLEAR)) }
     }
     set(value) {
       prepareMut()
@@ -1086,12 +1288,11 @@ class Style internal constructor(@Transient internal var node: Node) {
   private fun parseTransformOps(input: String): List<TransformOp> {
     if (input.isBlank()) return emptyList()
     val ops = mutableListOf<TransformOp>()
-    val fnRegex = Regex("(\\w+)\\(([^)]*)\\)")
-    for (m in fnRegex.findAll(input)) {
+    for (m in TRANSFORM_FN_REGEX.findAll(input)) {
       val name = m.groupValues[1].trim().lowercase()
       val rawArgs = m.groupValues[2].trim()
       val args =
-        rawArgs.replace(',', ' ').split(Regex("\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
+        rawArgs.replace(',', ' ').split(TRANSFORM_WS_REGEX).map { it.trim() }.filter { it.isNotEmpty() }
       try {
         when (name) {
           "translate" -> {
@@ -1256,8 +1457,8 @@ class Style internal constructor(@Transient internal var node: Node) {
 
         TransformOpType.ROTATE -> {
           val rad = Math.toRadians(op.a.toDouble())
-          val cos = kotlin.math.cos(rad).toFloat()
-          val sin = kotlin.math.sin(rad).toFloat()
+          val cos = cos(rad).toFloat()
+          val sin = sin(rad).toFloat()
           val na = a * cos + c * sin
           val nb = b * cos + d * sin
           val nc = a * -sin + c * cos
@@ -1266,14 +1467,14 @@ class Style internal constructor(@Transient internal var node: Node) {
         }
 
         TransformOpType.SKEW_X -> {
-          val t = kotlin.math.tan(Math.toRadians(op.a.toDouble())).toFloat()
+          val t = tan(Math.toRadians(op.a.toDouble())).toFloat()
           val nc = a * t + c
           val nd = b * t + d
           c = nc; d = nd
         }
 
         TransformOpType.SKEW_Y -> {
-          val t = kotlin.math.tan(Math.toRadians(op.a.toDouble())).toFloat()
+          val t = tan(Math.toRadians(op.a.toDouble())).toFloat()
           val na = a + c * t
           val nb = b + d * t
           a = na; b = nb
@@ -1305,7 +1506,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal fun applyTransformToView() {
-    val v = node.view as? android.view.View ?: return
+    val v = node.view as? View ?: return
     val count = values.get(StyleKeys.TRANSFORM_COUNT).toInt() and 0xFF
     val flags = values.get(StyleKeys.TRANSFORM_FLAGS).toInt() and 0xFF
 
@@ -1326,11 +1527,11 @@ class Style internal constructor(@Transient internal var node: Node) {
       val d = values.getFloat(base + 20)
       val tx = values.getFloat(base + 48)
       val ty = values.getFloat(base + 52)
-      val scaleX = kotlin.math.sqrt((a * a + b * b).toDouble()).toFloat()
+      val scaleX = sqrt((a * a + b * b).toDouble()).toFloat()
       var rotate = 0f
       var scaleY = 1f
       if (scaleX != 0f) {
-        rotate = Math.toDegrees(kotlin.math.atan2(b.toDouble(), a.toDouble())).toFloat()
+        rotate = Math.toDegrees(atan2(b.toDouble(), a.toDouble())).toFloat()
         scaleY = (a * d - b * c) / scaleX
       }
       if (v.width > 0 && v.height > 0) {
@@ -1381,7 +1582,7 @@ class Style internal constructor(@Transient internal var node: Node) {
    */
   internal val resolvedFilterString: String
     get() {
-      for (state in PSEUDO_CSS_ORDER.asReversed()) {
+      for (i in PSEUDO_CSS_ORDER.indices.reversed()) { val state = PSEUDO_CSS_ORDER[i]
         if (node.hasPseudo(state)) {
           node.getPseudoString(state.mask, "filter")?.let { s ->
             if (s.isNotEmpty()) return s
@@ -2635,6 +2836,11 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal var boxShadows: List<Shadow.BoxShadow> = listOf()
+  private var mHasOutsetBoxShadow = false
+
+  /** Fast check used in draw paths to avoid `.filter { !it.inset }` allocations. */
+  fun hasOutsetBoxShadow(): Boolean = mHasOutsetBoxShadow
+
   private var mBoxShadowRaw: String = ""
   internal val mBoxShadowRenderer by lazy {
     BoxShadowRenderer(this)
@@ -2660,10 +2866,9 @@ class Style internal constructor(@Transient internal var node: Node) {
   var boxShadow: String
     get() = mBoxShadowRaw
     set(value) {
-      Log.d("mason", "Style.boxShadow set raw=${value}")
       mBoxShadowRaw = value
       boxShadows = Shadow.parseBoxShadow(this, value)
-      Log.d("mason", "Style.boxShadow parsed count=${boxShadows.size}")
+      mHasOutsetBoxShadow = boxShadows.any { !it.inset }
       mBoxShadowRenderer.invalidate()
       val view = node.view as? View
       if (view != null) {
@@ -2741,6 +2946,24 @@ class Style internal constructor(@Transient internal var node: Node) {
     set(value) {
       field = value
       parseBorderRadius(this, value)
+    }
+
+  var paddingCss: String
+    get() = padding.cssValue
+    set(value) {
+      parsePaddingShorthand(this, value)
+    }
+
+  var marginCss: String
+    get() = margin.cssValue
+    set(value) {
+      parseMarginShorthand(this, value)
+    }
+
+  var insetCss: String
+    get() = inset.cssValue
+    set(value) {
+      parseInsetShorthand(this, value)
     }
 
   var cornerShape: String = ""
@@ -4780,12 +5003,14 @@ class Style internal constructor(@Transient internal var node: Node) {
       when (clip) {
         BackgroundClip.BORDER_BOX -> {
           // Border box = full view bounds
-          canvas.clipPath(style.mBorderRenderer.getOuterClipPath(w, h))
+          val p = style.mBorderRenderer.getOuterClipPath(w, h)
+          canvas.clipPath(p)
         }
 
         BackgroundClip.PADDING_BOX -> {
           // Padding box = inset by border widths
-          canvas.clipPath(style.mBorderRenderer.getClipPath(w, h))
+          val p = style.mBorderRenderer.getClipPath(w, h)
+          canvas.clipPath(p)
         }
 
         BackgroundClip.CONTENT_BOX -> {

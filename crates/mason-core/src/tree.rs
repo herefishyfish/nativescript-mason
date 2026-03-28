@@ -907,10 +907,10 @@ impl Tree {
 
         compute_root_layout(self, root, available_space);
 
-        // Post-process scroll containers to clamp their heights to parent's available space.
+        // Post-process scroll containers to clamp their sizes to parent's available space.
         // This is done after layout because block layout measures children with intrinsic sizing
-        // (MinContent) which doesn't pass the parent's actual available height.
-        self.fix_scroll_container_heights(root, available_space.height);
+        // (MinContent) which doesn't pass the parent's actual available dimensions.
+        self.fix_scroll_container_sizes(root, available_space.width, available_space.height);
 
         if use_rounding {
             round_layout(self, root);
@@ -938,12 +938,13 @@ impl Tree {
         self.0.read().nodes[node].unrounded_layout
     }
 
-    /// Post-process scroll containers to clamp their heights to the parent's available content area.
+    /// Post-process scroll containers to clamp their sizes to the parent's available content area.
     /// This is necessary because block layout measures children with intrinsic sizing (MinContent)
-    /// which doesn't constrain scroll containers to their parent's available height.
-    fn fix_scroll_container_heights(
+    /// which doesn't constrain scroll containers to their parent's available dimensions.
+    fn fix_scroll_container_sizes(
         &mut self,
         node_id: NodeId,
+        parent_available_width: AvailableSpace,
         parent_available_height: AvailableSpace,
     ) {
         let id: Id = node_id.into();
@@ -972,28 +973,46 @@ impl Tree {
             overflow.y,
             crate::style::Overflow::Scroll | crate::style::Overflow::Auto
         );
+        let is_scroll_container_x = matches!(
+            overflow.x,
+            crate::style::Overflow::Scroll | crate::style::Overflow::Auto
+        );
 
         if is_scroll_container_y {
-            // Get the constraint from parent_available_height
             if let AvailableSpace::Definite(constraint_h) = parent_available_height {
                 let mut inner = self.0.write();
                 if let Some(node) = inner.nodes.get_mut(id) {
                     if node.unrounded_layout.size.height > constraint_h {
-                        // Preserve content_size for scrollable extent
                         if node.unrounded_layout.content_size.height
                             < node.unrounded_layout.size.height
                         {
                             node.unrounded_layout.content_size.height =
                                 node.unrounded_layout.size.height;
                         }
-                        // Clamp the visible size
                         node.unrounded_layout.size.height = constraint_h;
                     }
                 }
             }
         }
 
-        // Calculate available height for children (our content box)
+        if is_scroll_container_x {
+            if let AvailableSpace::Definite(constraint_w) = parent_available_width {
+                let mut inner = self.0.write();
+                if let Some(node) = inner.nodes.get_mut(id) {
+                    if node.unrounded_layout.size.width > constraint_w {
+                        if node.unrounded_layout.content_size.width
+                            < node.unrounded_layout.size.width
+                        {
+                            node.unrounded_layout.content_size.width =
+                                node.unrounded_layout.size.width;
+                        }
+                        node.unrounded_layout.size.width = constraint_w;
+                    }
+                }
+            }
+        }
+
+        // Calculate available dimensions for children (our content box)
         let padding_top = padding
             .top
             .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
@@ -1006,19 +1025,37 @@ impl Tree {
         let border_bottom = border
             .bottom
             .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
+        let padding_left = padding
+            .left
+            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
+        let padding_right = padding
+            .right
+            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
+        let border_left = border
+            .left
+            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
+        let border_right = border
+            .right
+            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
         let content_box_height =
             layout.size.height - padding_top - padding_bottom - border_top - border_bottom;
+        let content_box_width =
+            layout.size.width - padding_left - padding_right - border_left - border_right;
 
         // Recursively process children
         for child_id in children {
             let child_node_id = NodeId::from(child_id);
-            // Children get the content box height as their available space
-            let child_available = if content_box_height > 0.0 {
+            let child_avail_w = if content_box_width > 0.0 {
+                AvailableSpace::Definite(content_box_width)
+            } else {
+                AvailableSpace::MinContent
+            };
+            let child_avail_h = if content_box_height > 0.0 {
                 AvailableSpace::Definite(content_box_height)
             } else {
                 AvailableSpace::MinContent
             };
-            self.fix_scroll_container_heights(child_node_id, child_available);
+            self.fix_scroll_container_sizes(child_node_id, child_avail_w, child_avail_h);
         }
     }
 
@@ -1140,8 +1177,8 @@ impl Tree {
     }
 
     pub fn create_button_node(&mut self) -> NodeRef {
-        // Buttons behave like replaced inline elements by default;
-        let mut node = Node::new_with_handle(self.get_arena(), StyleHandle::DEFAULT_IMG);
+        // CSS spec: button { display: inline-block; text-align: center; box-sizing: border-box }
+        let mut node = Node::new_with_handle(self.get_arena(), StyleHandle::DEFAULT_BUTTON);
         node.type_ = NodeType::Button;
         node.inner_style_mut().device_scale = Some(Arc::clone(&*self.density()));
         let guard = node.guard.clone();
@@ -1883,9 +1920,9 @@ impl LayoutBlockContainer for Tree {
             }
 
             // For scroll/auto overflow containers, we need the layout engine
-            // to compute the *unconstrained* content height so that native
+            // to compute the *unconstrained* content size so that native
             // scroll views know the full scrollable area.  We therefore do NOT
-            // inject `known_dimensions.height` before the compute.  Instead we
+            // inject `known_dimensions` before the compute.  Instead we
             // save the viewport constraint and apply it *after* the compute,
             // clamping `size` while preserving `content_size`.
             let mut inputs = inputs;
@@ -1906,6 +1943,28 @@ impl LayoutBlockContainer for Tree {
                 } else if let Some(parent_h) = inputs.parent_size.height {
                     inputs.available_space.height = AvailableSpace::Definite(parent_h);
                     Some(parent_h)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let is_scroll_container_x = matches!(
+                overflow.x,
+                crate::style::Overflow::Scroll | crate::style::Overflow::Auto
+            );
+            let scroll_constraint_x: Option<f32> = if is_scroll_container_x && size.width.is_auto()
+            {
+                if let Some(w) = inputs.known_dimensions.width {
+                    inputs.known_dimensions.width = None;
+                    inputs.available_space.width = AvailableSpace::MaxContent;
+                    Some(w)
+                } else if let AvailableSpace::Definite(w) = inputs.available_space.width {
+                    inputs.available_space.width = AvailableSpace::MaxContent;
+                    Some(w)
+                } else if let Some(parent_w) = inputs.parent_size.width {
+                    Some(parent_w)
                 } else {
                     None
                 }
@@ -1953,6 +2012,15 @@ impl LayoutBlockContainer for Tree {
                                 computed_layout.size.height = constrained_h;
                             }
                         }
+                        if let Some(constrained_w) = scroll_constraint_x {
+                            if computed_layout.size.width > constrained_w {
+                                computed_layout.content_size.width = computed_layout
+                                    .content_size
+                                    .width
+                                    .max(computed_layout.size.width);
+                                computed_layout.size.width = constrained_w;
+                            }
+                        }
 
                         if is_text_container {
                             if let Some(resolved_height) = size
@@ -1970,7 +2038,7 @@ impl LayoutBlockContainer for Tree {
                     }
                     (Display::Flex, true) => {
                         let mut computed_layout = compute_flexbox_layout(tree, node_id, inputs);
-                        // Clamp scroll container visible height, preserve content extent
+                        // Clamp scroll container visible size, preserve content extent
                         if let Some(constrained_h) = scroll_constraint_y {
                             if computed_layout.size.height > constrained_h {
                                 computed_layout.content_size.height = computed_layout
@@ -1980,11 +2048,26 @@ impl LayoutBlockContainer for Tree {
                                 computed_layout.size.height = constrained_h;
                             }
                         }
+                        if let Some(constrained_w) = scroll_constraint_x {
+                            if computed_layout.size.width > constrained_w {
+                                computed_layout.content_size.width = computed_layout
+                                    .content_size
+                                    .width
+                                    .max(computed_layout.size.width);
+                                computed_layout.size.width = constrained_w;
+                            }
+                        }
                         computed_layout
                     }
                     (Display::Grid, true) => {
+                        #[cfg(test)]
+                        eprintln!("GRID_TRACE node={:?} known_w={:?} avail_w={:?} parent_w={:?} sizing={:?}",
+                            node_id, inputs.known_dimensions.width, inputs.available_space.width,
+                            inputs.parent_size.width, inputs.sizing_mode);
                         let mut computed_layout = compute_grid_layout(tree, node_id, inputs);
-                        // Clamp scroll container visible height, preserve content extent
+                        #[cfg(test)]
+                        eprintln!("GRID_TRACE result size={:?} content_size={:?}", computed_layout.size, computed_layout.content_size);
+                        // Clamp scroll container visible size, preserve content extent
                         if let Some(constrained_h) = scroll_constraint_y {
                             if computed_layout.size.height > constrained_h {
                                 computed_layout.content_size.height = computed_layout
@@ -1992,6 +2075,15 @@ impl LayoutBlockContainer for Tree {
                                     .height
                                     .max(computed_layout.size.height);
                                 computed_layout.size.height = constrained_h;
+                            }
+                        }
+                        if let Some(constrained_w) = scroll_constraint_x {
+                            if computed_layout.size.width > constrained_w {
+                                computed_layout.content_size.width = computed_layout
+                                    .content_size
+                                    .width
+                                    .max(computed_layout.size.width);
+                                computed_layout.size.width = constrained_w;
                             }
                         }
                         computed_layout
@@ -2131,6 +2223,15 @@ impl LayoutBlockContainer for Tree {
                             }
                         }
                     }
+                    if let Some(constrained_w) = scroll_constraint_x {
+                        if computed_layout.size.width > constrained_w {
+                            computed_layout.content_size.width = computed_layout
+                                .content_size
+                                .width
+                                .max(computed_layout.size.width);
+                            computed_layout.size.width = constrained_w;
+                        }
+                    }
                     computed_layout
                 }
                 DisplayMode::Box => {
@@ -2181,6 +2282,15 @@ impl LayoutBlockContainer for Tree {
                                     .max(computed_layout.size.height);
                                 computed_layout.size.height = constrained_h;
                             }
+                        }
+                    }
+                    if let Some(constrained_w) = scroll_constraint_x {
+                        if computed_layout.size.width > constrained_w {
+                            computed_layout.content_size.width = computed_layout
+                                .content_size
+                                .width
+                                .max(computed_layout.size.width);
+                            computed_layout.size.width = constrained_w;
                         }
                     }
                     computed_layout

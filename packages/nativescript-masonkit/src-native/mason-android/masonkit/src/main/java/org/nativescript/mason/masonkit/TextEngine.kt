@@ -32,6 +32,31 @@ import org.nativescript.mason.masonkit.enums.TextAlign
 import org.nativescript.mason.masonkit.enums.VerticalAlign
 import kotlin.math.ceil
 
+/**
+ * Compute the widest word in [text] without allocating a split array.
+ * When [useLayout] is true, uses [Layout.getDesiredWidth] for rich text;
+ * otherwise uses [Paint.measureText] for plain text.
+ */
+private fun maxWordWidth(text: CharSequence, paint: TextPaint, useLayout: Boolean): Float {
+  var maxW = 0f
+  val len = text.length
+  var start = 0
+  var i = 0
+  while (i <= len) {
+    val isWs = i < len && text[i].isWhitespace()
+    if (i == len || isWs) {
+      if (i > start) {
+        val sub = text.subSequence(start, i)
+        val w = if (useLayout) Layout.getDesiredWidth(sub, paint) else paint.measureText(sub, 0, sub.length)
+        if (w > maxW) maxW = w
+      }
+      start = i + 1
+    }
+    i++
+  }
+  return maxW
+}
+
 class TextEngine(val container: TextContainer) {
 
   val node: Node
@@ -260,17 +285,11 @@ class TextEngine(val container: TextContainer) {
       widthConstraint = Int.MAX_VALUE
     }
 
-    // Adjust width constraint to account for container padding so StaticLayout
-    // measures the text inside the content-box (matching web behavior).
-    val padL = container.node.computedPaddingLeft.toInt()
-    val padR = container.node.computedPaddingRight.toInt()
-    if (widthConstraint != Int.MAX_VALUE) {
-      val adjusted = widthConstraint - (padL + padR)
-      widthConstraint = if (adjusted > 0) adjusted
-      else 0
-    } else if (availableWidth.isFinite() && availableWidth > 0f) {
-      val adjusted = availableWidth.toInt() - (padL + padR)
-      if (adjusted > 0) widthConstraint = adjusted
+    // The available space from the layout engine (Taffy's compute_leaf_layout)
+    // is already content-box (padding+border subtracted). Do NOT subtract
+    // padding again here — that would double-count it.
+    if (widthConstraint == Int.MAX_VALUE && availableWidth.isFinite() && availableWidth > 0f) {
+      widthConstraint = availableWidth.toInt()
     }
 
     var allowWrap = true
@@ -287,14 +306,7 @@ class TextEngine(val container: TextContainer) {
     }
 
     if (allowWrap && availableWidth > 0 && availableWidth != Float.MIN_VALUE) {
-      try {
-        val padL = container.node.computedPaddingLeft.toInt()
-        val padR = container.node.computedPaddingRight.toInt()
-        val adjusted = availableWidth.toInt() - (padL + padR)
-        widthConstraint = if (adjusted > 0) adjusted else 0
-      } catch (_: Throwable) {
-        widthConstraint = availableWidth.toInt()
-      }
+      widthConstraint = availableWidth.toInt()
     }
 
     // Respect style `max-width` when present (Points only). Clamp the
@@ -405,11 +417,8 @@ class TextEngine(val container: TextContainer) {
 
       if (widthConstraint == Int.MAX_VALUE) {
         if (availableWidth == -1f) {
-          val minContentWidth = spannable.split(white_space)
-            .maxOfOrNull { Layout.getDesiredWidth(it, paint) } ?: 0f
-          // For min-content, use the widest word but never smaller than what the
-          // layout/paint already measured (handles complex emoji clusters)
-          measuredWidth = maxOf(measuredWidth, minContentWidth)
+          // Min-content: widest word. Single-pass avoids split() allocation.
+          measuredWidth = maxWordWidth(spannable, paint, useLayout = true)
         }
 
         if (availableWidth == -2f) {
@@ -421,8 +430,8 @@ class TextEngine(val container: TextContainer) {
       measuredWidth = if (widthConstraint == Int.MAX_VALUE) {
         when (availableWidth) {
           -1f -> {
-            spannable.split(white_space)
-              .maxOfOrNull { paint.measureText(it) } ?: 0f
+            // Min-content: widest word. Single-pass avoids split() allocation.
+            maxWordWidth(spannable, paint, useLayout = false)
           }
 
           -2f -> {
@@ -435,7 +444,19 @@ class TextEngine(val container: TextContainer) {
           }
         }
       } else {
-        layout.width.toFloat()
+        // Use actual text width (max line width), NOT the constraint.
+        // StaticLayout.getWidth() returns the constraint passed to the
+        // constructor which would cancel out padding growth — Taffy adds
+        // padding back on top of what we return here, so returning the
+        // constraint keeps the total size unchanged as padding increases.
+        var maxLineWidth = 0f
+        for (i in 0 until layout.lineCount) {
+          val lineWidth = ceil(layout.getLineWidth(i))
+          if (lineWidth > maxLineWidth) {
+            maxLineWidth = lineWidth
+          }
+        }
+        maxLineWidth
       }
     }
 

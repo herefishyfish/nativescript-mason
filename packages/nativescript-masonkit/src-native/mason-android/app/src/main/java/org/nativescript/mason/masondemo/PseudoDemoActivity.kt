@@ -21,6 +21,7 @@ import org.nativescript.mason.masonkit.enums.BorderStyle as MasonBorderStyle
 import org.nativescript.mason.masonkit.enums.TextAlign
 import java.nio.ByteBuffer
 import androidx.core.graphics.toColorInt
+import org.nativescript.mason.masonkit.enums.Overflow
 
 class PseudoDemoActivity : AppCompatActivity() {
   private lateinit var mason: Mason
@@ -31,6 +32,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     mason = Mason()
 
     val layout = mason.createScrollView(this)
+    layout.style.overflowY = Overflow.Scroll
 
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -340,7 +342,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     disabledPrimary.node.preparePseudoBuffer(PseudoState.DISABLED.mask).apply {
       setBg(Color.parseColor("#C7D2FE"))
       setFontColor(Color.parseColor("#A5B4FC"))
-      setBorderColor(Color.parseColor("#C7D2FE"))
+     // setBorderColor(Color.parseColor("#C7D2FE"))
     }
 
     val disabledOutline = styledButton(

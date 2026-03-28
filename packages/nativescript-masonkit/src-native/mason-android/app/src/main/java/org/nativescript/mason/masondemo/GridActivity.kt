@@ -58,13 +58,12 @@ class GridActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
     metrics = resources.displayMetrics
     mason.setDeviceScale(metrics.density)
-    val root = LinearLayout(this)
+    val root = mason.createScrollView(this)
 
-    val body = mason.createView(this)
 
     ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
       val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+      root.style.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
       insets
     }
 
@@ -99,11 +98,8 @@ class GridActivity : AppCompatActivity() {
     // wrapper8(body)
     //genTest(body)
 
-    //grid_template_areas(body)
-
-    // grid_template_areas_500(body)
-
-    //grid_template_areas_600(body)
+    // Grid-Area demo: enable grid_template_areas_500 on the root scroll
+    grid_template_areas_500(root)
 
     // backgroundTest(body)
     //filter(body)
@@ -119,10 +115,9 @@ class GridActivity : AppCompatActivity() {
     // list(body)
 
     // red grid reproduction example (compact tiled squares)
-    redGrid(body)
+  //  redGrid(body)
 
     //inputTest(body)
-    root.addView(body)
     setContentView(root)
   }
 
@@ -162,14 +157,14 @@ class GridActivity : AppCompatActivity() {
     val maxWidthPx = metrics.widthPixels.toFloat()
     val maxHeightPx = metrics.heightPixels.toFloat() + toPx(50f)
 
-    val cols = Math.max(1, Math.floor((maxWidthPx / boxSize).toDouble()).toInt())
-    var rows = Math.max(1, Math.floor((maxHeightPx / boxSize).toDouble()).toInt())
+    val cols = 1.coerceAtLeast(Math.floor((maxWidthPx / boxSize).toDouble()).toInt())
+    var rows = 1.coerceAtLeast(Math.floor((maxHeightPx / boxSize).toDouble()).toInt())
 
     // Sanity cap to avoid creating massive numbers of nodes which can crash native buffers
     val MAX_CELLS = 10000
     val total = cols.toLong() * rows.toLong()
     if (total > MAX_CELLS) {
-      val newRows = Math.max(1, (MAX_CELLS / cols).toInt())
+      val newRows = 1.coerceAtLeast((MAX_CELLS / cols))
       Log.w("GridActivity", "Capping grid cells from $total to $MAX_CELLS (rows: $rows -> $newRows)")
       rows = newRows
     }
@@ -223,7 +218,6 @@ class GridActivity : AppCompatActivity() {
     System.gc()
     System.runFinalization()
   }
-
 
   fun list(body: View) {
     val list = mason.createListView(this)
@@ -1068,8 +1062,9 @@ class GridActivity : AppCompatActivity() {
 		"sidebar2 sidebar2"
 		"footer  footer"
       """.trimIndent()
-      it.gridTemplateColumns = "20% auto"
-      it.gap = Size(LengthPercentage.Points(16f), LengthPercentage.Points(16f))
+      // Match web sample: fixed 100px sidebar and flexible content column (convert dp -> px)
+      it.gridTemplateColumns = "${toPx(100f).toInt()}px auto"
+      it.gap = Size(LengthPercentage.Points(8f), LengthPercentage.Points(8f))
     }
 
 
@@ -1134,6 +1129,68 @@ class GridActivity : AppCompatActivity() {
     root.append(arrayOf(header, sidebar, sidebar2, content, footer))
 
     rootLayout.append(body)
+
+    // --- Holy Grail layout (matches web sample) ---
+    val holy = mason.createView(this)
+    holy.configure {
+      it.display = Display.Grid
+      it.gridTemplateAreas = """
+        "hg-header hg-header hg-header"
+        "hg-left hg-main hg-right"
+        "hg-footer hg-footer hg-footer"
+      """.trimIndent()
+      it.gridTemplateColumns = "${toPx(70f).toInt()}px 1fr ${toPx(70f).toInt()}px"
+      it.gridTemplateRows = "${toPx(48f).toInt()}px 1fr ${toPx(40f).toInt()}px"
+      it.gap = Size(LengthPercentage.Points(6f), LengthPercentage.Points(6f))
+    }
+
+    // header
+    val hh = mason.createView(this)
+    hh.append("Header")
+    hh.setBackgroundColor("#0984E3".toColorInt())
+    hh.style.borderRadius = "8px"
+    hh.style.display = org.nativescript.mason.masonkit.enums.Display.Flex
+    hh.style.alignItems = org.nativescript.mason.masonkit.enums.AlignItems.Center
+    hh.style.justifyContent = org.nativescript.mason.masonkit.enums.JustifyContent.Center
+    hh.style.gridArea = "hg-header"
+
+    val left = mason.createView(this)
+    left.append("Left")
+    left.setBackgroundColor("#6C5CE7".toColorInt())
+    left.style.gridArea = "hg-left"
+    left.style.borderRadius = "8px"
+    left.style.display = org.nativescript.mason.masonkit.enums.Display.Flex
+    left.style.alignItems = org.nativescript.mason.masonkit.enums.AlignItems.Center
+    left.style.justifyContent = org.nativescript.mason.masonkit.enums.JustifyContent.Center
+
+    val main = mason.createView(this)
+    main.append("Main Content")
+    main.setBackgroundColor("#00B894".toColorInt())
+    main.style.gridArea = "hg-main"
+    main.style.borderRadius = "8px"
+    main.style.display = org.nativescript.mason.masonkit.enums.Display.Flex
+    main.style.alignItems = org.nativescript.mason.masonkit.enums.AlignItems.Center
+    main.style.justifyContent = org.nativescript.mason.masonkit.enums.JustifyContent.Center
+
+    val right = mason.createView(this)
+    right.append("Right")
+    right.setBackgroundColor("#E84393".toColorInt())
+    right.style.gridArea = "hg-right"
+    right.style.borderRadius = "8px"
+    right.style.display = org.nativescript.mason.masonkit.enums.Display.Flex
+    right.style.alignItems = org.nativescript.mason.masonkit.enums.AlignItems.Center
+    right.style.justifyContent = org.nativescript.mason.masonkit.enums.JustifyContent.Center
+
+    val hf = mason.createView(this)
+    hf.append("Footer")
+    hf.setBackgroundColor("#2D3436".toColorInt())
+    hf.style.gridArea = "hg-footer"
+    hf.style.borderRadius = "8px"
+
+    holy.append(arrayOf(hh, left, main, right, hf))
+    // Set explicit height similar to web example
+    holy.style.setSizeHeight(toPx(240f), 1.toByte())
+    rootLayout.append(holy)
   }
 
   fun grid_template_areas(rootLayout: Scroll) {

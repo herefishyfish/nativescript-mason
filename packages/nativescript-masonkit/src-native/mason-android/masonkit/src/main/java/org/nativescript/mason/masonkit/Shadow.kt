@@ -2,8 +2,6 @@ package org.nativescript.mason.masonkit
 
 import android.graphics.Color
 
-private val SPLIT_REGEX = Regex("\\s+")
-
 /**
  * Tokenise a CSS shadow value, keeping parenthesised groups (e.g.
  * `rgba(26, 26, 46, 0.4)`) as single tokens even when they contain
@@ -15,11 +13,20 @@ private fun tokenizeShadow(value: String): List<String> {
   var depth = 0
   for (ch in value) {
     when {
-      ch == '(' -> { depth++; sb.append(ch) }
-      ch == ')' -> { depth--; sb.append(ch) }
-      ch.isWhitespace() && depth == 0 -> {
-        if (sb.isNotEmpty()) { tokens.add(sb.toString()); sb.clear() }
+      ch == '(' -> {
+        depth++; sb.append(ch)
       }
+
+      ch == ')' -> {
+        depth--; sb.append(ch)
+      }
+
+      ch.isWhitespace() && depth == 0 -> {
+        if (sb.isNotEmpty()) {
+          tokens.add(sb.toString()); sb.clear()
+        }
+      }
+
       else -> sb.append(ch)
     }
   }
@@ -37,11 +44,18 @@ private fun splitShadowLayers(value: String): List<String> {
   var depth = 0
   for (ch in value) {
     when {
-      ch == '(' -> { depth++; sb.append(ch) }
-      ch == ')' -> { depth--; sb.append(ch) }
+      ch == '(' -> {
+        depth++; sb.append(ch)
+      }
+
+      ch == ')' -> {
+        depth--; sb.append(ch)
+      }
+
       ch == ',' && depth == 0 -> {
         layers.add(sb.toString()); sb.clear()
       }
+
       else -> sb.append(ch)
     }
   }
@@ -120,7 +134,7 @@ class Shadow {
       return splitShadowLayers(value).mapNotNull { shadow ->
         try {
           val tokens = tokenizeShadow(shadow.trim())
-          
+
           var inset = false
           var offsetX: Float? = null
           var offsetY: Float? = null

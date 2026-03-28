@@ -8,6 +8,7 @@ import org.junit.runner.RunWith
 import org.nativescript.mason.masonkit.Mason
 import org.nativescript.mason.masonkit.Node
 import org.nativescript.mason.masonkit.MeasureFunc
+import org.nativescript.mason.masonkit.MeasureOutput
 import org.nativescript.mason.masonkit.Size
 import org.nativescript.mason.masonkit.TextNode
 
@@ -21,8 +22,8 @@ class WritebackDetectorInstrumentedTest {
     val mason = Mason()
 
     val child = mason.createNode(object : MeasureFunc {
-      override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>): Size<Float> {
-        return Size(0f, 0f)
+      override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float): Long {
+        return MeasureOutput.make(0f, 0f)
       }
     })
 
@@ -36,9 +37,9 @@ class WritebackDetectorInstrumentedTest {
     }
 
     val measures = listOf<MeasureFunc>(
-      object : MeasureFunc { override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>) = Size(0f, 0f) },
-      object : MeasureFunc { override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>) = Size(10f, 10f) },
-      object : MeasureFunc { override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>) = Size(0f, 8f) }
+      object : MeasureFunc { override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float) = MeasureOutput.make(0f, 0f) },
+      object : MeasureFunc { override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float) = MeasureOutput.make(10f, 10f) },
+      object : MeasureFunc { override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float) = MeasureOutput.make(0f, 8f) }
     )
 
     for (m in measures) {

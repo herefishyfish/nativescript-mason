@@ -2175,6 +2175,10 @@ declare class MasonStyle extends NSObject {
 
 	paddingCompat: MasonLengthPercentageRectCompat;
 
+	paddingCss: string;
+	marginCss: string;
+	insetCss: string;
+
 	position: MasonPosition;
 
 	sizeCompat: MasonDimensionSizeCompat;

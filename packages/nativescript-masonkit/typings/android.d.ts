@@ -3584,6 +3584,9 @@ declare module org {
 					public setTextShadow(this_: globalAndroid.view.View, view: string): void;
 					public setPaddingTop(this_: globalAndroid.view.View, view: number, value: number): void;
 					public setPaddingWithValueType(this_: globalAndroid.view.View, view: number, value: number): void;
+					public setPaddingCss(this_: globalAndroid.view.View, view: string): void;
+					public setMarginCss(this_: globalAndroid.view.View, view: string): void;
+					public setInsetCss(this_: globalAndroid.view.View, view: string): void;
 					public setInsetRight(this_: globalAndroid.view.View, view: number, value: number): void;
 					public getViews(): java.util.ArrayList<org.nativescript.mason.masonkit.View>;
 					public getSizeJsonValue(this_: globalAndroid.view.View): string;

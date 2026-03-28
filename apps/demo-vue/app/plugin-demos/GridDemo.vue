@@ -3,7 +3,7 @@
     <ActionBar>
       <Label text="Grid Layout" class="text-white" style="font-size: 18; font-weight: bold;" />
     </ActionBar>
-    <div style="padding: 16;overflow-y: scroll;">
+      <div style="overflow-y: scroll;">
 
       <!-- Basic Grid -->
       <p style="font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Basic Grid</p>
@@ -31,8 +31,8 @@
       </div>
 
       <!-- Grid with Gap -->
-      <p style="font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Grid Gap</p>
-      <p style="font-size: 12; color: #888; margin-bottom: 8;">12px gap between cells</p>
+      <p style="padding-left:16;padding-right:16;font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Grid Gap</p>
+      <p style="padding-left:16;padding-right:16;font-size: 12; color: #888; margin-bottom: 8;">12px gap between cells</p>
 
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12; margin-bottom: 20;">
         <div style="background-color: #FF6B6B; border-radius: 10; height: 56; padding: 8;">
@@ -56,8 +56,8 @@
       </div>
 
       <!-- Named Grid Areas -->
-      <p style="font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Grid Areas</p>
-      <p style="font-size: 12; color: #888; margin-bottom: 8;">Dashboard-style layout</p>
+      <p style="padding-left:16;padding-right:16;font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Grid Areas</p>
+      <p style="padding-left:16;padding-right:16;font-size: 12; color: #888; margin-bottom: 8;">Dashboard-style layout</p>
 
       <div class="dashboard">
         <div class="dash-header">
@@ -75,8 +75,8 @@
       </div>
 
       <!-- Spanning Cells -->
-      <p style="font-size: 22; font-weight: bold; color: #1a1a2e; margin-top: 20; margin-bottom: 4;">Column Span</p>
-      <p style="font-size: 12; color: #888; margin-bottom: 8;">Items spanning multiple columns</p>
+      <p style="padding-left:16;padding-right:16;font-size: 22; font-weight: bold; color: #1a1a2e; margin-top: 20; margin-bottom: 4;">Column Span</p>
+      <p style="padding-left:16;padding-right:16;font-size: 12; color: #888; margin-bottom: 8;">Items spanning multiple columns</p>
 
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6; margin-bottom: 20;">
         <div style="grid-column: 1 / 3; background-color: #0984E3; border-radius: 8; height: 50; padding: 8;">
@@ -94,8 +94,8 @@
       </div>
 
       <!-- Mixed Sizing -->
-      <p style="font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Mixed Sizing</p>
-      <p style="font-size: 12; color: #888; margin-bottom: 8;">Fixed + fractional units</p>
+      <p style="padding-left:16;padding-right:16;font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Mixed Sizing</p>
+      <p style="padding-left:16;padding-right:16;font-size: 12; color: #888; margin-bottom: 8;">Fixed + fractional units</p>
 
       <div style="display: grid; grid-template-columns: 80px 1fr 2fr; gap: 6;">
         <div style="background-color: #FF6B6B; border-radius: 6; height: 48; padding: 8;">
@@ -134,23 +134,27 @@
   grid-area: header;
   background-color: #2D3436;
   border-radius: 8;
+  padding: 12;
 }
 
 .dash-sidebar {
   grid-area: sidebar;
   background-color: #636E72;
   border-radius: 8;
+  padding: 12;
 }
 
 .dash-main {
   grid-area: main;
   background-color: #0984E3;
   border-radius: 8;
+  padding: 12;
 }
 
 .dash-footer {
   grid-area: footer;
   background-color: #2D3436;
   border-radius: 8;
+  padding: 12;
 }
 </style>

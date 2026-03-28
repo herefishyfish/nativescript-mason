@@ -1028,7 +1028,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     super.viewDidLoad()
     // Add a simple demo picker at the top and the Mason body below it
     let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle","Shadow","Display"])
-    demoPicker.selectedSegmentIndex = 5
+    demoPicker.selectedSegmentIndex = 2
     demoPicker.addTarget(self, action: #selector(demoChanged(_:)), for: .valueChanged)
     demoPicker.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(demoPicker)
@@ -1104,8 +1104,8 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
           case 1:
             textSample()
           case 2:
-            // red grid reproduction example
-            redGridSample()
+            // Grid-Area demo using CSS grid template areas
+            grid_template_areas_500(body)
           case 3:
             gallerySample()
           case 4:
@@ -1116,8 +1116,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       renderFloat(body)
      // renderFontVariantNumericDemo(body)
     case 7:
-      //renderSuperellipseDemo(body)
-      renderPseudoDemo(body)
+      renderSuperellipseDemo(body)
     case 8:
       renderShadowDemo(body)
     case 9:
@@ -1705,8 +1704,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       "sidebar2 sidebar2"
       "footer  footer"
       """
-      it.gridTemplateColumns = "20% auto"
-      it.gap = MasonSize(MasonLengthPercentage.Points(16), MasonLengthPercentage.Points(16))
+      // Match web sample: fixed 100px sidebar and flexible content column (convert dp -> px)
+      it.gridTemplateColumns = "\(toPx(100))px auto"
+      it.gap = MasonSize(MasonLengthPercentage.Points(toPx(8)), MasonLengthPercentage.Points(toPx(8)))
     }
 
 
@@ -1777,7 +1777,72 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     root.append(elements: [header, sidebar, sidebar2, content, footer])
 
     rootLayout.append(body)
-    
+
+    // --- Holy Grail layout (matches web sample) ---
+    let holy = mason.createView()
+    holy.configure { it in
+      it.display = Display.Grid
+      it.gridTemplateAreas = """
+      "hg-header hg-header hg-header"
+      "hg-left hg-main hg-right"
+      "hg-footer hg-footer hg-footer"
+      """
+      it.gridTemplateColumns = "\(toPx(70))px 1fr \(toPx(70))px"
+      it.gridTemplateRows = "\(toPx(48))px 1fr \(toPx(40))px"
+      it.gap = MasonSize(MasonLengthPercentage.Points(toPx(6)), MasonLengthPercentage.Points(toPx(6)))
+    }
+
+    let hh = mason.createView()
+    hh.append(text: "Header")
+    hh.style.background = "#0984E3"
+    hh.style.borderRadius = "8px"
+    hh.style.display = .Flex
+    hh.style.alignItems = .Center
+    hh.style.justifyContent = .Center
+    hh.style.gridArea = "hg-header"
+
+    let left = mason.createView()
+    left.append(text: "Left")
+    left.style.background = "#6C5CE7"
+    left.style.gridArea = "hg-left"
+    left.style.borderRadius = "8px"
+    left.style.display = .Flex
+    left.style.alignItems = .Center
+    left.style.justifyContent = .Center
+
+    let main = mason.createView()
+    main.append(text: "Main Content")
+    main.style.background = "#00B894"
+    main.style.gridArea = "hg-main"
+    main.style.borderRadius = "8px"
+    main.style.display = .Flex
+    main.style.alignItems = .Center
+    main.style.justifyContent = .Center
+
+    let right = mason.createView()
+    right.append(text: "Right")
+    right.style.background = "#E84393"
+    right.style.gridArea = "hg-right"
+    right.style.borderRadius = "8px"
+    right.style.display = .Flex
+    right.style.alignItems = .Center
+    right.style.justifyContent = .Center
+
+    let hf = mason.createView()
+    hf.append(text: "Footer")
+    hf.style.background = "#2D3436"
+    hf.style.gridArea = "hg-footer"
+    hf.style.borderRadius = "8px"
+
+    holy.append(hh)
+    holy.append(left)
+    holy.append(main)
+    holy.append(right)
+    holy.append(hf)
+
+    holy.style.setSizeHeight(toPx(240), 1)
+    rootLayout.append(holy)
+
     self.body.computeWithSize(scale * Float( self.body.bounds.width), scale * Float( self.body.bounds.height))
     
   }

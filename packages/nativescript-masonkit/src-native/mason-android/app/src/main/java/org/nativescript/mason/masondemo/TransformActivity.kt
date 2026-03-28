@@ -102,8 +102,9 @@ class TransformActivity : AppCompatActivity() {
     transformInput.value = "translate(24, 12) rotate(8deg) scale(1.02)"
     transformInput.placeholder = "enter transform() or matrix()"
     transformInput.style.flexGrow = 1f
+    transformInput.style.flexShrink = 1f
     transformInput.style.minSize =
-      Size(Dimension.Points(dp(120f)), Dimension.Auto)
+      Size(Dimension.Points(0f), Dimension.Auto)
 
 
     val presets = listOf(
@@ -140,6 +141,7 @@ class TransformActivity : AppCompatActivity() {
 
     val applyBtn = mason.createButton(this)
     applyBtn.textContent = "Apply"
+    applyBtn.style.flexShrink = 0f
     applyBtn.setOnClickListener {
       box.style.transform = transformInput.value
     }

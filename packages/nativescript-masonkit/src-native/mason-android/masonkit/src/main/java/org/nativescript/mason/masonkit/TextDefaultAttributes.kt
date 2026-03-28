@@ -6,7 +6,7 @@ import org.nativescript.mason.masonkit.enums.VerticalAlign
 
 data class TextDefaultAttributes(
   var color: Int? = null,
-  var fontSize: Any? = null,
+  var fontSize: Int? = null,
   var fontWeight: FontFace.NSCFontWeight? = null,
   var fontStyle: FontFace.NSCFontStyle? = null,
   var fontFamily: String? = null,
@@ -30,8 +30,8 @@ data class TextDefaultAttributes(
   fun sync(style: Style) {
     color = style.resolvedColor
     fontSize = style.resolvedFontSize
-    fontWeight = style.fontWeight
-    fontStyle = style.fontStyle
+    fontWeight = style.resolvedFontWeight
+    fontStyle = style.resolvedFontStyle
     val resolvedFont = style.resolvedFontFace
     fontFamily = resolvedFont.fontFamily
     font = resolvedFont

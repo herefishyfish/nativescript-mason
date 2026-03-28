@@ -31,7 +31,7 @@ import kotlin.math.sin
 
 
 private val FILTER_REGEX = Regex("""(\w+(?:-\w+)?)\(([^()]*(?:\([^()]*\)[^()]*)*)\)""")
-private val SPLIT_REGEX = Regex("\\s+")
+internal val SPLIT_REGEX = Regex("""\s+""")
 private const val PI_FLOAT = Math.PI.toFloat()
 private const val RAD_TO_DEG = (180f / PI_FLOAT)
 

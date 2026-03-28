@@ -479,6 +479,8 @@ class NodeHelper(val mason: Mason) {
         && current.bottom.type == newBottom.type && current.bottom.value == newBottom.value)
 
       if (same) return
+      // Always write padding into the Mason `style` so layout percentage
+      // resolution follows the spec (containing block includes padding).
       node.style.padding = Rect(newLeft, newRight, newTop, newBottom)
     }
 
@@ -576,6 +578,24 @@ class NodeHelper(val mason: Mason) {
     fun setBorderBottom(view: android.view.View, value: String) {
       val node = mason.nodeForView(view)
       node.style.borderBottom = value
+    }
+
+    fun setPaddingCss(view: android.view.View, value: String) {
+      val node = mason.nodeForView(view)
+      node.style.paddingCss = value
+      checkAndUpdateStyle(node)
+    }
+
+    fun setMarginCss(view: android.view.View, value: String) {
+      val node = mason.nodeForView(view)
+      node.style.marginCss = value
+      checkAndUpdateStyle(node)
+    }
+
+    fun setInsetCss(view: android.view.View, value: String) {
+      val node = mason.nodeForView(view)
+      node.style.insetCss = value
+      checkAndUpdateStyle(node)
     }
 
     fun setBorderWidth(

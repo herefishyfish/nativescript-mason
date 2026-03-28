@@ -138,7 +138,10 @@ class Li @JvmOverloads constructor(
 
     when (parent) {
       is ListView.MasonRecyclerView -> {
-        node.dirty()
+        // Do NOT call node.dirty() here — it defeats the compute cache and
+        // forces a full Rust layout on every measure during fling/scroll.
+        // Content changes are handled by onBindViewHolder which already
+        // calls node.dirty().
         if (!node.mason.inCompute) {
           val width = mapMeasureSpec(specWidthMode, specWidth).value
           var height = mapMeasureSpec(specHeightMode, specHeight).value
@@ -175,7 +178,10 @@ class Li @JvmOverloads constructor(
   }
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-    if (parent !is Element || parent is ListView.MasonRecyclerView) {
+    // layoutFlat() is already called during onMeasure for RecyclerView items;
+    // only re-read the layout tree if the cache was dirtied between measure
+    // and layout (rare). This avoids a redundant JNI call per item during fling.
+    if ((parent !is Element || parent is ListView.MasonRecyclerView) && node.computeCacheDirty) {
       layoutFlat()
     }
     applyLayoutFlat(node, node.layoutTree)

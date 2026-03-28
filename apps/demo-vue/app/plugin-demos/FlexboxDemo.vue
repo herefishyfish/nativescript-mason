@@ -3,7 +3,7 @@
     <ActionBar>
       <Label text="Flexbox Layout" class="text-white" style="font-size: 18; font-weight: bold;" />
     </ActionBar>
-    <div style="padding: 16;overflow-y: auto;display: flex; flex-direction: column;">
+    <div style="padding: 16;overflow-y: scroll;display: flex; flex-direction: column;">
 
       <!-- Flex Direction -->
       <p style="font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 8;">Flex Direction</p>
@@ -156,8 +156,8 @@
   </Page>
 </template>
 
-<script lang="ts" setup>
-</script>
+  <script lang="ts" setup>
+  </script>
 
 <style scoped>
 </style>

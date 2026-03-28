@@ -67,10 +67,24 @@ class Spans {
       get() = Type.Typeface
   }
 
-  class SizeSpan(size: Int, scale: Boolean = false) :
-    android.text.style.AbsoluteSizeSpan(size, scale), NSCSpan {
+  class SizeSpan(val attributes: TextDefaultAttributes, val scale: Boolean = false) :
+    android.text.style.AbsoluteSizeSpan(attributes.fontSize ?: Constants.DEFAULT_FONT_SIZE, scale),
+    NSCSpan {
     override val type: Type
       get() = Type.Size
+
+    override fun getSize(): Int {
+      return attributes.fontSize ?: Constants.DEFAULT_FONT_SIZE
+    }
+
+    override fun updateDrawState(ds: TextPaint) {
+      val size = attributes.fontSize ?: Constants.DEFAULT_FONT_SIZE
+      if (scale) {
+        ds.textSize = size * ds.density
+      } else {
+        ds.textSize = size.toFloat()
+      }
+    }
   }
 
   class ScaleXSpan(scale: Float) : android.text.style.ScaleXSpan(scale), NSCSpan {

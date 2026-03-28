@@ -1,6 +1,5 @@
 package org.nativescript.mason.masonkit
 
-import android.util.Log
 import kotlin.math.abs
 
 // MARK: - Flat Layout Tree (Android equivalent of iOS MasonLayoutTree)

@@ -4,9 +4,7 @@ import android.graphics.Paint
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.TextPaint
-import android.text.style.AbsoluteSizeSpan
 import android.text.style.AlignmentSpan
-import android.text.style.ForegroundColorSpan
 import android.text.style.LineHeightSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.UnderlineSpan
@@ -195,18 +193,8 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
 
       // Apply font size
       attributes.fontSize?.let { size ->
-        var fontSize: Int? = null
-        when (size) {
-          is Int -> {
-            fontSize = size
-          }
-
-          is Float -> {
-            fontSize = size.toInt()
-          }
-        }
-        fontSize?.takeIf { it > 0 }?.let {
-          spannable.setSpan(AbsoluteSizeSpan(it, true), start, end, flags)
+        size.takeIf { it > 0 }?.let {
+          spannable.setSpan(Spans.SizeSpan(attributes, true), start, end, flags)
         }
       }
 
@@ -231,9 +219,12 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       }
 
       // Apply typeface
-      attributes.font?.font.let { typeface ->
-        if (typeface is android.graphics.Typeface) {
-          spannable.setSpan(Spans.TypefaceSpan(typeface), start, end, flags)
+      attributes.font?.let { fontFace ->
+        fontFace.font?.let { typeface ->
+          val isBold = fontFace.fontDescriptors.weight.isBold
+          val isItalic =
+            fontFace.fontDescriptors.style.fontStyle == android.graphics.Typeface.ITALIC
+          spannable.setSpan(Spans.TypefaceSpan(typeface, isBold, isItalic), start, end, flags)
         }
       }
 

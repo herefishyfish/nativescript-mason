@@ -150,6 +150,8 @@ class Scroll @JvmOverloads constructor(
 
         computeAndLayout(widthArg, heightArg)
 
+        node.mason.printTree(node)
+
         if (node.layoutTree.nodeCount == 0) {
           setMeasuredDimension(0, 0)
           return

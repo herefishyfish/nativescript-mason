@@ -3,7 +3,6 @@ package org.nativescript.mason.masonkit
 import android.content.Context
 import android.text.BoringLayout
 import android.text.Layout
-import android.util.Log
 import android.view.View
 
 class Br(context: Context, mason: Mason) : Element, MeasureFunc {

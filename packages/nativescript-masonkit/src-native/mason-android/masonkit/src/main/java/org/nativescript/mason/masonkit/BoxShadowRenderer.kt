@@ -40,6 +40,10 @@ class BoxShadowRenderer(private val style: Style) {
   private val tmpRadii = FloatArray(8)
   private val tmpPath = Path()
 
+  // Cached filtered outset/inset shadow lists to avoid .filter{} per frame
+  private var cachedOutsetList: List<Shadow.BoxShadow>? = null
+  private var cachedOutsetListHash = 0
+
   // For API 31+
   @RequiresApi(Build.VERSION_CODES.S)
   private var outsetShadowNodes: List<RenderNode>? = null
@@ -157,11 +161,9 @@ class BoxShadowRenderer(private val style: Style) {
   }
 
   fun invalidate() {
-    cachedOutsetShadows?.forEach { entry ->
-      // Don't recycle - pooled bitmaps are managed by the pool
-    }
     cachedOutsetShadows = null
     cachedInsetShadows = null
+    cachedOutsetList = null
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       outsetShadowNodes = null
       insetShadowNodes = null
@@ -187,9 +189,19 @@ class BoxShadowRenderer(private val style: Style) {
     forceLegacy: Boolean = false
   ) {
     if (width <= 0f || height <= 0f) return
-    val outsetShadows = style.boxShadows.filter { !it.inset }
+    val shadows = style.boxShadows
+    // Build outset list only when cache is dirty; reuse otherwise
+    if (cachedOutsetList == null || cachedOutsetListHash != style.boxShadowsHash()) {
+      val list = ArrayList<Shadow.BoxShadow>(shadows.size)
+      for (i in shadows.indices) {
+        val s = shadows[i]
+        if (!s.inset) list.add(s)
+      }
+      cachedOutsetList = list
+      cachedOutsetListHash = style.boxShadowsHash()
+    }
+    val outsetShadows = cachedOutsetList!!
     if (outsetShadows.isEmpty()) return
-    android.util.Log.d("mason", "BoxShadowRenderer.drawOutsetShadows -> view=${view.javaClass.simpleName} w=${width} h=${height} count=${outsetShadows.size} forceLegacy=${forceLegacy}")
 
     if (!forceLegacy && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       drawOutsetShadowsV31(view, canvas, width, height, borderRenderer, outsetShadows)
@@ -297,9 +309,10 @@ class BoxShadowRenderer(private val style: Style) {
     }
 
     // Draw cached nodes (in reverse order so first shadow is on top)
-    outsetShadowNodes?.reversed()?.forEach { node ->
-      android.util.Log.d("mason", "BoxShadowRenderer.drawOutsetShadowsV31 drawing node=${node.toString()}")
-      canvas.drawRenderNode(node)
+    outsetShadowNodes?.let { nodes ->
+      for (i in nodes.indices.reversed()) {
+        canvas.drawRenderNode(nodes[i])
+      }
     }
   }
 
@@ -365,9 +378,11 @@ class BoxShadowRenderer(private val style: Style) {
     }
 
     // Draw cached bitmaps (in reverse order so first shadow is on top)
-    cachedOutsetShadows?.reversed()?.forEach { entry ->
-      android.util.Log.d("mason", "BoxShadowRenderer.drawOutsetShadowsLegacy drawing bitmap drawX=${entry.drawX} drawY=${entry.drawY} isInset=${entry.isInset}")
-      canvas.drawBitmap(entry.bitmap, entry.drawX, entry.drawY, null)
+    cachedOutsetShadows?.let { entries ->
+      for (i in entries.indices.reversed()) {
+        val entry = entries[i]
+        canvas.drawBitmap(entry.bitmap, entry.drawX, entry.drawY, null)
+      }
     }
   }
 

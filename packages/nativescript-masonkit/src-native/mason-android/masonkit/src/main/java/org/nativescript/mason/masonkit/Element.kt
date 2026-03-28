@@ -1,11 +1,11 @@
 package org.nativescript.mason.masonkit
 
 import android.os.Build
-import android.util.Log
 import android.util.SizeF
 import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
+import android.widget.TextView
 import androidx.core.view.isGone
 import org.nativescript.mason.masonkit.enums.BoxSizing
 import org.nativescript.mason.masonkit.enums.Overflow
@@ -827,12 +827,7 @@ private fun popFrame(): LayoutStackFrame {
 internal fun Element.applyLayoutFlat(rootNode: Node, tree: MasonLayoutTree) {
   if (tree.nodeCount == 0) return
 
-  val parentVG = (this.view.parent as? ViewGroup)
-  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && parentVG?.isInLayout == false) {
-    parentVG.suppressLayout(true)
-  }
-  try {
-    val nv = tree.cursor
+  val nv = tree.cursor
     layoutStackTop = -1
     pushFrame(0, rootNode)
 
@@ -857,8 +852,21 @@ internal fun Element.applyLayoutFlat(rootNode: Node, tree: MasonLayoutTree) {
           val rootPadTop = nv.paddingTop.toInt()
           val rootPadRight = nv.paddingRight.toInt()
           val rootPadBottom = nv.paddingBottom.toInt()
-          if (view.paddingLeft != rootPadLeft || view.paddingTop != rootPadTop || view.paddingRight != rootPadRight || view.paddingBottom != rootPadBottom) {
-            view.setPadding(rootPadLeft, rootPadTop, rootPadRight, rootPadBottom)
+          if (view is TextContainer) {
+            val rootBL = nv.borderLeft.toInt()
+            val rootBT = nv.borderTop.toInt()
+            val rootBR = nv.borderRight.toInt()
+            val rootBB = nv.borderBottom.toInt()
+            val tL = rootPadLeft + rootBL
+            val tT = rootPadTop + rootBT
+            val tR = rootPadRight + rootBR
+            val tB = rootPadBottom + rootBB
+            if (view.paddingLeft != tL || view.paddingTop != tT || view.paddingRight != tR || view.paddingBottom != tB) {
+              view.setPadding(tL, tT, tR, tB)
+            }
+          } else if (view is Scroll || view is ListView) {
+            // Ensure scroll roots receive padding for correct scroll/clamp behaviour
+          //  view.setPadding(rootPadLeft, rootPadTop, rootPadRight, rootPadBottom)
           }
           // Skip positioning — the root is sized by its parent.
         } else {
@@ -916,8 +924,24 @@ internal fun Element.applyLayoutFlat(rootNode: Node, tree: MasonLayoutTree) {
           val padTop = nv.paddingTop.toInt()
           val padRight = nv.paddingRight.toInt()
           val padBottom = nv.paddingBottom.toInt()
-          if (view.paddingLeft != padLeft || view.paddingTop != padTop || view.paddingRight != padRight || view.paddingBottom != padBottom) {
-            view.setPadding(padLeft, padTop, padRight, padBottom)
+          if (view is TextContainer) {
+            // CSS positions content at border + padding from the view edge.
+            // Android's setPadding controls where text draws, so include
+            // the border width so text renders inside the border boundary.
+            val bL = nv.borderLeft.toInt()
+            val bT = nv.borderTop.toInt()
+            val bR = nv.borderRight.toInt()
+            val bB = nv.borderBottom.toInt()
+            val totalLeft = padLeft + bL
+            val totalTop = padTop + bT
+            val totalRight = padRight + bR
+            val totalBottom = padBottom + bB
+            if (view.paddingLeft != totalLeft || view.paddingTop != totalTop || view.paddingRight != totalRight || view.paddingBottom != totalBottom) {
+              view.setPadding(totalLeft, totalTop, totalRight, totalBottom)
+            }
+          } else if (view is Scroll || view is ListView) {
+            // Scroll and list containers rely on Android padding for content sizing/clamping
+           // view.setPadding(padLeft, padTop, padRight, padBottom)
           }
 
           if (view is Scroll) {
@@ -936,6 +960,14 @@ internal fun Element.applyLayoutFlat(rootNode: Node, tree: MasonLayoutTree) {
             }
             view.scrollContentWidth = scrollCW
             view.scrollContentHeight = scrollCH
+
+            // Enable scroll axes based on overflow style + content exceeding viewport.
+            // updateScrollState() in Scroll.onLayout won't run when the Scroll's own
+            // layoutTree is empty (parent owns the layout tree), so set these here.
+            view.enableScrollX = overflowX == Overflow.Scroll.value ||
+              (overflowX == Overflow.Auto.value && scrollCW > layoutWidth)
+            view.enableScrollY = overflowY == Overflow.Scroll.value ||
+              (overflowY == Overflow.Auto.value && scrollCH > layoutHeight)
 
             view.measure(
               MeasureSpec.makeMeasureSpec(layoutWidth, MeasureSpec.EXACTLY),
@@ -997,9 +1029,4 @@ internal fun Element.applyLayoutFlat(rootNode: Node, tree: MasonLayoutTree) {
         }
       }
     }
-  } finally {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && parentVG?.isInLayout == false) {
-      parentVG.suppressLayout(false)
-    }
-  }
 }

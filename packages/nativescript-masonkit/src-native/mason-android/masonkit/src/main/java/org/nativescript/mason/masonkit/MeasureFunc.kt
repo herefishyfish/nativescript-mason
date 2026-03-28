@@ -45,7 +45,6 @@ internal class MeasureFuncImpl(
     val availableWidth = MeasureOutput.getWidth(availableSpaceSpec)
     val availableHeight = MeasureOutput.getHeight(availableSpaceSpec)
 
-    // -3f is now always used for undefined from Rust, so just pass through
     return func.measure(knownWidth, knownHeight, availableWidth, availableHeight)
   }
 }

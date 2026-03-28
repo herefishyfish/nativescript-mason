@@ -155,7 +155,7 @@ impl NodeMeasure {
                             let size = result.j().unwrap_or_default();
                             let width = MeasureOutput::get_width(size);
                             let height = MeasureOutput::get_height(size);
-                            
+
                             Size { width, height }
                         }
                         Err(e) => {

@@ -2145,6 +2145,18 @@ public struct StateKeys : Swift.Equatable {
     @objc get
     @objc set
   }
+  @objc public var paddingCss: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var marginCss: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var insetCss: Swift.String {
+    @objc get
+    @objc set
+  }
   @objc public var borderLeft: Swift.String {
     @objc get
     @objc set

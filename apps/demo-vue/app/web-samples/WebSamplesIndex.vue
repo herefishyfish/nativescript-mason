@@ -1,5 +1,4 @@
 <template>
-  <Frame>
     <Page>
       <ActionBar title="Web Samples" />
       <ScrollView class="page">
@@ -10,6 +9,8 @@
             <Button text="Transform Demo" @tap="$navigateTo(require('~/plugin-demos/TransformDemo.vue').default)" />
             <Button text="Typography" @tap="$navigateTo(require('~/plugin-demos/TypographyDemo.vue').default)" />
             <Button text="Showcase" @tap="$navigateTo(require('~/plugin-demos/ShowcaseDemo.vue').default)" />
+            <Button text="All Samples" @tap="$navigateTo(require('~/web-samples/SamplesIndex.vue').default)" />
+            <Button text="Professions" @tap="$navigateTo(require('~/web-samples/ProfessionList.vue').default)" />
           </GridLayout>
 
           <Label class="sub" text="Mason Web Showcase" />
@@ -34,7 +35,6 @@
         </StackLayout>
       </ScrollView>
     </Page>
-  </Frame>
 </template>
 
 <script lang="ts" setup>

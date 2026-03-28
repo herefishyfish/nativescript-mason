@@ -772,7 +772,6 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
       // Frameworks with linked-list traversal (Angular)
       if ('firstChild' in frameworkEl) {
-        console.log('vue 2?', frameworkEl.childNodes);
         const nodes = [];
         let child = frameworkEl.firstChild;
         while (child) {
@@ -793,7 +792,6 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
     // NativeScript Core: linked-list traversal on the view itself
     if ('firstChild' in this) {
-      console.log('vue3?', frameworkEl.childNodes);
       const nodes = [];
       let child = (this as any).firstChild;
       while (child) {
@@ -1365,13 +1363,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     // @ts-ignore
     const style = this._styleHelper;
     if (style) {
-      if (value === 'auto') {
-        style.margin = 'auto';
-        return;
-      }
-      try {
-        style.margin = CorePercentLength.parse(value);
-      } catch (error) {}
+      style.marginCss = value;
     }
   }
 
@@ -1419,10 +1411,8 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     // @ts-ignore
     const style = this._styleHelper;
     if (style) {
-      try {
-        // @ts-ignore
-        style.padding = CoreLength.parse(value);
-      } catch (error) {}
+      // @ts-ignore
+      style.paddingCss = value;
     }
   }
 
@@ -1765,13 +1755,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     // @ts-ignore
     const style = this._styleHelper;
     if (style) {
-      if (value === 'auto') {
-        style.inset = 'auto';
-        return;
-      }
-      try {
-        style.inset = CorePercentLength.parse(value as never);
-      } catch (error) {}
+      style.insetCss = value;
     }
   }
 
@@ -1827,8 +1811,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     const style = this._styleHelper;
     if (style) {
       // @ts-ignore
-      style.boxShadow = typeof value === 'string' ? value : `${value}`;
-      console.log('boxShadow set to', style.boxShadow);
+      style.boxShadow = value;
     }
   }
 

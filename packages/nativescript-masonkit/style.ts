@@ -3362,6 +3362,69 @@ export class Style {
     }
   }
 
+  get paddingCss() {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getPaddingCssValue(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.paddingCss;
+    }
+    return '';
+  }
+
+  set paddingCss(value: string) {
+    if (!this.nativeView) return;
+    if (__ANDROID__) {
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setPaddingCss(this.nativeView, value);
+    }
+    if (__APPLE__) {
+      (this.nativeView as MasonElementObjc).style.paddingCss = value;
+    }
+  }
+
+  get marginCss() {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getMarginCssValue(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.marginCss;
+    }
+    return '';
+  }
+
+  set marginCss(value: string) {
+    if (!this.nativeView) return;
+    if (__ANDROID__) {
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setMarginCss(this.nativeView, value);
+    }
+    if (__APPLE__) {
+      (this.nativeView as MasonElementObjc).style.marginCss = value;
+    }
+  }
+
+  get insetCss() {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getInsetCssValue(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.insetCss;
+    }
+    return '';
+  }
+
+  set insetCss(value: string) {
+    if (!this.nativeView) return;
+    if (__ANDROID__) {
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setInsetCss(this.nativeView, value);
+    }
+    if (__APPLE__) {
+      (this.nativeView as MasonElementObjc).style.insetCss = value;
+    }
+  }
+
   get borderLeft() {
     return '';
   }

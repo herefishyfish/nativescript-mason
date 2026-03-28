@@ -5,12 +5,14 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.os.Build
 import android.util.AttributeSet
-import android.util.Log
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.widget.TextViewCompat
+import org.nativescript.mason.masonkit.enums.BoxSizing
+import org.nativescript.mason.masonkit.enums.Display
 import org.nativescript.mason.masonkit.events.Event
 
 class Button @JvmOverloads constructor(
@@ -115,12 +117,13 @@ class Button @JvmOverloads constructor(
     )
 
     val x = 6f
-    val y = 1f
 
     setPadding(0, 0, 0, 0)
 
     paint.textSize = fontSize
-    defaultFocusHighlightEnabled = false
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      defaultFocusHighlightEnabled = false
+    }
     minWidth = 0
     minHeight = 0
     isAllCaps = false
@@ -131,18 +134,26 @@ class Button @JvmOverloads constructor(
     isFocusable = true
     outlineProvider = null
     setBackgroundResource(0)
-    supportBackgroundTintList = null
-    foreground = null
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      foreground = null
+    }
 
     configure { style ->
+      // CSS spec UA defaults for <button>:
+      //   display: inline-block; box-sizing: border-box; text-align: center;
+      //   padding: 1px 6px; border: 2px outset buttonborder;
+      //   background-color: buttonface; color: buttontext;
+      style.display = Display.InlineBlock
+      style.boxSizing = BoxSizing.BorderBox
       style.padding = Rect(
-        LengthPercentage.Points(y),
+        LengthPercentage.Points(1f),
         LengthPercentage.Points(x),
-        LengthPercentage.Points(y),
+        LengthPercentage.Points(1f),
         LengthPercentage.Points(x),
       )
+      style.fontSize = Constants.DEFAULT_FONT_SIZE
       style.background = "#F0F0F0"
-      style.border = "1 solid #767676"
+      style.border = "2 solid #767676"
       style.borderRadius = "4"
       style.syncFontMetrics()
     }
@@ -203,26 +214,7 @@ class Button @JvmOverloads constructor(
     if (pseudoChanged) {
       // Re-resolve text paint properties for pseudo-aware values, but only
       // when the active pseudo buffers actually override any of these keys.
-      val key = StateKeys.FONT_COLOR.apply {
-        or(StateKeys.FONT_SIZE)
-        or(StateKeys.FONT_WEIGHT)
-        or(StateKeys.FONT_STYLE)
-        or(StateKeys.FONT_FAMILY)
-        or(StateKeys.FONT_VARIANT_NUMERIC)
-        or(StateKeys.TEXT_WRAP)
-        or(StateKeys.WHITE_SPACE)
-        or(StateKeys.TEXT_TRANSFORM)
-        or(StateKeys.DECORATION_LINE)
-        or(StateKeys.DECORATION_COLOR)
-        or(StateKeys.DECORATION_STYLE)
-        or(StateKeys.LETTER_SPACING)
-        or(StateKeys.TEXT_JUSTIFY)
-        or(StateKeys.BACKGROUND_COLOR)
-        or(StateKeys.LINE_HEIGHT)
-        or(StateKeys.TEXT_ALIGN)
-        or(StateKeys.TEXT_OVERFLOW)
-        or(StateKeys.TEXT_SHADOWS)
-      }
+      val key = StateKeys.ALL_TEXT
 
       if (node.hasPseudoSetFor(key)) {
         onChange(key.low, key.high)

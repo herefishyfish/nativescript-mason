@@ -66,6 +66,7 @@ android {
   kotlinOptions {
     jvmTarget = '17'
   }
+
 }
 
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'

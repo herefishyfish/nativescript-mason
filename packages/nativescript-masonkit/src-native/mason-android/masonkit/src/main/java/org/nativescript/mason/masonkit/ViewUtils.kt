@@ -29,8 +29,7 @@ class ViewUtils {
             val child = parent.getChildAt(i)
             if (child.width <= 0 || child.height <= 0) continue
             val childStyle = (child as? Element)?.style ?: continue
-            val outsetShadows = childStyle.boxShadows.filter { !it.inset }
-            if (outsetShadows.isEmpty()) continue
+            if (!childStyle.hasOutsetBoxShadow()) continue
 
             canvas.withTranslation(child.left.toFloat(), child.top.toFloat()) {
               childStyle.mBorderRenderer.updateCache(child.width.toFloat(), child.height.toFloat())
@@ -52,14 +51,9 @@ class ViewUtils {
         val child = parent.getChildAt(i)
         if (child.width <= 0 || child.height <= 0) continue
         val childStyle = (child as? Element)?.style ?: continue
-        val outsetShadows = childStyle.boxShadows.filter { !it.inset }
-        if (outsetShadows.isEmpty()) continue
+        if (!childStyle.hasOutsetBoxShadow()) continue
 
         canvas.withTranslation(child.left.toFloat(), child.top.toFloat()) {
-          android.util.Log.d(
-            "mason",
-            "ViewUtils.drawChildrenOutsetShadows drawing child=${child.javaClass.simpleName} at (${child.left},${child.top}) size=(${child.width}x${child.height})"
-          )
           childStyle.mBorderRenderer.updateCache(child.width.toFloat(), child.height.toFloat())
           childStyle.mBoxShadowRenderer.drawOutsetShadows(
             child,
@@ -105,17 +99,30 @@ class ViewUtils {
           }
 
           style.mBackground?.let { background ->
-            background.color?.let { color ->
+            // If background is a single solid color with no layers, draw the rounded
+            // shape directly into the canvas to avoid clipPath reuse/antialias interaction.
+            if (background.color != null && background.layers.isEmpty()) {
+              val color = background.color!!
               background.bgPaint.color = color
-              canvas.drawRect(0f, 0f, width, height, background.bgPaint)
-            }
+              background.bgPaint.style = android.graphics.Paint.Style.FILL
+              if (!outerPath.isEmpty) {
+                canvas.drawPath(outerPath, background.bgPaint)
+              } else {
+                canvas.drawRect(0f, 0f, width, height, background.bgPaint)
+              }
+            } else {
+              background.color?.let { color ->
+                background.bgPaint.color = color
+                canvas.drawRect(0f, 0f, width, height, background.bgPaint)
+              }
 
-            background.layers.forEach { layer ->
-              canvas.withSave {
-                // pass measured bounds so clip uses the real size instead of the
-                // potentially-zero computedWidth/Height stored on the node
-                Style.applyClip(canvas, layer.clip, style, width, height)
-                drawBackground(view.context, view, layer, canvas, width.toInt(), height.toInt())
+              background.layers.forEach { layer ->
+                canvas.withSave {
+                  // pass measured bounds so clip uses the real size instead of the
+                  // potentially-zero computedWidth/Height stored on the node
+                  Style.applyClip(canvas, layer.clip, style, width, height)
+                  drawBackground(view.context, view, layer, canvas, width.toInt(), height.toInt())
+                }
               }
             }
           }
@@ -154,7 +161,8 @@ class ViewUtils {
       // Block 2: Content with inner border-radius clip + overflow clip
       canvas.withSave {
         if (hasRadii) {
-          canvas.clipPath(style.mBorderRenderer.getClipPath(width, height))
+          val innerPath = style.mBorderRenderer.getClipPath(width, height)
+          canvas.clipPath(innerPath)
         }
 
         Style.applyOverflowClip(style, canvas, style.node)

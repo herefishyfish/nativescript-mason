@@ -1219,6 +1219,9 @@ SWIFT_CLASS_NAMED("MasonStyle")
 @property (nonatomic, copy) NSString * _Nonnull cornerShapeBottomRight;
 @property (nonatomic, copy) NSString * _Nonnull cornerShapeBottomLeft;
 @property (nonatomic, copy) NSString * _Nonnull border;
+@property (nonatomic, copy) NSString * _Nonnull paddingCss;
+@property (nonatomic, copy) NSString * _Nonnull marginCss;
+@property (nonatomic, copy) NSString * _Nonnull insetCss;
 @property (nonatomic, copy) NSString * _Nonnull borderLeft;
 @property (nonatomic, copy) NSString * _Nonnull borderTop;
 @property (nonatomic, copy) NSString * _Nonnull borderRight;
@@ -3168,6 +3171,9 @@ SWIFT_CLASS_NAMED("MasonStyle")
 @property (nonatomic, copy) NSString * _Nonnull cornerShapeBottomRight;
 @property (nonatomic, copy) NSString * _Nonnull cornerShapeBottomLeft;
 @property (nonatomic, copy) NSString * _Nonnull border;
+@property (nonatomic, copy) NSString * _Nonnull paddingCss;
+@property (nonatomic, copy) NSString * _Nonnull marginCss;
+@property (nonatomic, copy) NSString * _Nonnull insetCss;
 @property (nonatomic, copy) NSString * _Nonnull borderLeft;
 @property (nonatomic, copy) NSString * _Nonnull borderTop;
 @property (nonatomic, copy) NSString * _Nonnull borderRight;
