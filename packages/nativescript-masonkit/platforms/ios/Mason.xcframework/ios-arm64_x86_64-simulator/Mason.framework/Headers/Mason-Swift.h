@@ -1759,28 +1759,6 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, strong) NSCMason * _Nonnull sh
 - (MasonNode * _Nonnull)createListItemNode SWIFT_WARN_UNUSED_RESULT;
 - (MasonLi * _Nonnull)createListItem SWIFT_WARN_UNUSED_RESULT;
 - (MasonTextArea * _Nonnull)createTextArea SWIFT_WARN_UNUSED_RESULT;
-/// Enable or disable CSS Preflight (web-normalised / Tailwind-like) defaults.
-/// When <code>true</code> every element starts with a clean slate:
-/// <ul>
-///   <li>
-///     <code>box-sizing: border-box</code>
-///   </li>
-///   <li>
-///     <code>margin: 0</code>, <code>padding: 0</code>, <code>border-width: 0</code>
-///   </li>
-///   <li>
-///     <code>background: transparent</code>
-///   </li>
-///   <li>
-///     <code>list-style: none</code> on lists
-///   </li>
-///   <li>
-///     <code>display: block</code> on replaced elements (<code><img></code>)
-///   </li>
-/// </ul>
-/// The flag is stored in a global atomic so it must ideally be set <em>before</em>
-/// creating views.  Calling the setter on an existing instance also re-seeds
-/// that instance’s arena immediately.
 @property (nonatomic) BOOL preflight;
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly) float scale;)
 + (float)scale SWIFT_WARN_UNUSED_RESULT;
@@ -3769,28 +3747,6 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, strong) NSCMason * _Nonnull sh
 - (MasonNode * _Nonnull)createListItemNode SWIFT_WARN_UNUSED_RESULT;
 - (MasonLi * _Nonnull)createListItem SWIFT_WARN_UNUSED_RESULT;
 - (MasonTextArea * _Nonnull)createTextArea SWIFT_WARN_UNUSED_RESULT;
-/// Enable or disable CSS Preflight (web-normalised / Tailwind-like) defaults.
-/// When <code>true</code> every element starts with a clean slate:
-/// <ul>
-///   <li>
-///     <code>box-sizing: border-box</code>
-///   </li>
-///   <li>
-///     <code>margin: 0</code>, <code>padding: 0</code>, <code>border-width: 0</code>
-///   </li>
-///   <li>
-///     <code>background: transparent</code>
-///   </li>
-///   <li>
-///     <code>list-style: none</code> on lists
-///   </li>
-///   <li>
-///     <code>display: block</code> on replaced elements (<code><img></code>)
-///   </li>
-/// </ul>
-/// The flag is stored in a global atomic so it must ideally be set <em>before</em>
-/// creating views.  Calling the setter on an existing instance also re-seeds
-/// that instance’s arena immediately.
 @property (nonatomic) BOOL preflight;
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly) float scale;)
 + (float)scale SWIFT_WARN_UNUSED_RESULT;
