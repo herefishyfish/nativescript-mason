@@ -255,13 +255,16 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
       }
 
       "radial" -> {
+        val (cx, cy) = resolveRadialGradientCenter(gradient.direction, width.toFloat(), height.toFloat())
+        // Radius must reach the farthest corner from the resolved centre.
+        val radius = maxOf(
+          Math.hypot((cx).toDouble(), (cy).toDouble()),
+          Math.hypot((width - cx).toDouble(), (cy).toDouble()),
+          Math.hypot((cx).toDouble(), (height - cy).toDouble()),
+          Math.hypot((width - cx).toDouble(), (height - cy).toDouble())
+        ).toFloat().coerceAtLeast(1f)
         RadialGradient(
-          width / 2f,
-          height / 2f,
-          maxOf(width, height) / 2f,
-          colorsArray,
-          positionsArray,
-          Shader.TileMode.CLAMP
+          cx, cy, radius, colorsArray, positionsArray, Shader.TileMode.CLAMP
         )
       }
 
@@ -344,6 +347,87 @@ private fun parseCssAngleToRadians(value: String): Double? {
 
     v.endsWith("rad") -> v.removeSuffix("rad").toDoubleOrNull()
     else -> null
+  }
+}
+
+/**
+ * Resolve the centre point of a radial-gradient from the CSS direction string.
+ *
+ * Accepted formats include:
+ *   "circle at top left", "ellipse at 30% 70%", "at center", "circle", etc.
+ *
+ * When no position is given the default is the element centre (50% 50%).
+ */
+private fun resolveRadialGradientCenter(
+  direction: String?,
+  width: Float,
+  height: Float
+): Pair<Float, Float> {
+  val defaultCenter = Pair(width / 2f, height / 2f)
+  val dir = direction?.trim()?.lowercase() ?: return defaultCenter
+
+  // Extract the position portion after "at "
+  val atIndex = dir.indexOf(" at ")
+  val positionStr = if (atIndex >= 0) dir.substring(atIndex + 4).trim() else return defaultCenter
+  if (positionStr.isEmpty()) return defaultCenter
+
+  return resolvePositionKeywords(positionStr, width, height)
+}
+
+/**
+ * Convert a CSS background-position value (keyword or percentage based) to
+ * absolute pixel coordinates.
+ *
+ * Supports: named keywords (top, bottom, left, right, center) and percentage
+ * values (e.g. "30%" or "30% 70%").
+ */
+private fun resolvePositionKeywords(
+  position: String,
+  width: Float,
+  height: Float
+): Pair<Float, Float> {
+  val parts = position.split(Regex("\\s+"))
+
+  fun resolveToken(token: String, horizontal: Boolean): Float {
+    return when (token) {
+      "left" -> 0f
+      "right" -> width
+      "top" -> 0f
+      "bottom" -> height
+      "center" -> if (horizontal) width / 2f else height / 2f
+      else -> {
+        if (token.endsWith("%")) {
+          val pct = token.removeSuffix("%").toFloatOrNull() ?: 50f
+          if (horizontal) pct / 100f * width else pct / 100f * height
+        } else {
+          val num = token.removeSuffix("px").toFloatOrNull()
+          if (num != null) num * Mason.shared.scale
+          else if (horizontal) width / 2f else height / 2f
+        }
+      }
+    }
+  }
+
+  return when (parts.size) {
+    1 -> {
+      val x = resolveToken(parts[0], horizontal = true)
+      val y = when (parts[0]) {
+        "top" -> 0f
+        "bottom" -> height
+        // Single keyword like "center", "left", "right" → y defaults to 50%
+        else -> height / 2f
+      }
+      // For "top"/"bottom" used alone, x defaults to center
+      val finalX = when (parts[0]) {
+        "top", "bottom" -> width / 2f
+        else -> x
+      }
+      Pair(finalX, y)
+    }
+    else -> Pair(
+      resolveToken(parts[0], horizontal = true),
+      resolveToken(parts[1], horizontal = false)
+    )
   }
 }
 

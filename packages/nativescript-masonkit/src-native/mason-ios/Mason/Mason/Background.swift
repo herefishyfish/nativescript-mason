@@ -23,7 +23,7 @@ extension Background {
       context.fill(rect)
     }
     
-    for bgLayer in layers {
+    for bgLayer in layers.reversed() {
       drawLayer(bgLayer, on: nil, on: layer, in: context, rect: rect)
     }
 
@@ -36,7 +36,7 @@ extension Background {
       context.fill(rect)
     }
 
-    for layer in layers {
+    for layer in layers.reversed() {
       drawLayer(layer, on: view, in: context, rect: rect)
     }
   }
@@ -106,8 +106,14 @@ extension Background {
       let (start, end) = linearGradientPoints(direction: gradient.direction, width: width, height: height)
       context.drawLinearGradient(shader, start: start, end: end, options: [])
     case "radial":
-      let center = CGPoint(x: width/2, y: height/2)
-      let radius = max(width, height) / 2
+      let center = resolveRadialGradientCenter(direction: gradient.direction, width: width, height: height)
+      // Radius must reach the farthest corner from the resolved centre.
+      let radius = max([
+        hypot(center.x, center.y),
+        hypot(width - center.x, center.y),
+        hypot(center.x, height - center.y),
+        hypot(width - center.x, height - center.y)
+      ].max() ?? max(width, height) / 2, 1)
       context.drawRadialGradient(shader, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
     default:
       break
@@ -244,8 +250,14 @@ func drawGradient(layer: BackgroundLayer, context: CGContext, width: CGFloat, he
     context.drawLinearGradient(shader, start: start, end: end, options: [])
     
   case "radial":
-    let center = CGPoint(x: width/2, y: height/2)
-    let radius = max(width, height) / 2
+    let center = resolveRadialGradientCenter(direction: gradient.direction, width: width, height: height)
+    // Radius must reach the farthest corner from the resolved centre.
+    let radius = max([
+      hypot(center.x, center.y),
+      hypot(width - center.x, center.y),
+      hypot(center.x, height - center.y),
+      hypot(width - center.x, height - center.y)
+    ].max() ?? max(width, height) / 2, 1)
     context.drawRadialGradient(shader,
                                startCenter: center,
                                startRadius: 0,
@@ -288,6 +300,62 @@ func linearGradientPoints(direction: String?, width: CGFloat, height: CGFloat)
     // fallback
     return (CGPoint(x: 0, y: 0), CGPoint(x: 0, y: height))
   }
+}
+
+/// Resolve the centre point of a radial-gradient from the CSS direction string.
+///
+/// Accepted formats: "circle at top left", "ellipse at 30% 70%",
+/// "at center", "circle", etc.  Defaults to the element centre (50% 50%).
+func resolveRadialGradientCenter(direction: String?, width: CGFloat, height: CGFloat) -> CGPoint {
+  let defaultCenter = CGPoint(x: width / 2, y: height / 2)
+  guard let dir = direction?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+    return defaultCenter
+  }
+
+  // Extract the portion after "at "
+  guard let atRange = dir.range(of: " at ") else { return defaultCenter }
+  let positionStr = String(dir[atRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+  if positionStr.isEmpty { return defaultCenter }
+
+  return resolvePositionKeywords(positionStr, width: width, height: height)
+}
+
+/// Convert a CSS background-position value (keyword or percentage based) to
+/// absolute pixel coordinates.
+private func resolvePositionKeywords(_ position: String, width: CGFloat, height: CGFloat) -> CGPoint {
+  let parts = position.split(separator: " ").map { String($0) }
+
+  func resolveToken(_ token: String, horizontal: Bool) -> CGFloat {
+    switch token {
+    case "left":   return 0
+    case "right":  return width
+    case "top":    return 0
+    case "bottom": return height
+    case "center": return horizontal ? width / 2 : height / 2
+    default:
+      if token.hasSuffix("%"), let pct = Double(token.dropLast()) {
+        return CGFloat(pct / 100) * (horizontal ? width : height)
+      }
+      let cleaned = token.hasSuffix("px") ? String(token.dropLast(2)) : token
+      if let px = Double(cleaned) { return CGFloat(px) }
+      return horizontal ? width / 2 : height / 2
+    }
+  }
+
+  if parts.count == 1 {
+    switch parts[0] {
+    case "top":    return CGPoint(x: width / 2, y: 0)
+    case "bottom": return CGPoint(x: width / 2, y: height)
+    default:
+      let x = resolveToken(parts[0], horizontal: true)
+      return CGPoint(x: x, y: height / 2)
+    }
+  }
+
+  return CGPoint(
+    x: resolveToken(parts[0], horizontal: true),
+    y: resolveToken(parts[1], horizontal: false)
+  )
 }
 
 // MARK: - Bitmap Drawing
