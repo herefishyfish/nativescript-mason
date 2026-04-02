@@ -1,5 +1,5 @@
 import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
-import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
+import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear, Direction, TextJustify, ObjectFit, ListStylePosition, ListStyleType } from '.';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
 import type { Style as MasonStyle } from './style';
@@ -1298,6 +1298,148 @@ export const cornerShapeBottomLeftProperty = new CssProperty<Style, string>({
   cssName: 'corner-shape-bottom-left',
 });
 
+export const directionProperty = new CssProperty<Style, Direction>({
+  name: 'direction',
+  cssName: 'direction',
+  defaultValue: 'inherit',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      view.direction = newValue;
+    }
+  },
+  valueConverter(value) {
+    switch (value) {
+      case 'inherit':
+      case 'ltr':
+      case 'rtl':
+        return value;
+      default:
+        return undefined;
+    }
+  },
+});
+
+export const textJustifyProperty = new CssProperty<Style, TextJustify>({
+  name: 'textJustify',
+  cssName: 'text-justify',
+  defaultValue: 'auto',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      view.textJustify = newValue;
+    }
+  },
+  valueConverter(value) {
+    switch (value) {
+      case 'auto':
+      case 'inter-word':
+      case 'inter-character':
+      case 'distribute':
+      case 'none':
+        return value;
+      default:
+        return undefined;
+    }
+  },
+});
+
+export const textIndentProperty = new CssProperty<Style, string>({
+  name: 'textIndent',
+  cssName: 'text-indent',
+  defaultValue: '0',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view && newValue != null) {
+      const parsed = CorePercentLength.parse(newValue);
+      if (parsed != null) {
+        view.textIndent = parsed as never;
+      }
+    }
+  },
+});
+
+export const objectFitProperty = new CssProperty<Style, ObjectFit>({
+  name: 'objectFit',
+  cssName: 'object-fit',
+  defaultValue: 'fill',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      view.objectFit = newValue;
+    }
+  },
+  valueConverter(value) {
+    switch (value) {
+      case 'contain':
+      case 'cover':
+      case 'fill':
+      case 'none':
+      case 'scale-down':
+        return value;
+      default:
+        return undefined;
+    }
+  },
+});
+
+export const listStylePositionProperty = new CssProperty<Style, ListStylePosition>({
+  name: 'listStylePosition',
+  cssName: 'list-style-position',
+  defaultValue: 'outside',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      view.listStylePosition = newValue;
+    }
+  },
+  valueConverter(value) {
+    switch (value) {
+      case 'outside':
+      case 'inside':
+        return value;
+      default:
+        return undefined;
+    }
+  },
+});
+
+export const listStyleTypeProperty = new CssProperty<Style, ListStyleType>({
+  name: 'listStyleType',
+  cssName: 'list-style-type',
+  defaultValue: 'disc',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      view.listStyleType = newValue;
+    }
+  },
+  valueConverter(value) {
+    switch (value) {
+      case 'none':
+      case 'disc':
+      case 'circle':
+      case 'square':
+      case 'decimal':
+        return value;
+      default:
+        return undefined;
+    }
+  },
+});
+
+export const fontVariantNumericProperty = new CssProperty<Style, string>({
+  name: 'fontVariantNumeric',
+  cssName: 'font-variant-numeric',
+  defaultValue: 'normal',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view && newValue != null) {
+      view.fontVariantNumeric = newValue;
+    }
+  },
+});
+
 cornerShapeProperty.register(Style);
 boxShadowProperty.register(Style);
 transformProperty.register(Style);
@@ -1402,3 +1544,11 @@ borderBottomProperty.register(Style);
 filterProperty.register(Style);
 
 displayProperty.register(Style);
+
+directionProperty.register(Style);
+textJustifyProperty.register(Style);
+textIndentProperty.register(Style);
+objectFitProperty.register(Style);
+listStylePositionProperty.register(Style);
+listStyleTypeProperty.register(Style);
+fontVariantNumericProperty.register(Style);

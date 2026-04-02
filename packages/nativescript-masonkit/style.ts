@@ -4009,6 +4009,284 @@ export class Style {
     );
   }
 
+  get direction(): 'inherit' | 'ltr' | 'rtl' {
+    switch (getInt8(this.style_view, StyleKeys.DIRECTION)) {
+      case 0:
+        return 'inherit';
+      case 1:
+        return 'ltr';
+      case 2:
+        return 'rtl';
+    }
+    return 'inherit';
+  }
+
+  set direction(value: 'inherit' | 'ltr' | 'rtl') {
+    let dir = -1;
+    switch (value) {
+      case 'inherit':
+        dir = 0;
+        break;
+      case 'ltr':
+        dir = 1;
+        break;
+      case 'rtl':
+        dir = 2;
+        break;
+    }
+    if (dir !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.DIRECTION, dir);
+      this.commitState(StateKeys.DIRECTION);
+    }
+  }
+
+  get textJustify(): 'auto' | 'inter-word' | 'inter-character' | 'distribute' | 'none' {
+    switch (getInt8(this.style_view, StyleKeys.TEXT_JUSTIFY)) {
+      case 0:
+        return 'auto';
+      case 1:
+        return 'inter-word';
+      case 2:
+        return 'inter-character';
+      case 3:
+        return 'distribute';
+      case 4:
+        return 'none';
+    }
+    return 'auto';
+  }
+
+  set textJustify(value: 'auto' | 'inter-word' | 'inter-character' | 'distribute' | 'none') {
+    let tj = -1;
+    switch (value) {
+      case 'auto':
+        tj = 0;
+        break;
+      case 'inter-word':
+        tj = 1;
+        break;
+      case 'inter-character':
+        tj = 2;
+        break;
+      case 'distribute':
+        tj = 3;
+        break;
+      case 'none':
+        tj = 4;
+        break;
+    }
+    if (tj !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.TEXT_JUSTIFY, tj);
+      setUint8(this.style_view, StyleKeys.TEXT_JUSTIFY_STATE, 1);
+      this.commitState(StateKeys.TEXT_JUSTIFY);
+    }
+  }
+
+  get textIndent(): Length {
+    const type = getUint8(this.style_view, StyleKeys.TEXT_INDENT_TYPE);
+    const value = getFloat32(this.style_view, StyleKeys.TEXT_INDENT);
+    return parseLengthPercentage(type, value);
+  }
+
+  set textIndent(value: number | CoreTypes.LengthType | Length) {
+    if (typeof value === 'number') {
+      this.prepareMut();
+      setFloat32(this.style_view, StyleKeys.TEXT_INDENT, value);
+      setUint8(this.style_view, StyleKeys.TEXT_INDENT_TYPE, 0); // px
+      setUint8(this.style_view, StyleKeys.TEXT_INDENT_STATE, 1);
+      this.commitState(StateKeys.INVALIDATE_TEXT);
+    } else if (typeof value === 'object') {
+      this.prepareMut();
+      switch (value.unit) {
+        case 'dip':
+          setFloat32(this.style_view, StyleKeys.TEXT_INDENT, layout.toDevicePixels(value.value));
+          setUint8(this.style_view, StyleKeys.TEXT_INDENT_TYPE, 0); // px
+          break;
+        case 'px':
+          setFloat32(this.style_view, StyleKeys.TEXT_INDENT, value.value);
+          setUint8(this.style_view, StyleKeys.TEXT_INDENT_TYPE, 0); // px
+          break;
+        case '%':
+          setFloat32(this.style_view, StyleKeys.TEXT_INDENT, value.value);
+          setUint8(this.style_view, StyleKeys.TEXT_INDENT_TYPE, 1); // %
+          break;
+      }
+      setUint8(this.style_view, StyleKeys.TEXT_INDENT_STATE, 1);
+      this.commitState(StateKeys.INVALIDATE_TEXT);
+    }
+  }
+
+  get objectFit(): 'contain' | 'cover' | 'fill' | 'none' | 'scale-down' {
+    switch (getInt8(this.style_view, StyleKeys.OBJECT_FIT)) {
+      case 0:
+        return 'contain';
+      case 1:
+        return 'cover';
+      case 2:
+        return 'fill';
+      case 3:
+        return 'none';
+      case 4:
+        return 'scale-down';
+    }
+    return 'fill';
+  }
+
+  set objectFit(value: 'contain' | 'cover' | 'fill' | 'none' | 'scale-down') {
+    let of = -1;
+    switch (value) {
+      case 'contain':
+        of = 0;
+        break;
+      case 'cover':
+        of = 1;
+        break;
+      case 'fill':
+        of = 2;
+        break;
+      case 'none':
+        of = 3;
+        break;
+      case 'scale-down':
+        of = 4;
+        break;
+    }
+    if (of !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.OBJECT_FIT, of);
+      this.commitState(StateKeys.OBJECT_FIT);
+    }
+  }
+
+  get listStylePosition(): 'outside' | 'inside' {
+    switch (getInt8(this.style_view, StyleKeys.LIST_STYLE_POSITION)) {
+      case 0:
+        return 'outside';
+      case 1:
+        return 'inside';
+    }
+    return 'outside';
+  }
+
+  set listStylePosition(value: 'outside' | 'inside') {
+    let lsp = -1;
+    switch (value) {
+      case 'outside':
+        lsp = 0;
+        break;
+      case 'inside':
+        lsp = 1;
+        break;
+    }
+    if (lsp !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.LIST_STYLE_POSITION, lsp);
+      setUint8(this.style_view, StyleKeys.LIST_STYLE_POSITION_STATE, 1);
+      this.commitState(StateKeys.LIST_STYLE_POSITION);
+    }
+  }
+
+  get listStyleType(): 'none' | 'disc' | 'circle' | 'square' | 'decimal' {
+    switch (getInt8(this.style_view, StyleKeys.LIST_STYLE_TYPE)) {
+      case 0:
+        return 'none';
+      case 2:
+        return 'disc';
+      case 3:
+        return 'circle';
+      case 4:
+        return 'square';
+      case 5:
+        return 'decimal';
+    }
+    return 'disc';
+  }
+
+  set listStyleType(value: 'none' | 'disc' | 'circle' | 'square' | 'decimal') {
+    let lst = -1;
+    switch (value) {
+      case 'none':
+        lst = 0;
+        break;
+      case 'disc':
+        lst = 2;
+        break;
+      case 'circle':
+        lst = 3;
+        break;
+      case 'square':
+        lst = 4;
+        break;
+      case 'decimal':
+        lst = 5;
+        break;
+    }
+    if (lst !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.LIST_STYLE_TYPE, lst);
+      setUint8(this.style_view, StyleKeys.LIST_STYLE_TYPE_STATE, 1);
+      this.commitState(StateKeys.LIST_STYLE_TYPE);
+    }
+  }
+
+  get fontVariantNumeric(): string {
+    const bits = getUint8(this.style_view, StyleKeys.FONT_VARIANT_NUMERIC);
+    if (bits === 0) {
+      return 'normal';
+    }
+    const parts: string[] = [];
+    if (bits & 1) parts.push('lining-nums');
+    if (bits & 2) parts.push('oldstyle-nums');
+    if (bits & 4) parts.push('proportional-nums');
+    if (bits & 8) parts.push('tabular-nums');
+    if (bits & 16) parts.push('diagonal-fractions');
+    if (bits & 32) parts.push('stacked-fractions');
+    if (bits & 64) parts.push('ordinal');
+    if (bits & 128) parts.push('slashed-zero');
+    return parts.join(' ');
+  }
+
+  set fontVariantNumeric(value: string) {
+    let bits = 0;
+    if (value && value !== 'normal') {
+      const keywords = value.trim().split(/\s+/);
+      for (const kw of keywords) {
+        switch (kw) {
+          case 'lining-nums':
+            bits |= 1;
+            break;
+          case 'oldstyle-nums':
+            bits |= 2;
+            break;
+          case 'proportional-nums':
+            bits |= 4;
+            break;
+          case 'tabular-nums':
+            bits |= 8;
+            break;
+          case 'diagonal-fractions':
+            bits |= 16;
+            break;
+          case 'stacked-fractions':
+            bits |= 32;
+            break;
+          case 'ordinal':
+            bits |= 64;
+            break;
+          case 'slashed-zero':
+            bits |= 128;
+            break;
+        }
+      }
+    }
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.FONT_VARIANT_NUMERIC, bits);
+    setUint8(this.style_view, StyleKeys.FONT_VARIANT_NUMERIC_STATE, 1);
+    this.commitState(StateKeys.FONT_VARIANT_NUMERIC);
+  }
+
   toJSON() {
     return {
       display: this.display,

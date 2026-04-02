@@ -47,6 +47,16 @@ export type Float = 'left' | 'right' | 'none';
 
 export type Clear = 'left' | 'right' | 'both' | 'none';
 
+export type Direction = 'inherit' | 'ltr' | 'rtl';
+
+export type TextJustify = 'auto' | 'inter-word' | 'inter-character' | 'distribute' | 'none';
+
+export type ObjectFit = 'contain' | 'cover' | 'fill' | 'none' | 'scale-down';
+
+export type ListStylePosition = 'outside' | 'inside';
+
+export type ListStyleType = 'none' | 'disc' | 'circle' | 'square' | 'decimal';
+
 declare module '@nativescript/core/ui/styling/style' {
   interface Style {
     boxSizing: BoxSizing;
@@ -102,6 +112,13 @@ declare module '@nativescript/core/ui/styling/style' {
     cornerShapeTopRight: string;
     cornerShapeBottomRight: string;
     cornerShapeBottomLeft: string;
+    direction: Direction;
+    textJustify: TextJustify;
+    textIndent: string;
+    objectFit: ObjectFit;
+    listStylePosition: ListStylePosition;
+    listStyleType: ListStyleType;
+    fontVariantNumeric: string;
   }
 }
 
@@ -159,6 +176,13 @@ interface Style {
   cornerShapeTopRight: string;
   cornerShapeBottomRight: string;
   cornerShapeBottomLeft: string;
+  direction: Direction;
+  textJustify: TextJustify;
+  textIndent: string;
+  objectFit: ObjectFit;
+  listStylePosition: ListStylePosition;
+  listStyleType: ListStyleType;
+  fontVariantNumeric: string;
 }
 
 interface IViewBase {
