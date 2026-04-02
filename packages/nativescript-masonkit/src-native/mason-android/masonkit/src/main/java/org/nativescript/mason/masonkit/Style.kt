@@ -4259,7 +4259,7 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
     set(value) {
       prepareMut()
-      values.put(StyleKeys.LIST_STYLE_POSITION, value.value.toByte())
+      values.put(StyleKeys.LIST_STYLE_POSITION, value.value)
       values.put(StyleKeys.LIST_STYLE_POSITION_STATE, StyleState.SET)
       setOrAppendState(StateKeys.LIST_STYLE_POSITION)
     }
@@ -4271,7 +4271,7 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
     set(value) {
       prepareMut()
-      values.put(StyleKeys.LIST_STYLE_TYPE, value.value.toByte())
+      values.put(StyleKeys.LIST_STYLE_TYPE, value.value)
       values.put(StyleKeys.LIST_STYLE_TYPE_STATE, StyleState.SET)
       setOrAppendState(StateKeys.LIST_STYLE_TYPE)
     }

@@ -1228,7 +1228,7 @@ public class MasonStyle: NSObject {
       prepareMut()
       setUInt8(StyleKeys.LIST_STYLE_POSITION, UInt8(newValue.rawValue))
       setUInt8(StyleKeys.LIST_STYLE_POSITION_STATE, StyleState.SET)
-      // todo state
+      setOrAppendState(.listStylePosition)
     }
   }
   
@@ -1241,7 +1241,7 @@ public class MasonStyle: NSObject {
       prepareMut()
       setInt8(StyleKeys.LIST_STYLE_TYPE, newValue.rawValue)
       setInt8(StyleKeys.LIST_STYLE_TYPE_STATE, Int8(StyleState.SET))
-      // todo state
+      setOrAppendState(.listStyleType)
     }
   }
   
@@ -2122,12 +2122,11 @@ public class MasonStyle: NSObject {
   // TODO
   public var direction: Direction{
     get {
-      return Direction(rawValue: getInt8(StyleKeys.POSITION))!
+      return Direction(rawValue: getInt8(StyleKeys.DIRECTION))!
     }
     set {
       prepareMut()
-      // todo
-      setInt8(StyleKeys.POSITION, newValue.rawValue)
+      setInt8(StyleKeys.DIRECTION, newValue.rawValue)
       
       setOrAppendState(StateKeys.direction)
       
@@ -2825,13 +2824,9 @@ public class MasonStyle: NSObject {
   }()
   
   
-  public var borderRadius: String {
-    get {
-      // todo
-      return ""
-    }
-    set {
-      CSSBorderRenderer.parseBorderRadius(self, newValue)
+  public var borderRadius: String = "" {
+    didSet {
+      CSSBorderRenderer.parseBorderRadius(self, borderRadius)
     }
   }
   
