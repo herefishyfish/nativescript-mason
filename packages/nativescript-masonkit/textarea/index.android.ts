@@ -58,7 +58,7 @@ export class TextArea extends TextAreaBase {
       this[native_] = view;
       return view;
     }
-    return this[native_] as never as org.nativescript.mason.masonkit.TextArea;
+    return this[native_];
   }
 
   get _styleHelper() {
@@ -75,6 +75,6 @@ export class TextArea extends TextAreaBase {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   get android() {
-    return this._view as org.nativescript.mason.masonkit.TextArea;
+    return this._view;
   }
 }

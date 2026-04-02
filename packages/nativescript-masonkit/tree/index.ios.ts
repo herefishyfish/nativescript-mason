@@ -85,6 +85,7 @@ export class Tree {
   }
 
   createTextNode() {
+    //@ts-ignore
     return this.native.createTextNode('');
   }
 
