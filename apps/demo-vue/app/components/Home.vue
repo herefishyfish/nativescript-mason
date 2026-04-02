@@ -2,57 +2,60 @@
   <Frame>
     <Page>
       <ActionBar>
-        <Label text="Mason Demos" class="text-white" style="font-size: 20; font-weight: bold;" />
+        <span text="Mason Demos" class="text-white" style="font-size: 20; font-weight: bold;" />
       </ActionBar>
       <div class="page" style="overflow-y: scroll;">
         <div class="hero">
           <p style="font-size: 18; font-weight: bold; color: white;">Mason Demos — Examples</p>
           <p style="font-size: 12; color: #eee; margin-top: 6">Quick access to plugin demos and web-style samples</p>
         </div>
-
         <div class="demo-grid">
-            <div class="demo-card">
+          <div class="demo-card">
             <p class="card-title">Flexbox</p>
             <p class="card-desc">Flex layout patterns</p>
-            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('flexbox')" />
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('flexbox')" />
           </div>
 
-            <div class="demo-card">
+          <div class="demo-card">
             <p class="card-title">Grid</p>
             <p class="card-desc">Grid layout examples</p>
-            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('grid')" />
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('grid')" />
           </div>
 
-            <div class="demo-card">
+          <div class="demo-card">
             <p class="card-title">Web Samples</p>
             <p class="card-desc">100+ web-style samples</p>
-            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('web-samples')" />
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('web-samples')" />
           </div>
 
-            <div class="demo-card">
+          <div class="demo-card">
             <p class="card-title">Professions</p>
             <p class="card-desc">10 profession examples</p>
-            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('professions')" />
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('professions')" />
           </div>
 
-            <div class="demo-card">
+          <div class="demo-card">
             <p class="card-title">Lynx Examples</p>
             <p class="card-desc">Styling & animation ports</p>
-            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('lynx')" />
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('lynx')" />
           </div>
 
-            <div class="demo-card">
+          <div class="demo-card">
             <p class="card-title">Showcase</p>
             <p class="card-desc">Mason Showcase</p>
-            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('showcase')" />
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('showcase')" />
           </div>
 
-            <div class="demo-card">
+          <div class="demo-card">
             <p class="card-title">React Native</p>
             <p class="card-desc">React Native examples</p>
-            <Button class="btn-primary" :text="'Open'" @tap="() => navigate('react-native')" />
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('react-native')" />
           </div>
         </div>
+
+     <textarea id="story" name="story">
+It was a dark and stormy night...
+</textarea>
 
       </div>
     </Page>
@@ -88,8 +91,8 @@ const navigate = (demo: string) => {
     professions: ProfessionList,
     lynx: LynxIndex,
     'react-native': ReactNative
-};
-$navigateTo(demos[demo]);
+  };
+  $navigateTo(demos[demo]);
 };
 </script>
 
@@ -158,9 +161,15 @@ $navigateTo(demos[demo]);
   padding: 10 18;
   border-radius: 10;
   font-weight: 600;
+  border-style: none;
 }
 
-.demo-card Button {
+button:active {
+  color: green;
+  background-color: red;
+}
+
+.demo-card button {
   width: 80;
 }
 </style>

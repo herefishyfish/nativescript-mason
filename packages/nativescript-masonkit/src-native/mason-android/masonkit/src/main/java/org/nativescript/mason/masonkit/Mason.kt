@@ -3,6 +3,7 @@ package org.nativescript.mason.masonkit
 import android.content.Context
 import android.content.res.Resources
 import android.text.TextPaint
+import android.util.Log
 import com.google.gson.Gson
 import dalvik.annotation.optimization.CriticalNative
 import org.nativescript.mason.masonkit.enums.TextType
@@ -139,6 +140,7 @@ class Mason {
     val byId = byType.getOrPut(type) { mutableMapOf() }
 
     byId[id] = listener
+    Log.d("Mason", "addEventListener node=${node.objectId()} type=$type id=$id")
     return id
   }
 
@@ -153,6 +155,7 @@ class Mason {
   }
 
   fun dispatch(event: Event) {
+    Log.d("Mason", "dispatch type=${event.type} target=${event.target?.node?.objectId()}")
     val path = mutableListOf<Node>()
     var current: Node? = event.target?.node
     while (current != null) {
@@ -170,6 +173,7 @@ class Mason {
           ?.toList()
           ?: continue
 
+      Log.d("Mason", "dispatch: invoking ${listeners.size} listeners on node=${node.objectId()}")
       for (listener in listeners) {
         if (event.immediatePropagationStopped) break
         listener(event)
@@ -354,6 +358,10 @@ class Mason {
     return TextView(context, this, type, isAnonymous)
   }
 
+  fun createTextArea(context: Context): TextArea {
+    return TextArea(context, this)
+  }
+
   fun createImageView(context: Context): Img {
     return Img(context, this)
   }
@@ -505,5 +513,40 @@ class Mason {
     @JvmStatic
     private external fun nativeGetBuffer(mason: Long, handle: Int): Int
 
+    /**
+     * Enable or disable CSS Preflight (web-normalised / Tailwind-like) defaults.
+     *
+     * When enabled every element starts with a clean slate:
+     *  - `box-sizing: border-box`
+     *  - `margin: 0`, `padding: 0`, `border-width: 0`
+     *  - `background: transparent`
+     *  - `list-style: none` on lists
+     *  - `display: block` on replaced elements (`<img>`)
+     *
+     * The flag is global; calling this also re-seeds the current Mason
+     * instance's arena so that unstyled nodes immediately inherit the new
+     * defaults.  Nodes that have already been individually styled are
+     * unaffected.
+     */
+    @JvmStatic
+    private external fun nativeSetPreflight(mason: Long, enabled: Boolean)
+
+    @JvmStatic
+    private external fun nativeGetPreflight(): Boolean
+
   }
+
+  // Preflight
+
+  /**
+   * Whether CSS Preflight (web-normalised) defaults are active.
+   *
+   * Set this **before** creating views so that newly created nodes start from
+   * the preflight baseline.  Changing it after the fact re-seeds default
+   * handles but does not retroactively alter nodes that were already individually
+   * styled.
+   */
+  var preflight: Boolean
+    get() = nativeGetPreflight()
+    set(value) = nativeSetPreflight(nativePtr, value)
 }

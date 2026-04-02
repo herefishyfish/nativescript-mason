@@ -18,7 +18,7 @@ class TransformViewController: UIViewController {
 
     view.backgroundColor = .systemBackground
 
-    // ── Root Mason view (flex column, fills safe area) ───────────────────
+    // Root Mason view (flex column, fills safe area)
     let root = mason.createView()
     root.style.display = .Flex
     root.style.flexDirection = .Column
@@ -34,7 +34,7 @@ class TransformViewController: UIViewController {
       root.uiView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
     ])
 
-    // ── Title ────────────────────────────────────────────────────────────
+    // Title
     let title = mason.createTextView()
     title.textContent = "Transform Demo"
     title.style.fontSize = 18
@@ -43,7 +43,7 @@ class TransformViewController: UIViewController {
     title.style.align = .Center
     root.addView(title)
 
-    // ── Preview area (flex: 1, centered) ─────────────────────────────────
+    // Preview area (flex: 1, centered)
     let preview = mason.createView()
     preview.style.display = .Flex
     preview.style.flexGrow = 1
@@ -73,7 +73,7 @@ class TransformViewController: UIViewController {
     preview.addView(box)
     root.addView(preview)
 
-    // ── Controls area ────────────────────────────────────────────────────
+    // Controls area
     let controls = mason.createView()
     controls.style.display = .Flex
     controls.style.flexDirection = .Column

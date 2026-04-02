@@ -1130,7 +1130,7 @@ class GridActivity : AppCompatActivity() {
 
     rootLayout.append(body)
 
-    // --- Holy Grail layout (matches web sample) ---
+    // Holy Grail layout (matches web sample)
     val holy = mason.createView(this)
     holy.configure {
       it.display = Display.Grid

@@ -138,7 +138,7 @@ class WebActivity : AppCompatActivity() {
       insets
     }
 
-    // ── Demo selection list ─────────────────────────────────────────────
+    // Demo selection list
     demoList = mason.createListView(this)
     demoList.configure {
       it.size = Size(Dimension.Percent(1f), Dimension.Points(resources.displayMetrics.heightPixels.toFloat()))

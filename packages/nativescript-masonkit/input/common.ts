@@ -19,6 +19,7 @@ export class InputBase extends ViewBase {
     return undefined;
   }
 
+  //@ts-ignore
   [setValueProperty](value: string) {}
 
   get value() {

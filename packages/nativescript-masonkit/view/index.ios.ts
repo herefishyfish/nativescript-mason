@@ -40,6 +40,26 @@ export class View extends ViewBase {
     return this._view;
   }
 
+  private _measureChildren(layout) {
+    const children = layout.children;
+    let i = 0;
+    if (children.count === 0) {
+      return;
+    }
+
+    for (const child of this._viewChildren) {
+      layout = children.objectAtIndex(i);
+      const w = layout.width;
+      const h = layout.height;
+
+      const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      View.measureChild(this as never, child as never, wSpec, hSpec);
+
+      i++;
+    }
+  }
+
   public onLayout(left: number, top: number, right: number, bottom: number): void {
     super.onLayout(left, top, right, bottom);
     // @ts-ignore
@@ -58,15 +78,31 @@ export class View extends ViewBase {
       const w = layout.width;
       const h = layout.height;
 
-      // Measure the child so NativeScript's layout system is satisfied
-      const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
-      const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
-      // View.measureChild(this as never, child as never, wSpec, hSpec);
+      const isMason = !!child[isMasonView_];
 
-      // Use child.layout() directly — Mason already computed final positions
-      // including margins. View.layoutChild would double-count margins and
-      // override Mason's alignment.
-      (child as any).layout(x, y, x + w, y + h);
+      if (isMason) {
+        // Mason child: Swift's applyToView already set the native frame.
+        // If isLayoutValid is set, Mason handled this child — skip the full
+        // layout cascade and just sync NativeScript's internal bounds tracking.
+        const childNode = (child as any).ios?.node;
+        if (childNode?.isLayoutValid) {
+          childNode.isLayoutValid = false;
+          // Still call layout() to keep NativeScript's bounds state in sync,
+          // but with setFrame=false so we don't redundantly set the native frame.
+          (child as any).layout(x, y, x + w, y + h, false);
+          i++;
+          continue;
+        }
+        // Mason child but not yet laid out by Swift — let the cascade run
+        // with setFrame=false (Swift will set the frame during layoutSubviews).
+        (child as any).layout(x, y, x + w, y + h, false);
+      } else {
+        // Non-Mason (plain NativeScript) child inside a Mason container.
+        // Mason's applyToView already set its UIView frame; NativeScript's
+        // _setNativeViewFrame will set it again to the same value which
+        // keeps NativeScript's internal state (_isLaidOut, events) correct.
+        (child as any).layout(x, y, x + w, y + h, true);
+      }
       i++;
     }
   }
@@ -81,21 +117,6 @@ export class View extends ViewBase {
 
       const parentIsMason = this.parent && this.parent[isMasonView_];
       if (!parentIsMason) {
-        // when the parent isn't a Mason container we have to kick off a new
-        // compute pass.  The old logic always used `mason_computeWithSize`
-        // when both width/height were `auto`, but that breaks when the
-        // incoming height/width spec is UNSPECIFIED (0).  a root view often
-        // receives an unspecified height which leads to a zero result even
-        // though its children have non‑zero dimensions.  wrapping the view in
-        // another container supplied a constraint so the bug only showed up at
-        // the root.
-        //
-        // if either dimension is unconstrained we instead fall back to
-        // `mason_computeWithMaxContent()` which measures based on the content
-        // and avoids collapsing to 0.
-        // if the parent gave us an unspecified measure spec, or an AT_MOST
-        // spec with zero size, treat the dimension as truly unconstrained so
-        // we can grow to our content.  (AT_MOST/0 often appears at the root.)
         const unconstrained = widthMode === Utils.layout.UNSPECIFIED || heightMode === Utils.layout.UNSPECIFIED || (widthMode === Utils.layout.AT_MOST && specWidth === 0) || (heightMode === Utils.layout.AT_MOST && specHeight === 0);
 
         if (this.width === 'auto' && this.height === 'auto' && !unconstrained) {
@@ -109,11 +130,8 @@ export class View extends ViewBase {
           const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
           const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
 
-          this.eachLayoutChild((child) => {
-            ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
-          });
-
           this.setMeasuredDimension(w, h);
+          this._measureChildren(layout);
           return;
         } else {
           // either we had a non-auto dimension or an unconstrained spec,
@@ -148,7 +166,7 @@ export class View extends ViewBase {
   }
 
   _setNativeViewFrame(nativeView: any, frame: CGRect): void {
-    // nativeView.frame = frame;
+    nativeView.frame = frame;
   }
 
   // @ts-ignore

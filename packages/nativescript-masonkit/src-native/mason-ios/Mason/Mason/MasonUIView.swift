@@ -15,6 +15,8 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     MasonNode.invalidateDescendantTextViews(node, low, high)
   }
   
+  internal let maskPath = CGMutablePath()
+  
   public override func draw(_ rect: CGRect) {
 
     let bgString = style.background.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -90,6 +92,50 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   public let mason: NSCMason
 
   public var uiView: UIView { self }
+
+  // MARK: - Scroll state
+  // When overflow-x/y is scroll or auto, this view scrolls like a <div> on
+  // the web. Scroll is implemented via bounds.origin — the same mechanism
+  // UIScrollView uses internally — so subviews don't move; the coordinate
+  // system shifts. A UIPanGestureRecognizer drives it; gestureRecognizerShouldBegin
+  // returns false when the view isn't actually scrollable, so non-scrolling
+  // divs carry zero gesture overhead.
+  public var contentSize: CGSize = .zero
+  private var _scrollPanStartOffset: CGPoint = .zero
+  private var _scrollDecelerationLink: CADisplayLink?
+  private var _scrollDecelerationVelocity: CGPoint = .zero
+  // UIScrollView.DecelerationRate.normal (0.998) is a per-millisecond factor.
+  // Our CADisplayLink fires once per frame (~16.67ms), so we raise it to the
+  // 1000/60 power to get the correct per-frame factor (≈ 0.967).
+  // Using 0.998 raw per frame would give ~8000pt of travel from a 1000pt/s flick;
+  // the corrected value gives ~505pt, matching UIScrollView feel.
+  private let _scrollDecelerationRate: CGFloat = pow(UIScrollView.DecelerationRate.normal.rawValue, 1000.0 / 60.0)
+  private var _lastBoundsSize: CGSize = .zero
+  private var _scrollGestureDelegate: _MasonScrollPanDelegate?
+  // True while a scroll gesture or deceleration is active.
+  // layoutSubviews skips autoComputeIfRoot during this window — bounds changes
+  // from scroll steps must not retrigger layout computation.
+  private var _isScrolling = false
+
+  public var contentOffset: CGPoint {
+    get { bounds.origin }
+    set {
+      let c = _clampScrollOffset(newValue)
+      guard bounds.origin != c else { return }
+      // Disable implicit CA animations: bounds changes during scroll must not
+      // animate (they'd appear as lag). Mask position update also runs inside.
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      var b = bounds; b.origin = c; bounds = b
+      _updateScrollMask()
+      CATransaction.commit()
+    }
+  }
+
+  private lazy var _scrollPanGesture: UIPanGestureRecognizer = {
+    let g = UIPanGestureRecognizer(target: self, action: #selector(_handleScrollPan(_:)))
+    return g
+  }()
   
   public var style: MasonStyle {
     return node.style
@@ -105,8 +151,22 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   
   public override func layoutSubviews() {
     super.layoutSubviews()
-    style.updateShadowLayer(for: bounds)
+    // Skip Mason layout computation during active scroll steps — bounds.origin
+    // changes don't affect child positions, only the visible window. Running
+    // autoComputeIfRoot on every scroll frame causes expensive layout thrashing.
+    guard !_isScrolling else { return }
+    // autoComputeIfRoot must run before the size guard — style-only changes
+    // (overflow, color, etc.) mark the node dirty without changing the view size.
+    // If we gate on size first, those changes never trigger applyToView and
+    // contentSize stays at zero, making scroll clamp to (0,0).
     autoComputeIfRoot()
+    // Expensive per-size work: shadow layer and compositing hints.
+    // Skip when only bounds.origin changed (scroll step) — size is unchanged.
+    let currentSize = bounds.size
+    guard !currentSize.equalTo(_lastBoundsSize) else { return }
+    _lastBoundsSize = currentSize
+    // Shadow layer lives at the visual frame — always use zero origin.
+    style.updateShadowLayer(for: CGRect(origin: .zero, size: currentSize))
     #if DEBUG
    // if !(superview is MasonElement) {
       node.mason.printTree(node)
@@ -137,6 +197,11 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     style.applyTransformFromBuffer()
   }
 
+  public override func willMove(toWindow newWindow: UIWindow?) {
+    super.willMove(toWindow: newWindow)
+    if newWindow == nil { _stopScrollDeceleration() }
+  }
+
   init(mason doc: NSCMason) {
     node = doc.createNode()
     mason = doc
@@ -146,6 +211,16 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     computeCacheDirty = false
     node.view = self
     style.setStyleChangeListener(listener: self)
+    // Attach scroll pan gesture with a private delegate that:
+    // • gates begin on actual scrollability (gestureRecognizerShouldBegin)
+    // • allows simultaneous recognition with parent gestures
+    let d = _MasonScrollPanDelegate()
+    d.owner = self
+    _scrollGestureDelegate = d
+    _scrollPanGesture.delegate = d
+    addGestureRecognizer(_scrollPanGesture)
+    // Redraw background/border when bounds.origin shifts during scroll.
+    contentMode = .redraw
   }
 
 
@@ -236,6 +311,10 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   func checkAndUpdateStyle() {
     if (!node.inBatch) {
       node.style.updateNativeStyle()
+      // Trigger a layout pass so autoComputeIfRoot sees the dirty node and
+      // runs applyToView — required for style-only changes (e.g. overflowY)
+      // that don't resize the view and wouldn't otherwise cause layoutSubviews.
+      setNeedsLayout()
     }
   }
   
@@ -951,4 +1030,148 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   @objc public func getColumnGap() -> MasonLengthPercentageCompat{
     return node.style.gapCompat.height
   }
+}
+
+// MARK: - Scroll implementation
+extension MasonUIView {
+
+  var _canScrollH: Bool {
+    switch node.style.overflow.x {
+    case .Scroll: return true
+    case .Auto:   return contentSize.width > bounds.width
+    default:      return false
+    }
+  }
+
+  var _canScrollV: Bool {
+    switch node.style.overflow.y {
+    case .Scroll: return true
+    case .Auto:   return contentSize.height > bounds.height
+    default:      return false
+    }
+  }
+
+  private func _clampScrollOffset(_ offset: CGPoint) -> CGPoint {
+    CGPoint(
+      x: _canScrollH ? max(0, min(offset.x, max(0, contentSize.width  - bounds.width))) : 0,
+      y: _canScrollV ? max(0, min(offset.y, max(0, contentSize.height - bounds.height))) : 0
+    )
+  }
+
+  // Reposition the layer mask (set by applyToView) so it tracks bounds.origin.
+  // Uses maskLayer.position instead of recreating a CGPath — no allocation per frame.
+  func _updateScrollMask() {
+    guard let maskLayer = layer.mask else { return }
+   /* let o = bounds.origin
+    let w = bounds.size.width
+    let h = bounds.size.height
+    let overflowPad: CGFloat = 10000
+    let overflow = node.style.overflow
+    let clipX = overflow.x == .Scroll || overflow.x == .Hidden || overflow.x == .Clip || overflow.x == .Auto
+    let clipY = overflow.y == .Scroll || overflow.y == .Hidden || overflow.y == .Clip || overflow.y == .Auto
+    // Reuse the existing layer size; only reposition it to follow the scroll offset.
+    // For a two-axis clip the mask is exactly the viewport; for single-axis it extends
+    // by overflowPad on the unconstrained side — set that as the layer's frame.
+    if clipX && clipY {
+      maskLayer.frame = CGRect(origin: o, size: bounds.size)
+    } else if clipX {
+      maskLayer.frame = CGRect(x: o.x, y: o.y - overflowPad, width: w, height: h + overflowPad * 2)
+    } else {
+      maskLayer.frame = CGRect(x: o.x - overflowPad, y: o.y, width: w + overflowPad * 2, height: h)
+    }
+    
+    */
+    
+    let overflow = node.style.overflow
+
+    let clipX = overflow.x == .Scroll || overflow.x == .Hidden || overflow.x == .Clip || overflow.x == .Auto
+    let clipY = overflow.y == .Scroll || overflow.y == .Hidden || overflow.y == .Clip || overflow.y == .Auto
+
+    guard clipX || clipY else {
+      layer.mask = nil
+      return
+    }
+    
+  
+    maskLayer.frame = bounds
+  
+  }
+
+  // MARK: Pan handler
+
+  @objc func _handleScrollPan(_ gesture: UIPanGestureRecognizer) {
+    switch gesture.state {
+    case .began:
+      _isScrolling = true
+      _stopScrollDeceleration()
+      _scrollPanStartOffset = contentOffset
+
+    case .changed:
+      let t = gesture.translation(in: self)
+      contentOffset = CGPoint(
+        x: _scrollPanStartOffset.x - (_canScrollH ? t.x : 0),
+        y: _scrollPanStartOffset.y - (_canScrollV ? t.y : 0)
+      )
+
+    case .ended, .cancelled:
+      let v = gesture.velocity(in: self)
+      _startScrollDeceleration(CGPoint(
+        x: _canScrollH ? -v.x : 0,
+        y: _canScrollV ? -v.y : 0
+      ))
+
+    default: break
+    }
+  }
+
+  // MARK: Deceleration
+
+  private func _startScrollDeceleration(_ velocity: CGPoint) {
+    guard hypot(velocity.x, velocity.y) > 1 else { return }
+    _stopScrollDeceleration()
+    _scrollDecelerationVelocity = velocity
+    let link = CADisplayLink(target: self, selector: #selector(_scrollDecelerationStep))
+    link.add(to: .main, forMode: .common)
+    _scrollDecelerationLink = link
+  }
+
+  private func _stopScrollDeceleration() {
+    _scrollDecelerationLink?.invalidate()
+    _scrollDecelerationLink = nil
+    _scrollDecelerationVelocity = .zero
+    _isScrolling = false
+  }
+
+  @objc func _scrollDecelerationStep() {
+    _scrollDecelerationVelocity.x *= _scrollDecelerationRate
+    _scrollDecelerationVelocity.y *= _scrollDecelerationRate
+    let prev = contentOffset
+    contentOffset = CGPoint(
+      x: contentOffset.x + _scrollDecelerationVelocity.x / 60,
+      y: contentOffset.y + _scrollDecelerationVelocity.y / 60
+    )
+    // Stop threshold: 30 pt/s ≈ 0.5 pt/frame — matches UIScrollView stopping feel.
+    if hypot(_scrollDecelerationVelocity.x, _scrollDecelerationVelocity.y) < 30
+      || contentOffset == prev {
+      _stopScrollDeceleration()
+    }
+  }
+}
+
+// MARK: - Private gesture delegate
+// Kept as a separate class because UIView already exposes gestureRecognizerShouldBegin
+// with the same ObjC selector — conforming MasonUIView directly to
+// UIGestureRecognizerDelegate would cause a compile-time conflict.
+private final class _MasonScrollPanDelegate: NSObject, UIGestureRecognizerDelegate {
+  weak var owner: MasonUIView?
+
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard let v = owner else { return false }
+    return v._canScrollH || v._canScrollV
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+  ) -> Bool { true }
 }

@@ -17,7 +17,7 @@ import org.nativescript.mason.masonkit.enums.Float as MasonFloat
  */
 class LayoutTests {
 
-  // helpers used across several tests ------------------------------------------------
+  // helpers used across several tests
 
   private val measure20x10 = object : MeasureFunc {
     override fun measure(
@@ -81,7 +81,7 @@ class LayoutTests {
     return n
   }
 
-  // --- tests ---------------------------------------------------------------
+  // tests
 
   @Test
   fun basicDisplayTypesDoNotCrash() {

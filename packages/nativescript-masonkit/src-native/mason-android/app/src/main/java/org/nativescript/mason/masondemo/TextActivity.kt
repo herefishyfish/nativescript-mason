@@ -12,6 +12,7 @@ import androidx.core.view.WindowInsetsCompat
 import org.nativescript.mason.masonkit.Dimension
 import org.nativescript.mason.masonkit.FontFace
 import org.nativescript.mason.masonkit.LengthPercentage
+import org.nativescript.mason.masonkit.LengthPercentageAuto
 import org.nativescript.mason.masonkit.Mason
 import org.nativescript.mason.masonkit.NodeHelper
 import org.nativescript.mason.masonkit.Rect
@@ -20,6 +21,7 @@ import org.nativescript.mason.masonkit.StateKeys
 import org.nativescript.mason.masonkit.StyleKeys
 import org.nativescript.mason.masonkit.Styles
 import org.nativescript.mason.masonkit.TextView
+import org.nativescript.mason.masonkit.TextArea
 import org.nativescript.mason.masonkit.View
 import org.nativescript.mason.masonkit.enums.Display
 import org.nativescript.mason.masonkit.enums.FlexDirection
@@ -77,7 +79,7 @@ class TextActivity : AppCompatActivity() {
     //dynamicGridTemplateColumns()
     // padding()
     // textAlignment()
-    bg()
+    textAreaDemo()
     setContentView(body)
   }
 
@@ -86,6 +88,22 @@ class TextActivity : AppCompatActivity() {
     body.style.size = Size(Dimension.Percent(1f), Dimension.Percent(1f))
     root.style.size = Size(Dimension.Percent(1f), Dimension.Percent(1f))
     root.style.background = "content-box radial-gradient(crimson, skyblue);"
+    body.append(root)
+  }
+
+  fun textAreaDemo() {
+    val root = Mason.shared.createView(this)
+    root.style.size = Size(Dimension.Percent(1f), Dimension.Auto)
+
+    val ta = Mason.shared.createTextArea(this) as TextArea
+    ta.rows = 4
+    ta.cols = 40
+    ta.placeholder = "Enter multi-line text..."
+    ta.maxLength = -1
+    ta.value = (1..30).joinToString("\n") { "Line $it — scroll test content here" }
+    ta.style.size = Size(Dimension.Percent(1f), Dimension.Auto)
+
+    root.append(ta)
     body.append(root)
   }
 

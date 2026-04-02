@@ -61,7 +61,6 @@ export class Button extends ButtonBase {
 
   _removeViewFromNativeVisualTree(view: ViewBase): void {
     view[isTextChild_] = false;
-    // @ts-ignore
     super._removeViewFromNativeVisualTree(view);
   }
 }

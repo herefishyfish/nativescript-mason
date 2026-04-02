@@ -43,18 +43,17 @@ import kotlin.math.sqrt
 import kotlin.math.tan
 
 
-internal fun Int.rgbaToHexCSS(): String {
+internal fun Int.argbToCssHex(): String {
+  // Android color ints are ARGB (0xAARRGGBB). Convert to CSS-style #RRGGBB or #RRGGBBAA.
   val color = this.toUInt()
-  val r = (color shr 24) and 0xFFu
-  val g = (color shr 16) and 0xFFu
-  val b = (color shr 8) and 0xFFu
-  val a = (color and 0xFFu).toInt()
+  val a = ((color shr 24) and 0xFFu).toInt()
+  val r = ((color shr 16) and 0xFFu).toInt()
+  val g = ((color shr 8) and 0xFFu).toInt()
+  val b = (color and 0xFFu).toInt()
   if (a == 255) {
-    return "#%02X%02X%02X".format(r.toInt(), g.toInt(), b.toInt())
+    return "#%02X%02X%02X".format(r, g, b)
   }
-  return "#%02X%02X%02X%02X".format(
-    r.toInt(), g.toInt(), b.toInt(), a
-  )
+  return "#%02X%02X%02X%02X".format(r, g, b, a)
 }
 
 /**
@@ -346,17 +345,13 @@ object StyleKeys {
   const val MAX_CONTENT_WIDTH = 190 // float (4 bytes: 190-193)
   const val MAX_CONTENT_HEIGHT = 194 // float (4 bytes: 194-197)
 
-  // ----------------------------
   // Border Style (per side)
-  // ----------------------------
   const val BORDER_LEFT_STYLE = 198
   const val BORDER_RIGHT_STYLE = 199
   const val BORDER_TOP_STYLE = 200
   const val BORDER_BOTTOM_STYLE = 201
 
-  // ----------------------------
   // Border Color (per side)
-  // ----------------------------
   const val BORDER_LEFT_COLOR = 202 // u32 (4 bytes: 202-205)
   const val BORDER_RIGHT_COLOR = 206 // u32 (4 bytes: 206-209)
   const val BORDER_TOP_COLOR = 210 // u32 (4 bytes: 210-213)
@@ -389,9 +384,7 @@ object StyleKeys {
   const val BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 266 // f32 (4 bytes: 266-269)
   const val BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270  // f32 (4 bytes: 270-273)
 
-  // ----------------------------
   // Float
-  // ----------------------------
   const val FLOAT = 274
   const val CLEAR = 275
 
@@ -470,7 +463,7 @@ object StyleKeys {
   const val FONT_VARIANT_NUMERIC = 419       // byte (bitmask)
   const val FONT_VARIANT_NUMERIC_STATE = 420 // byte
 
-  // ── Transform buffer region (bytes 422-559) ──────────────────────
+  // Transform buffer region (bytes 422-559)
   const val TRANSFORM_COUNT = 422            // u8: number of inline ops (0-6)
   const val TRANSFORM_FLAGS = 423            // u8: bit 0 = HAS_MATRIX, bit 1 = IS_3D
   const val TRANSFORM_OP_0 = 424             // 12 bytes: type(u8) + pad(3) + a(f32) + b(f32)
@@ -501,7 +494,8 @@ object TransformOpType {
 
 class StateKeys internal constructor(val low: Long, val high: Long) {
   companion object {
-    private fun flag(n: Int): StateKeys =
+    @JvmStatic
+    fun flag(n: Int): StateKeys =
       if (n < 64) StateKeys(1L shl n, 0L) else StateKeys(0L, 1L shl (n - 64))
 
     val NONE = StateKeys(0L, 0L)
@@ -1223,7 +1217,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
-  // ── Transform (buffer-backed) ───────────────────────────────────────
+  // Transform (buffer-backed)
 
   internal data class TransformOp(val type: Int, val a: Float, val b: Float)
 
@@ -1292,7 +1286,8 @@ class Style internal constructor(@Transient internal var node: Node) {
       val name = m.groupValues[1].trim().lowercase()
       val rawArgs = m.groupValues[2].trim()
       val args =
-        rawArgs.replace(',', ' ').split(TRANSFORM_WS_REGEX).map { it.trim() }.filter { it.isNotEmpty() }
+        rawArgs.replace(',', ' ').split(TRANSFORM_WS_REGEX).map { it.trim() }
+          .filter { it.isNotEmpty() }
       try {
         when (name) {
           "translate" -> {
@@ -1582,7 +1577,8 @@ class Style internal constructor(@Transient internal var node: Node) {
    */
   internal val resolvedFilterString: String
     get() {
-      for (i in PSEUDO_CSS_ORDER.indices.reversed()) { val state = PSEUDO_CSS_ORDER[i]
+      for (i in PSEUDO_CSS_ORDER.indices.reversed()) {
+        val state = PSEUDO_CSS_ORDER[i]
         if (node.hasPseudo(state)) {
           node.getPseudoString(state.mask, "filter")?.let { s ->
             if (s.isNotEmpty()) return s

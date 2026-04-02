@@ -1,5 +1,6 @@
 package org.nativescript.mason.masonkit
 
+
 import android.util.SizeF
 import android.view.View
 import android.view.View.MeasureSpec
@@ -8,6 +9,8 @@ import org.nativescript.mason.masonkit.enums.TextType
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Collections
+import java.util.WeakHashMap
 
 object NodeStateKeys {
   const val IS_NODE_DIRTY = 0
@@ -275,7 +278,6 @@ open class Node internal constructor(
         }
 
 
-
         val heightSpec = if (knownHeight > -1f) {
           height = knownHeight.toInt()
           MeasureSpec.EXACTLY
@@ -493,17 +495,37 @@ open class Node internal constructor(
     for (state in PseudoState.entries) {
       if (state.mask == 0) continue
       if (mask and state.mask != 0) {
-        val buf = getPseudoBuffer(state.mask)
-        if (buf.capacity() >= StyleKeys.PSEUDO_SET_MASK_HIGH + 8) {
-          val setLow = buf.getLong(StyleKeys.PSEUDO_SET_MASK_LOW)
-          val setHigh = buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH)
-          if ((setLow and key.low) != 0L || (setHigh and key.high) != 0L) {
-            return true
-          }
+        if (hasPseudoSetInBuffer(state.mask, key)) {
+          return true
         }
       }
     }
     return false
+  }
+
+  /**
+   * Returns true when the specified pseudo buffer explicitly set the given StateKeys,
+   * regardless of whether that pseudo-state is currently active.
+   */
+  fun hasPseudoSetInBuffer(flags: Int, key: StateKeys): Boolean {
+    val buf = getPseudoBuffer(flags)
+    if (buf.capacity() < StyleKeys.PSEUDO_SET_MASK_HIGH + 8) {
+      return false
+    }
+    val setLow = buf.getLong(StyleKeys.PSEUDO_SET_MASK_LOW)
+    val setHigh = buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH)
+    return (setLow and key.low) != 0L || (setHigh and key.high) != 0L
+  }
+
+  fun getPseudoSetFlags(flags: Int): StateKeys {
+    val buf = getPseudoBuffer(flags)
+    if (buf.capacity() < StyleKeys.PSEUDO_SET_MASK_HIGH + 8) {
+      return StateKeys.NONE
+    }
+    return StateKeys(
+      buf.getLong(StyleKeys.PSEUDO_SET_MASK_LOW),
+      buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH)
+    )
   }
 
   fun setPseudo(state: PseudoState, enabled: Boolean) {
@@ -550,10 +572,10 @@ open class Node internal constructor(
 
   fun getPseudoBuffer(flags: Int): ByteBuffer {
     try {
-      val cachedValue = cache[flags]
-      if (cachedValue != null) {
-        return cachedValue
+      cache[flags]?.let {
+        return it
       }
+
       val id = NativeHelpers.nativeGetPseudoStyleBuffer(mason.nativePtr, nativePtr, flags)
       if (id < 0) {
         val empty = ByteBuffer.allocateDirect(0)
@@ -565,7 +587,10 @@ open class Node internal constructor(
       buffer.apply {
         order(ByteOrder.nativeOrder())
       }
+
       cache[flags] = buffer
+
+      registerPseudoBufferOwner(buffer, this@Node, flags)
       return buffer
     } catch (_: Throwable) {
       val empty = ByteBuffer.allocateDirect(0)
@@ -576,10 +601,10 @@ open class Node internal constructor(
 
   fun preparePseudoBuffer(flags: Int): ByteBuffer {
     try {
-      val cachedValue = cache[flags]
-      if (cachedValue != null) {
-        return cachedValue
+      cache[flags]?.let {
+        return it
       }
+
       val id = NativeHelpers.nativePreparePseudoMut(mason.nativePtr, nativePtr, flags)
       if (id < 0) {
         val empty = ByteBuffer.allocateDirect(0)
@@ -592,6 +617,7 @@ open class Node internal constructor(
         order(ByteOrder.nativeOrder())
       }
       cache[flags] = buffer
+      registerPseudoBufferOwner(buffer, this@Node, flags)
       return buffer
     } catch (_: Throwable) {
       val empty = ByteBuffer.allocateDirect(0)
@@ -626,6 +652,38 @@ open class Node internal constructor(
       return (ObjectManager.shared[id] as? MeasureFuncImpl)?.measure(
         knownDimensionsSpec, availableSpaceSpec
       ) ?: MeasureOutput.ZERO
+    }
+
+    // Lightweight registry mapping pseudo-style ByteBuffers to their owning nodes
+    // We store weak references to nodes so this map doesn't prevent GC.
+    private val pseudoBufferOwners: MutableMap<ByteBuffer, MutableList<Pair<WeakReference<Node>, Int>>> =
+      Collections.synchronizedMap(WeakHashMap())
+
+    internal fun registerPseudoBufferOwner(buf: ByteBuffer, node: Node, flags: Int) {
+      val list = pseudoBufferOwners.getOrPut(buf) { ArrayList() }
+      synchronized(list) {
+        if (list.none { it.first.get() === node && it.second == flags }) {
+          list.add(Pair(WeakReference(node), flags))
+        }
+      }
+    }
+
+    internal fun lookupOwnersForBuffer(buf: ByteBuffer): List<Pair<Node, Int>>? {
+      val list = pseudoBufferOwners[buf] ?: return null
+      val out = ArrayList<Pair<Node, Int>>()
+      synchronized(list) {
+        val itr = list.iterator()
+        while (itr.hasNext()) {
+          val (ref, flags) = itr.next()
+          val n = ref.get()
+          if (n == null) {
+            itr.remove()
+          } else {
+            out.add(Pair(n, flags))
+          }
+        }
+      }
+      return out
     }
 
     // Test hook: optional callback to observe engine write-backs during testing.
@@ -688,6 +746,7 @@ open class Node internal constructor(
      */
 
 
+    @JvmStatic
     fun markPseudoSet(buf: ByteBuffer, key: StateKeys) {
       if (buf.capacity() < StyleKeys.PSEUDO_SET_MASK_HIGH + 8) return
       buf.putLong(
@@ -699,7 +758,6 @@ open class Node internal constructor(
         buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH) or key.high
       )
     }
-
   }
 
   @JvmOverloads

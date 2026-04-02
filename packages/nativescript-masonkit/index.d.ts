@@ -218,6 +218,28 @@ interface IViewBase {
 
 class VBase extends ViewBase implements IViewBase {
   style: Style;
+
+  /**
+   * Enable or disable CSS defaults
+   * for the entire Mason tree.
+   *
+   * When `true` every element starts from a clean, browser-normalised slate:
+   *  - `box-sizing: border-box`
+   *  - `margin: 0`, `padding: 0`, `border-width: 0`
+   *  - `background: transparent`
+   *  - `list-style: none` on lists
+   *  - `display: block` on `<img>`
+   *
+   * This is a **tree-global** flag; set it **before** creating views for the
+   * cleanest result.
+   *
+   * @example
+   * ```ts
+   * import { View } from '@triniwiz/nativescript-masonkit';
+   * View.preflight = true; // enable at app startup
+   * ```
+   */
+  static preflight: boolean;
 }
 
 export class View extends VBase {}
@@ -238,7 +260,9 @@ export class Button extends TextBase {}
 
 export class Br extends TextBase {}
 
-export class Input extends VBase {}
+export class InputBase extends VBase {}
+
+export class Input extends InputBase {}
 
 export class TextNode {
   data: string;
@@ -259,3 +283,7 @@ export class Ul extends VBase {}
 export class Ol extends VBase {}
 
 export class Li extends VBase {}
+
+export class TextAreaBase extends InputBase {}
+
+export class TextArea extends TextAreaBase {}

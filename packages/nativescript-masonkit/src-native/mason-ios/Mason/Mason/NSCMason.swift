@@ -266,5 +266,14 @@ public class NSCMason: NSObject {
     return MasonLi(mason: self)
   }
   
+  public func createTextArea() -> MasonTextArea {
+    return MasonTextArea(mason: self)
+  }
+
+  @objc public var preflight: Bool {
+    get { mason_get_preflight() }
+    set { mason_set_preflight(nativePtr, newValue) }
+  }
+
   @objc public static let scale = Float(UIScreen.main.scale)
 }

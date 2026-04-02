@@ -144,38 +144,54 @@ public class TextEngine: NSObject {
   func onStyleChange(low: UInt64, high: UInt64) {
     let state = StateKeys(low: low, high: high)
 
-
-    var dirty = false
     var layout = false
 
-    if (state.contains(.color)) {
-      dirty = true
-    }
-
-    if (state.contains(.fontSize)) {
+    if state.contains(.fontSize) {
       layout = true
-      dirty = true
     }
 
-    if (state.contains(.fontWeight) || state.contains(.fontStyle) || state.contains(.fontFamily) || state.contains(.fontVariantNumeric)) {
-      dirty = true
-    }
+    // Layout-affecting flags: require invalidateInlineSegments (full recompute).
+    let textLayoutChanged = state.contains(.fontSize)
+      || state.contains(.fontWeight)
+      || state.contains(.fontStyle)
+      || state.contains(.fontFamily)
+      || state.contains(.fontVariantNumeric)
+      || state.contains(.textWrap)
+      || state.contains(.whiteSpace)
+      || state.contains(.textTransform)
+      || state.contains(.letterSpacing)
+      || state.contains(.textJustify)
+      || state.contains(.lineHeight)
+      || state.contains(.textAlign)
+      || state.contains(.textOverflow)
+      || state.contains(.verticalAlign)
 
-    if (state.contains(.verticalAlign) || state.contains(.verticalAlign) || state.contains(.textWrap) || state.contains(.textWrap) || state.contains(.whiteSpace) || state.contains(.whiteSpace) || state.contains(.textTransform) || state.contains(.textTransform) || state.contains(.decorationLine) || state.contains(.decorationLine) || state.contains(.decorationColor) || state.contains(.decorationColor) || state.contains(.decorationStyle) || state.contains(.decorationStyle) || state.contains(.letterSpacing) || state.contains(.letterSpacing) || state.contains(.textJustify) || state.contains(.textJustify) || state.contains(.backgroundColor) || state.contains(.backgroundColor) || state.contains(.lineHeight) || state.contains(.lineHeight)) {
-      dirty = true
-    }
+    // Visual-only flags: span rebuild + redraw, no layout recompute needed.
+    let textVisualChanged = !textLayoutChanged && (
+      state.contains(.color)
+      || state.contains(.decorationLine)
+      || state.contains(.decorationColor)
+      || state.contains(.decorationStyle)
+      || state.contains(.backgroundColor)
+      || state.contains(.textShadow)
+    )
 
-    if (dirty) {
+    if textLayoutChanged {
       updateStyleOnTextNodes()
       invalidateInlineSegments()
-      if (layout) {
-        if (node.isAnonymous) {
+      if layout {
+        if node.isAnonymous {
           node.layoutParent?.markDirty()
         }
         (node.view as? MasonElement)?.invalidateLayout()
       } else {
         invalidate()
       }
+    } else if textVisualChanged {
+      // Visual-only change: rebuild spans and redraw without triggering a
+      // full layout recompute that would shift sibling views.
+      updateStyleOnTextNodes()
+      invalidate()
     }
   }
 
@@ -186,11 +202,14 @@ public class TextEngine: NSObject {
   
   
 
+  private static let whitespaceRegex = try! NSRegularExpression(pattern: "\\s+")
+  private static let horizontalWsRegex: NSRegularExpression? = try? NSRegularExpression(pattern: "[ \\t]+", options: [])
+
   private static func splitByWhitespace(
     _ attr: NSAttributedString
     ) -> [NSAttributedString] {
 
-    let regex = try! NSRegularExpression(pattern: "\\s+")
+    let regex = whitespaceRegex
     let text = attr.string as NSString
     let fullRange = NSRange(location: 0, length: text.length)
 
@@ -227,10 +246,25 @@ public class TextEngine: NSObject {
   }
 
   internal static func minContentWidth(for text: NSAttributedString) -> CGFloat {
+    // Single-pass: measure each whitespace-delimited word without creating
+    // an intermediate [NSAttributedString] array.
     var maxWidth: CGFloat = 0
+    let nsText = text.string as NSString
+    let fullRange = NSRange(location: 0, length: nsText.length)
+    var lastLocation = 0
 
-    for fragment in splitByWhitespace(text) {
-      maxWidth = max(maxWidth, desiredWidth(fragment))
+    let matches = whitespaceRegex.matches(in: text.string, range: fullRange)
+    for match in matches {
+      let r = match.range
+      if r.location > lastLocation {
+        let sub = text.attributedSubstring(from: NSRange(location: lastLocation, length: r.location - lastLocation))
+        maxWidth = max(maxWidth, desiredWidth(sub))
+      }
+      lastLocation = r.location + r.length
+    }
+    if lastLocation < nsText.length {
+      let sub = text.attributedSubstring(from: NSRange(location: lastLocation, length: nsText.length - lastLocation))
+      maxWidth = max(maxWidth, desiredWidth(sub))
     }
 
     if maxWidth == 0, text.length > 0 {
@@ -308,29 +342,6 @@ public class TextEngine: NSObject {
         maxWidth = available.width / CGFloat(NSCMason.scale)
       }
     }
-
-    // For inline-level, non-block elements (inline-block), use a
-    // shrink-to-fit algorithm (preferred-min / available / preferred) so
-    // inline children size to their content rather than expanding to the
-    // full available width. This mirrors CSS's shrink-to-fit behavior and
-    // avoids buttons stretching like blocks.
-    /*
-    if isInLine && !isBlock {
-      let preferredMin = Self.minContentWidth(for: text)
-      let preferredMax = Self.desiredWidth(text)
-
-      if preferredMax.isFinite && preferredMax > 0 {
-        if available.width.isFinite && available.width > 0 {
-          // width = min(max(preferredMin, available), preferredMax)
-          let avail = available.width / CGFloat(NSCMason.scale)
-          maxWidth = min(max(preferredMin, avail), preferredMax)
-        } else {
-          // No finite available width: use preferred (max-content)
-          maxWidth = preferredMax
-        }
-      }
-    }
-    */
     
     if let known = known {
       if(isBlock && known.height.isFinite && known.height > 0){
@@ -1142,9 +1153,6 @@ public class TextEngine: NSObject {
     // Build attributed string for drawing (uses cache if valid)
     let text = buildAttributedString(forMeasurement: false)
     context.saveGState()
-    #if DEBUG
-    print("[DEBUG] TextEngine.drawText node:\(node.nativePtr) rect:\(rect) frame:\((node.view as? UIView)?.frame ?? .zero) bounds:\((node.view as? UIView)?.bounds ?? .zero)")
-    #endif
     context.textMatrix = .identity
     context.translateBy(x: 0, y: rect.height)
     context.scaleBy(x: 1.0, y: -1.0)
@@ -1185,7 +1193,7 @@ public class TextEngine: NSObject {
     let wsSet = CharacterSet.whitespacesAndNewlines
     let horizontalWsSet = CharacterSet(charactersIn: " \t")
     // Use [ \t]+ to only match horizontal whitespace, not newlines or line separators
-    let collapseRegex = try? NSRegularExpression(pattern: "[ \\t]+", options: [])
+    let collapseRegex = TextEngine.horizontalWsRegex
 
     func collapsedString(_ s: String) -> String {
       guard let rx = collapseRegex else { return s }

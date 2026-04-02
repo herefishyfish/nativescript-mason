@@ -490,17 +490,13 @@ pub enum StyleKeys {
     MAX_CONTENT_WIDTH = 190,  // float (4 bytes: 190-193)
     MAX_CONTENT_HEIGHT = 194, // float (4 bytes: 194-197)
 
-    // ----------------------------
     // Border Style (per side)
-    // ----------------------------
     BORDER_LEFT_STYLE = 198,
     BORDER_RIGHT_STYLE = 199,
     BORDER_TOP_STYLE = 200,
     BORDER_BOTTOM_STYLE = 201,
 
-    // ----------------------------
     // Border Color (per side)
-    // ----------------------------
     BORDER_LEFT_COLOR = 202,   // u32 (4 bytes: 202-205)
     BORDER_RIGHT_COLOR = 206,  // u32 (4 bytes: 206-209)
     BORDER_TOP_COLOR = 210,    // u32 (4 bytes: 210-213)
@@ -533,15 +529,10 @@ pub enum StyleKeys {
     BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 266, // f32 (4 bytes: 266-269)
     BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270, // f32 (4 bytes: 270-273)
 
-    // ----------------------------
     // Float
-    // ----------------------------
     FLOAT = 274,
     CLEAR = 275,
-
-    // ----------------------------
     // Object Fit
-    // ----------------------------
     OBJECT_FIT = 276,
 
     FONT_METRICS_ASCENT_OFFSET = 277,     // float (4 bytes: 277-280)
@@ -970,6 +961,87 @@ impl Style {
 
         set_style_data_i8(buffer, StyleKeys::TEXT_ALIGN, 5);
         set_style_data_i8(buffer, StyleKeys::TEXT_JUSTIFY, -5);
+    }
+
+    /// Initialize `buffer` with CSS Preflight/normalize-style defaults.
+    ///
+    /// This is called instead of (or on top of) `init_default_data` when
+    /// `PREFLIGHT_ENABLED` is `true`.  It strips all UA-stylesheet decorations
+    /// so that every element starts from a clean, browser-normalized slate:
+    ///
+    /// * `box-sizing: border-box`   — opt-in sizing model for all elements.
+    /// * `margin: 0`                — no browser-injected margin.
+    /// * `padding: 0`               — no browser-injected padding.
+    /// * `border-width: 0`          — no browser-injected border.
+    /// * `background: transparent`  — no opaque UA background.
+    /// * `border-style: solid`      — follow web convention (required so that
+    ///                                setting border-width alone makes borders
+    ///                                visible without also setting border-style).
+    ///
+    /// Font / color / text defaults from `init_default_data` are preserved
+    pub(crate) fn init_preflight_base_data(buffer: &mut [u8]) {
+        Self::init_default_data(buffer);
+
+        set_style_data_i8(buffer, StyleKeys::BOX_SIZING, 0); // BorderBox = 0
+
+        {
+            let types: [i8; 4] = [1, 1, 1, 1]; // Length
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    types.as_ptr(),
+                    buffer
+                        .as_mut_ptr()
+                        .add(StyleKeys::MARGIN_LEFT_TYPE as usize) as *mut i8,
+                    4,
+                );
+            }
+
+            set_style_data_f32(buffer, StyleKeys::MARGIN_LEFT_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::MARGIN_RIGHT_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::MARGIN_TOP_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::MARGIN_BOTTOM_VALUE, 0.0);
+        }
+
+        {
+            let types: [i8; 4] = [0, 0, 0, 0]; // Length
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    types.as_ptr(),
+                    buffer
+                        .as_mut_ptr()
+                        .add(StyleKeys::PADDING_LEFT_TYPE as usize) as *mut i8,
+                    4,
+                );
+            }
+            set_style_data_f32(buffer, StyleKeys::PADDING_LEFT_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::PADDING_RIGHT_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::PADDING_TOP_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::PADDING_BOTTOM_VALUE, 0.0);
+        }
+
+        {
+            let types: [i8; 4] = [0, 0, 0, 0];
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    types.as_ptr(),
+                    buffer
+                        .as_mut_ptr()
+                        .add(StyleKeys::BORDER_LEFT_TYPE as usize) as *mut i8,
+                    4,
+                );
+            }
+            set_style_data_f32(buffer, StyleKeys::BORDER_LEFT_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::BORDER_RIGHT_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::BORDER_TOP_VALUE, 0.0);
+            set_style_data_f32(buffer, StyleKeys::BORDER_BOTTOM_VALUE, 0.0);
+        }
+
+        set_style_data_i8(buffer, StyleKeys::BORDER_LEFT_STYLE, 4);   // Solid = 4
+        set_style_data_i8(buffer, StyleKeys::BORDER_RIGHT_STYLE, 4);
+        set_style_data_i8(buffer, StyleKeys::BORDER_TOP_STYLE, 4);
+        set_style_data_i8(buffer, StyleKeys::BORDER_BOTTOM_STYLE, 4);
+
+        set_style_data_u32(buffer, StyleKeys::BACKGROUND_COLOR, 0x00000000);
     }
 
     pub fn new(arena: *mut StyleArena) -> Self {
@@ -2651,7 +2723,7 @@ impl Style {
         (self.raw, STYLE_BUFFER_SIZE)
     }
 
-    // ── Transform buffer helpers ────────────────────────────────────────
+    // -- Transform buffer helpers --
 
     #[inline]
     pub fn transform_count(&self) -> u8 {

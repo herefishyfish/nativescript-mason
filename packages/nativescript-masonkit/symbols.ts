@@ -8,3 +8,4 @@ export const text_ = Symbol('[[text]]');
 export const isPlaceholder_ = Symbol('[[isPlaceholder]]');
 export const textNode_ = Symbol('[[textNode]]');
 export const textNodeIndex_ = Symbol('[[textNodeIndex]]');
+export const pseudoStyles_ = Symbol('[[pseudoStyles]]');

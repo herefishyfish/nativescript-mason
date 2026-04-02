@@ -3,7 +3,7 @@ use mason_core::*;
 use std::ffi::{c_float, c_longlong, c_void};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-// ── Measure helpers ──────────────────────────────────────────────────────
+// Measure helpers
 
 extern "C" fn measure_40x20(
     _data: *const c_void,
@@ -61,7 +61,7 @@ fn approx(a: f32, b: f32) -> bool {
     (a - b).abs() < 0.5
 }
 
-// ── Test: inline-flex container lays out children using flexbox ──────────
+// Test: inline-flex container lays out children using flexbox
 
 /// An inline-flex container should arrange its children in a row (the flex
 /// default), NOT stack them vertically as block/IFC would.
@@ -157,7 +157,7 @@ fn inline_flex_children_laid_out_horizontally() {
     );
 }
 
-// ── Test: inline-flex with flex-direction column ─────────────────────────
+// Test: inline-flex with flex-direction column
 
 #[test]
 fn inline_flex_column_children_laid_out_vertically() {
@@ -221,7 +221,7 @@ fn inline_flex_column_children_laid_out_vertically() {
     );
 }
 
-// ── Test: inline-block uses block formatting context ─────────────────────
+// Test: inline-block uses block formatting context
 
 /// An inline-block container establishes a block formatting context.
 /// Children should stack vertically (block flow), not inline.
@@ -287,7 +287,7 @@ fn inline_block_children_use_block_layout() {
     );
 }
 
-// ── Test: inline-flex inside flex container ──────────────────────────────
+// Test: inline-flex inside flex container
 
 /// An inline-flex element inside a flex parent should behave as a flex item
 /// whose intrinsic size is determined by its own flexbox layout.
@@ -336,7 +336,7 @@ fn inline_flex_as_flex_item() {
     );
 }
 
-// ── Test: MeasureOutput MIN/MAX tagged NaN roundtrip ─────────────────────
+// Test: MeasureOutput MIN/MAX tagged NaN roundtrip
 
 #[test]
 fn measure_output_min_max_tags_roundtrip() {
@@ -364,7 +364,7 @@ fn measure_output_min_max_tags_roundtrip() {
     );
 }
 
-// ── Test: measure function receives correct MinContent/MaxContent signals ─
+// Test: measure function receives correct MinContent/MaxContent signals
 
 #[test]
 fn measure_receives_min_max_content_signals() {
@@ -434,7 +434,7 @@ fn measure_receives_min_max_content_signals() {
     );
 }
 
-// ── Test: inline-flex with flex-grow ─────────────────────────────────────
+// Test: inline-flex with flex-grow
 
 #[test]
 fn inline_flex_children_respect_flex_grow() {
@@ -502,7 +502,7 @@ fn inline_flex_children_respect_flex_grow() {
     );
 }
 
-// ── Test: inline-grid container ──────────────────────────────────────────
+// Test: inline-grid container
 
 #[test]
 fn inline_grid_children_use_grid_layout() {

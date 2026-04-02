@@ -28,7 +28,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
   
   let document = NSCMason.shared.createDocument()
   
-  let body = NSCMason.shared.createScrollView()
+  let body = NSCMason.shared.createView()
 
   // Hacker News state
   var hnIds: [Int] = []
@@ -875,6 +875,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
 
   // MARK: - Gallery Demo (polished cards)
   func gallerySample() {
+    
     let root = mason.createView()
     root.display = .Flex
     root.flexDirection = .Column
@@ -1028,13 +1029,14 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     super.viewDidLoad()
     // Add a simple demo picker at the top and the Mason body below it
     let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle","Shadow","Display"])
-    demoPicker.selectedSegmentIndex = 2
+    demoPicker.selectedSegmentIndex = 5
     demoPicker.addTarget(self, action: #selector(demoChanged(_:)), for: .valueChanged)
     demoPicker.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(demoPicker)
 
     // Configure Mason scroll body and add to view
     body.style.overflowY = .Scroll
+    body.tag = 1
     //body.style.background = "#FFFFFF"
     // Add body to view and constrain it below the picker
     body.translatesAutoresizingMaskIntoConstraints = false
@@ -1111,7 +1113,8 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
           case 4:
             hackerNewsSample()
     case 5:
-      renderPseudoDemo(body)
+      inputTest()
+    //  renderPseudoDemo(body)
     case 6:
       renderFloat(body)
      // renderFontVariantNumericDemo(body)
@@ -1135,27 +1138,22 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
   
   func inputTest(){
     let root = mason.createView()
-    
-    let input = mason.createInput()
-    input.placeholder = "Enter Text"
-    
-    let txt = mason.createTextView()
-    
-    let node = MasonTextNode(mason: mason, data: "")
-    
-    txt.mason_append(node: node)
-    
-    root.append(input)
-    root.append(mason.createBr())
-    root.append(txt)
-    
-    input.addEventListener("input") { event in
-      node.data = input.value
-    }
-    
+    root.style.setSizeWidth(MasonDimension.Percent(1))
+    root.style.setSizeHeight(MasonDimension.Auto)
+
+    // Add a TextArea demo
+    let ta = mason.createTextArea()
+    ta.placeholder = "Enter multi-line text"
+//    ta.rows = 4
+//    ta.cols = 40
+//    ta.maxLength = 500
+  //  ta.value = "Initial textarea value\nLine 2"
+//    ta.style.setSizeWidth(MasonDimension.Percent(1))
+//    ta.style.setSizeHeight(MasonDimension.Auto)
+
+    root.append(ta)
+
     body.addView(root)
-    
-   // body.computeWithSize(scale * Float( self.body.bounds.width), scale * Float( self.body.bounds.height))
   }
 
   // MARK: - Shadow Demo
@@ -1778,7 +1776,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
 
     rootLayout.append(body)
 
-    // --- Holy Grail layout (matches web sample) ---
+    // Holy Grail layout (matches web sample)
     let holy = mason.createView()
     holy.configure { it in
       it.display = Display.Grid
@@ -2125,7 +2123,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     section.append(imgNarrow)
   }
 
-  func objectFit(_ scroll: Scroll) {
+  func objectFit(_ scroll: MasonUIView) {
     let section = mason.createView()
     let mdnLogoOnlyColor =
       "https://b4eb5495-cf4e-4b34-a1f5-d7ee06ed21f7.mdnplay.dev/en-US/docs/Web/CSS/Reference/Properties/object-fit/mdn_logo_only_color.png"
@@ -2159,7 +2157,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     )
   }
 
-  func renderFloat(_ view: Scroll) {
+  func renderFloat(_ view: MasonUIView) {
     let section = mason.createView()
     let one = mason.createView()
     one.append(text: "1")
@@ -2207,24 +2205,27 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
   
   // MARK: - Pseudo State Demo
 
-  private func pseudoSetBg(_ buf: UnsafeMutableBufferPointer<UInt8>, _ argb: UInt32) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBg(_ buf: NSMutableData, _ argb: UInt32) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = argb
     memcpy(base + StyleKeys.BACKGROUND_COLOR, &val, 4)
     base.advanced(by: StyleKeys.BACKGROUND_COLOR_STATE).pointee = 1
     MasonNode.markPseudoSet(buf, .backgroundColor)
   }
 
-  private func pseudoSetFontColor(_ buf: UnsafeMutableBufferPointer<UInt8>, _ argb: UInt32) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetFontColor(_ buf: NSMutableData, _ argb: UInt32) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = argb
     memcpy(base + StyleKeys.FONT_COLOR, &val, 4)
     base.advanced(by: StyleKeys.FONT_COLOR_STATE).pointee = 1
     MasonNode.markPseudoSet(buf, .color)
   }
 
-  private func pseudoSetBorderColor(_ buf: UnsafeMutableBufferPointer<UInt8>, _ argb: UInt32) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBorderColor(_ buf: NSMutableData, _ argb: UInt32) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = argb
     for offset in [StyleKeys.BORDER_LEFT_COLOR, StyleKeys.BORDER_RIGHT_COLOR,
                    StyleKeys.BORDER_TOP_COLOR, StyleKeys.BORDER_BOTTOM_COLOR] {
@@ -2233,8 +2234,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     MasonNode.markPseudoSet(buf, .borderColor)
   }
 
-  private func pseudoSetBorderWidth(_ buf: UnsafeMutableBufferPointer<UInt8>, _ px: Float) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBorderWidth(_ buf: NSMutableData, _ px: Float) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = px
     for (t, v) in [(StyleKeys.BORDER_LEFT_TYPE, StyleKeys.BORDER_LEFT_VALUE),
                    (StyleKeys.BORDER_RIGHT_TYPE, StyleKeys.BORDER_RIGHT_VALUE),
@@ -2246,8 +2248,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     MasonNode.markPseudoSet(buf, .border)
   }
 
-  private func pseudoSetBorderRadius(_ buf: UnsafeMutableBufferPointer<UInt8>, _ px: Float) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBorderRadius(_ buf: NSMutableData, _ px: Float) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = px
     for (t, v) in [(StyleKeys.BORDER_RADIUS_TOP_LEFT_X_TYPE, StyleKeys.BORDER_RADIUS_TOP_LEFT_X_VALUE),
                    (StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_TYPE, StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_VALUE),
@@ -2276,7 +2279,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
 
   // MARK: - Superellipse Demo
 
-  func renderSuperellipseDemo(_ view: Scroll) {
+  func renderSuperellipseDemo(_ view: MasonUIView) {
     let container = mason.createView()
     container.configure { style in
       style.display = .Block
@@ -2297,7 +2300,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       return label
     }
 
-    // ─── 1. Side-by-Side Comparison ────────────────────────────────
+    // 1. Side-by-Side Comparison
     container.append(sectionLabel("CIRCULAR VS SQUIRCLE"))
 
     let compRow = mason.createView()
@@ -2354,7 +2357,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     compRow.append(squircleCard)
     container.append(compRow)
 
-    // ─── 2. Exponent Spectrum ──────────────────────────────────────
+    // 2. Exponent Spectrum
     container.append(sectionLabel("EXPONENT SPECTRUM"))
 
     let samples: [(shape: String, label: String, bg: String, border: String)] = [
@@ -2390,7 +2393,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       container.append(card)
     }
 
-    // ─── 3. Per-Corner Mixed Shapes ────────────────────────────────
+    // 3. Per-Corner Mixed Shapes
     container.append(sectionLabel("PER-CORNER MIXED SHAPES"))
 
     let mixed = mason.createView()
@@ -2416,7 +2419,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     mixed.append(mixedLabel)
     container.append(mixed)
 
-    // ─── 4. App Icon Grid ──────────────────────────────────────────
+    // 4. App Icon Grid
     container.append(sectionLabel("APP ICON GRID — SQUIRCLE SHOWCASE"))
 
     let grid = mason.createView()
@@ -2444,7 +2447,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
     container.append(grid)
 
-    // ─── 5. Notification Banners ───────────────────────────────────
+    // 5. Notification Banners
     container.append(sectionLabel("NOTIFICATION BANNERS"))
 
     let banners: [(text: String, bg: String, border: String, fg: String)] = [
@@ -2479,7 +2482,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       container.append(banner)
     }
 
-    // ─── 6. Pill Buttons ───────────────────────────────────────────
+    // 6. Pill Buttons
     container.append(sectionLabel("PILL BUTTONS — CIRCULAR VS SQUIRCLE"))
 
     let pillRow = mason.createView()
@@ -2521,7 +2524,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     view.append(container)
   }
 
-  func renderPseudoDemo(_ view: Scroll) {
+  func renderPseudoDemo(_ view: MasonUIView) {
     let container = mason.createView()
     container.configure { style in
       style.display = .Block
@@ -2989,7 +2992,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     body.computeWithSize(scale * Float(body.bounds.width), scale * Float(body.bounds.height))
   }
   
-  func renderFontVariantNumericDemo(_ view: Scroll) {
+  func renderFontVariantNumericDemo(_ view: MasonUIView) {
     let container = mason.createView()
     container.configure { style in
       style.display = .Block
@@ -2997,7 +3000,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       style.background = "#EEF2FF"
     }
 
-    // --- Title ---
+    // Title
     let title = mason.createTextView(type: .P)
     title.append(text: "font-variant-numeric")
     title.configure { style in
@@ -3008,7 +3011,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
     container.addView(title)
 
-    // --- Timer Row ---
+    // Timer Row
     let timerRow = mason.createView()
     timerRow.configure { style in
       style.display = .Flex
@@ -3078,7 +3081,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     timerRow.addView(rightCard)
     container.addView(timerRow)
 
-    // --- Showcase Cards ---
+    // Showcase Cards
     let variants: [(String, String)] = [
       ("lining-nums", "0123456789"),
       ("oldstyle-nums", "0123456789"),

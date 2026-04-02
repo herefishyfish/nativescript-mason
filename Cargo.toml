@@ -14,5 +14,5 @@ debug-assertions = false
 overflow-checks = false
 
 [workspace.dependencies]
-taffy = { git = "https://github.com/DioxusLabs/taffy.git", rev = "639df8fc9454c246a5c304de92fd4d553f4c57d0" }
+taffy = { git = "https://github.com/DioxusLabs/taffy.git", rev = "647d235a5a4bc80a237d65d070f340bab749afd3" }
 style_atoms = { git = "https://github.com/servo/stylo", rev = "85ae0b1", package = "stylo_atoms" }

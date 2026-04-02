@@ -100,12 +100,31 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     if(view.superview == self){
       return
     }
-    
+
     if(view is MasonElement){
       node.addChildAt((view as! MasonElement).node, at)
     }else {
       node.addChildAt(node.mason.nodeForView(view), at)
     }
+  }
+
+  public func removeView(_ view: UIView) {
+    let childNode = (view as? MasonElement)?.node ?? node.mason.nodeForView(view)
+    node.removeChild(childNode)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeView(at index: Int) {
+    node.removeChildAt(index: index)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeAllViews() {
+    if let ptr = node.nativePtr {
+      mason_node_remove_children(node.mason.nativePtr, ptr)
+    }
+    node.children.removeAll()
+    engine.invalidateInlineSegments()
   }
 
   
@@ -124,13 +143,6 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
       return
     }
 
-    #if DEBUG
-    if node.pseudoMask != 0 {
-      let resolved = style.resolvedBackgroundColor
-      let buf = node.getPseudoBuffer(PseudoState.active.rawValue)
-      print("[Button.draw] mask=\(String(node.pseudoMask, radix:16)) hasBackground=\(hasBackground) resolvedBg=\(String(resolved, radix:16)) pseudoBuf=\(buf != nil ? "\(buf!.count)B" : "nil") bounds=\(bounds)")
-    }
-    #endif
 
     style.mBorderRender.resolve(for: bounds)
     let borderWidths = style.mBorderRender.cachedWidths
@@ -168,7 +180,6 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     // Border drawn OUTSIDE any clip scope so strokes aren't clipped
     if hasBorder {
       style.mBorderRender.draw(in: context, rect: bounds)
-      context.restoreGState()
     }
 
     // CSS filter — applied last so it covers background, text, and border.
@@ -179,7 +190,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     if !filterCss.isEmpty {
       style.applyResolvedFilter(in: context, rect: bounds, view: self)
     } else if node.hasPseudo(.active),
-              node.getPseudoBuffer(PseudoState.active.rawValue) == nil {
+              node.getPseudoBufferRaw(PseudoState.active.rawValue) == nil {
       context.saveGState()
       if style.mBorderRender.hasRadii() {
         let clipPath = style.mBorderRender.getClipPath(rect: bounds, radius: style.mBorderRender.radius)
@@ -278,8 +289,27 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
 extension Button {
 
   private func updatePseudo(_ state: PseudoState, _ enabled: Bool) {
+    let wasEnabled = node.hasPseudo(state)
+    guard wasEnabled != enabled else { return }
+
+    let pseudoText = StateKeys.pseudoText
+    let hadPseudoTextBefore = node.hasPseudoSetFor(pseudoText)
+    let toggledStateTextKeys = node.getPseudoSetFlags(state.rawValue)
+    let changedTextKeys = StateKeys(
+      low: toggledStateTextKeys.low & pseudoText.low,
+      high: toggledStateTextKeys.high & pseudoText.high
+    )
+
     node.setPseudo(state, enabled)
-    onStyleChange(StateKeys.pseudoText)
+
+    // Rebuild text only when the toggled pseudo-state can affect text.
+    // This still forces a restore when returning to the normal state.
+    if changedTextKeys != .none {
+      let hasPseudoTextAfter = node.hasPseudoSetFor(pseudoText)
+      if hadPseudoTextBefore || hasPseudoTextAfter {
+        onStyleChange(changedTextKeys.low, changedTextKeys.high)
+      }
+    }
     style.mBorderRender.invalidateCache()
     setNeedsDisplay()
   }
@@ -319,9 +349,14 @@ extension Button {
     let point = touch.location(in: self)
     let inside = bounds.contains(point)
     updatePseudo(.active, inside)
-    #if DEBUG
-    print("[DEBUG] Button.touchesMoved inside:\(inside) point:\(point) frame:\(self.frame)")
-    #endif
   }
-  
+
+  public override func willMove(toWindow newWindow: UIWindow?) {
+    super.willMove(toWindow: newWindow)
+    if newWindow == nil && node.hasPseudo(.active) {
+      touchStartTime = nil
+      updatePseudo(.active, false)
+    }
+  }
+
 }

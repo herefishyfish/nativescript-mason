@@ -22,7 +22,7 @@ class ButtonBorderClipInstrumentedTest {
 
   private val TAG = "ButtonBorderClip"
 
-  // ── Helpers ────────────────────────────────────────────────────────
+  // Helpers
 
   private fun createMason(): Mason {
     val mason = Mason()
@@ -33,7 +33,7 @@ class ButtonBorderClipInstrumentedTest {
     return mason
   }
 
-  // ── Test: Button with 1px border ──────────────────────────────────
+  // Test: Button with 1px border
 
   @Test
   fun buttonWith1pxBorderPaddingIncludesBorder() {
@@ -94,7 +94,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: Button with 2px border ──────────────────────────────────
+  // Test: Button with 2px border
 
   @Test
   fun buttonWith2pxBorderPaddingIncludesBorder() {
@@ -162,7 +162,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: Styled button matching pseudo demo pattern ──────────────
+  // Test: Styled button matching pseudo demo pattern
 
   @Test
   fun styledButtonWithDashedBorderNotClipped() {
@@ -225,7 +225,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: PseudoDemo-style primary button has visible height ──────
+  // Test: PseudoDemo-style primary button has visible height
 
   @Test
   fun pseudoDemoPrimaryButtonHasVisibleHeight() {
@@ -287,7 +287,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: Multiple buttons in column all have height ──────────────
+  // Test: Multiple buttons in column all have height
 
   @Test
   fun multipleButtonsInColumnAllHaveHeight() {
@@ -342,7 +342,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: Button inside a Scroll (PseudoDemo pattern) ────────────
+  // Test: Button inside a Scroll (PseudoDemo pattern)
 
   @Test
   fun buttonInScrollViewHasVisibleHeight() {
@@ -394,7 +394,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: Mixed standard TextViews + Buttons in Scroll ───────────
+  // Test: Mixed standard TextViews + Buttons in Scroll
 
   @Test
   fun mixedTextViewsAndButtonsInScrollAllVisible() {
@@ -479,7 +479,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: Button in flex row with Input (TransformActivity pattern) ─
+  // Test: Button in flex row with Input (TransformActivity pattern)
 
   @Test
   fun applyButtonNotShrunkInFlexRow() {
@@ -548,7 +548,7 @@ class ButtonBorderClipInstrumentedTest {
     }
   }
 
-  // ── Test: Button with NO border has unchanged padding ─────────────
+  // Test: Button with NO border has unchanged padding
 
   @Test
   fun buttonWithNoBorderPaddingUnchanged() {

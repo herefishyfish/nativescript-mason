@@ -399,6 +399,9 @@ SWIFT_CLASS_NAMED("Button")
 - (void)requestLayout;
 - (void)addView:(UIView * _Nonnull)view;
 - (void)addView:(UIView * _Nonnull)view at:(NSInteger)at;
+- (void)removeView:(UIView * _Nonnull)view;
+- (void)removeViewAt:(NSInteger)index;
+- (void)removeAllViews;
 - (void)layoutSubviews;
 - (void)drawRect:(CGRect)rect;
 @property (nonatomic, readonly, strong) NSMutableData * _Nonnull textValues;
@@ -409,11 +412,13 @@ SWIFT_CLASS_NAMED("Button")
 
 @class UITouch;
 @class UIEvent;
+@class UIWindow;
 @interface MasonButton (SWIFT_EXTENSION(Mason))
 - (void)touchesBegan:(NSSet<UITouch *> * _Nonnull)touches withEvent:(UIEvent * _Nullable)event;
 - (void)touchesEnded:(NSSet<UITouch *> * _Nonnull)touches withEvent:(UIEvent * _Nullable)event;
 - (void)touchesCancelled:(NSSet<UITouch *> * _Nonnull)touches withEvent:(UIEvent * _Nullable)event;
 - (void)touchesMoved:(NSSet<UITouch *> * _Nonnull)touches withEvent:(UIEvent * _Nullable)event;
+- (void)willMoveToWindow:(UIWindow * _Nullable)newWindow;
 @end
 
 typedef SWIFT_ENUM_NAMED(NSInteger, MasonClear, "Clear", open) {
@@ -1044,6 +1049,7 @@ SWIFT_CLASS_NAMED("MasonMouseEventOptions")
 - (nonnull instancetype)initWithIsComposing:(BOOL)isComposing OBJC_DESIGNATED_INITIALIZER;
 @end
 
+enum PseudoState : uint16_t;
 enum MasonNodeType : int32_t;
 SWIFT_CLASS_NAMED("MasonNode")
 @interface MasonNode : NSObject
@@ -1052,10 +1058,22 @@ SWIFT_CLASS_NAMED("MasonNode")
 @property (nonatomic, copy) void (^ _Nullable onNodeDetached)(void);
 @property (nonatomic, readonly) void * _Nullable nativePtr;
 @property (nonatomic, readonly, strong) MasonLayout * _Nonnull computedLayout;
+/// Set to true by applyToView after Mason has applied layout to this node’s view.
+/// NativeScript can read this to skip redundant layout passes for Mason-managed children.
+@property (nonatomic) BOOL isLayoutValid;
 @property (nonatomic, readonly, strong) MasonDocument * _Nullable document;
-- (void)setPseudoString:(uint16_t)pseudoState key:(NSString * _Nonnull)key value:(NSString * _Nonnull)value;
-- (NSString * _Nullable)getPseudoString:(uint16_t)pseudoState key:(NSString * _Nonnull)key SWIFT_WARN_UNUSED_RESULT;
-- (void)clearPseudoString:(uint16_t)pseudoState key:(NSString * _Nonnull)key;
+- (void)setPseudoString:(uint16_t)pseudoState :(NSString * _Nonnull)key :(NSString * _Nonnull)value;
+- (NSString * _Nullable)getPseudoString:(uint16_t)pseudoState :(NSString * _Nonnull)key SWIFT_WARN_UNUSED_RESULT;
+- (void)clearPseudoString:(uint16_t)pseudoState :(NSString * _Nonnull)key;
+/// Current active pseudo state bitmask read from the native state buffer.
+@property (nonatomic, readonly) uint16_t pseudoMask;
+- (BOOL)hasPseudo:(enum PseudoState)state SWIFT_WARN_UNUSED_RESULT;
+- (void)setPseudo:(enum PseudoState)state :(BOOL)enabled autoDirty:(BOOL)autoDirty;
+/// Get existing pseudo style buffer (read-only).
+- (NSMutableData * _Nullable)getPseudoBuffer:(uint16_t)flags SWIFT_WARN_UNUSED_RESULT;
+/// Prepare (create if needed) a mutable pseudo style buffer.
+/// Clones from base style on first call for a given state.
+- (NSMutableData * _Nonnull)preparePseudoBuffer:(uint16_t)flags SWIFT_WARN_UNUSED_RESULT;
 - (MasonNode * _Nonnull)getRootNode SWIFT_WARN_UNUSED_RESULT;
 @property (nonatomic, readonly, strong) MasonNode * _Nullable parent;
 @property (nonatomic, readonly, strong) MasonNode * _Nullable parentNode;
@@ -1077,14 +1095,6 @@ SWIFT_CLASS_NAMED("MasonNode")
 - (void)setChildrenWithValue:(NSArray<MasonNode *> * _Nonnull)value;
 - (void)appendChild:(MasonNode * _Nonnull)child;
 - (void)removeAllChildren;
-@end
-
-enum PseudoState : uint16_t;
-@interface MasonNode (SWIFT_EXTENSION(Mason))
-/// Current active pseudo state bitmask read from the native state buffer.
-@property (nonatomic, readonly) uint16_t pseudoMask;
-- (BOOL)hasPseudo:(enum PseudoState)state SWIFT_WARN_UNUSED_RESULT;
-- (void)setPseudo:(enum PseudoState)state :(BOOL)enabled autoDirty:(BOOL)autoDirty;
 @end
 
 typedef SWIFT_ENUM_NAMED(int32_t, MasonNodeType, "MasonNodeType", open) {
@@ -1298,6 +1308,9 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly) Class _Nonnull layer
 - (void)layoutSubviews;
 - (void)addView:(UIView * _Nonnull)view;
 - (void)addView:(UIView * _Nonnull)view at:(NSInteger)at;
+- (void)removeView:(UIView * _Nonnull)view;
+- (void)removeViewAt:(NSInteger)index;
+- (void)removeAllViews;
 - (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder SWIFT_UNAVAILABLE;
 @property (nonatomic, strong) MasonTextOverflowCompat * _Nonnull textOverflowCompat;
 @property (nonatomic) uint32_t color;
@@ -1333,16 +1346,18 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly) Class _Nonnull layer
 @class NSAttributedString;
 @class UIFont;
 @class UITextPosition;
-SWIFT_CLASS("_TtC5Mason14MasonTextInput")
+SWIFT_CLASS_NAMED("MasonTextInput")
 @interface MasonTextInput : UITextView <UITextViewDelegate>
 - (nonnull instancetype)initWithFrame:(CGRect)frame textContainer:(NSTextContainer * _Nullable)textContainer SWIFT_UNAVAILABLE;
 - (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder SWIFT_UNAVAILABLE;
+@property (nonatomic, copy) NSString * _Nullable placeholder;
 @property (nonatomic, copy) NSString * _Null_unspecified text;
 @property (nonatomic, strong) NSAttributedString * _Null_unspecified attributedText;
 @property (nonatomic, strong) UIFont * _Nullable font;
 @property (nonatomic) NSTextAlignment textAlignment;
 - (void)layoutSubviews;
 - (void)textViewDidChange:(UITextView * _Nonnull)textView;
+- (void)textViewDidBeginEditing:(UITextView * _Nonnull)textView;
 - (void)textViewDidEndEditing:(UITextView * _Nonnull)textView;
 - (void)paste:(id _Nullable)sender;
 - (void)cut:(id _Nullable)sender;
@@ -1350,8 +1365,24 @@ SWIFT_CLASS("_TtC5Mason14MasonTextInput")
 - (CGRect)caretRectForPosition:(UITextPosition * _Nonnull)position SWIFT_WARN_UNUSED_RESULT;
 @end
 
-SWIFT_CLASS("_TtC5Mason13MasonTextArea")
-@interface MasonTextArea : MasonTextInput
+SWIFT_CLASS_NAMED("MasonTextArea")
+@interface MasonTextArea : MasonTextInput <MasonElementObjc>
+@property (nonatomic, readonly, strong) MasonNode * _Nonnull node;
+@property (nonatomic, readonly, strong) NSCMason * _Nonnull mason;
+@property (nonatomic, readonly, strong) UIView * _Nonnull uiView;
+@property (nonatomic, readonly, strong) MasonStyle * _Nonnull style;
+@property (nonatomic) NSInteger rows;
+@property (nonatomic) NSInteger cols;
+@property (nonatomic, copy) NSString * _Nonnull name;
+@property (nonatomic) NSInteger maxLength;
+@property (nonatomic, copy) NSString * _Nonnull value;
+- (nonnull instancetype)initWithMason:(NSCMason * _Nonnull)doc OBJC_DESIGNATED_INITIALIZER;
+- (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
+- (void)drawRect:(CGRect)rect;
+- (void)layoutSubviews;
+- (void)textViewDidChange:(UITextView * _Nonnull)textView;
+- (void)onStyleChange:(uint64_t)low :(uint64_t)high;
+- (BOOL)textView:(UITextView * _Nonnull)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString * _Nonnull)text SWIFT_WARN_UNUSED_RESULT;
 @end
 
 SWIFT_CLASS("_TtC5Mason14MasonTextLayer")
@@ -1410,10 +1441,13 @@ SWIFT_CLASS_NAMED("MasonUIView")
 @property (nonatomic, readonly, strong) MasonNode * _Nonnull node;
 @property (nonatomic, readonly, strong) NSCMason * _Nonnull mason;
 @property (nonatomic, readonly, strong) UIView * _Nonnull uiView;
+@property (nonatomic) CGSize contentSize;
+@property (nonatomic) CGPoint contentOffset;
 @property (nonatomic, readonly, strong) MasonStyle * _Nonnull style;
 - (void)markNodeDirty;
 - (BOOL)isNodeDirty SWIFT_WARN_UNUSED_RESULT;
 - (void)layoutSubviews;
+- (void)willMoveToWindow:(UIWindow * _Nullable)newWindow;
 - (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder SWIFT_UNAVAILABLE;
 + (MasonUIView * _Nonnull)createGridView:(NSCMason * _Nonnull)mason SWIFT_WARN_UNUSED_RESULT;
 + (MasonUIView * _Nonnull)createFlexView:(NSCMason * _Nonnull)mason SWIFT_WARN_UNUSED_RESULT;
@@ -1724,6 +1758,30 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, strong) NSCMason * _Nonnull sh
 - (MasonList * _Nonnull)createListViewWithIsOrdered:(BOOL)isOrdered SWIFT_WARN_UNUSED_RESULT;
 - (MasonNode * _Nonnull)createListItemNode SWIFT_WARN_UNUSED_RESULT;
 - (MasonLi * _Nonnull)createListItem SWIFT_WARN_UNUSED_RESULT;
+- (MasonTextArea * _Nonnull)createTextArea SWIFT_WARN_UNUSED_RESULT;
+/// Enable or disable CSS Preflight (web-normalised / Tailwind-like) defaults.
+/// When <code>true</code> every element starts with a clean slate:
+/// <ul>
+///   <li>
+///     <code>box-sizing: border-box</code>
+///   </li>
+///   <li>
+///     <code>margin: 0</code>, <code>padding: 0</code>, <code>border-width: 0</code>
+///   </li>
+///   <li>
+///     <code>background: transparent</code>
+///   </li>
+///   <li>
+///     <code>list-style: none</code> on lists
+///   </li>
+///   <li>
+///     <code>display: block</code> on replaced elements (<code><img></code>)
+///   </li>
+/// </ul>
+/// The flag is stored in a global atomic so it must ideally be set <em>before</em>
+/// creating views.  Calling the setter on an existing instance also re-seeds
+/// that instance’s arena immediately.
+@property (nonatomic) BOOL preflight;
 SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly) float scale;)
 + (float)scale SWIFT_WARN_UNUSED_RESULT;
 @end

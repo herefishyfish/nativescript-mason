@@ -84,6 +84,32 @@ void mason_print_tree(struct CMason *mason, struct CMasonNode *node);
 
 void mason_set_device_scale(struct CMason *mason, float scale);
 
+/**
+ * Enable or disable CSS Preflight (normalize/web-like) defaults globally.
+ *
+ * When `enabled` is `true` the underlying `StyleArena` will use web-normalised
+ * defaults for every element type:
+ *   • `box-sizing: border-box` on all elements
+ *   • `margin: 0`, `padding: 0`, `border-width: 0` on all elements
+ *   • `background: transparent` on all elements
+ *   • `list-style: none` on `<ul>` / `<ol>`
+ *   • `display: block` on `<img>`
+ *
+ * The flag is stored in a global `AtomicBool` so it must be set **before**
+ * creating Mason instances for the cleanest effect.  Calling this on an
+ * existing `mason` pointer also re-seeds that instance's arena so that
+ * unstyled (default-handle) nodes pick up the new defaults immediately.
+ *
+ * # Safety
+ * `mason` must be a valid, non-null pointer returned by `mason_init`.
+ */
+void mason_set_preflight(struct CMason *mason, bool enabled);
+
+/**
+ * Returns `true` if CSS Preflight defaults are currently enabled.
+ */
+bool mason_get_preflight(void);
+
 void *mason_get_buffer(struct CMason *mason, int handle);
 
 void mason_node_set_segments(struct CMason *mason,
@@ -274,6 +300,10 @@ const uint8_t *mason_node_get_pseudo_style_buffer(struct CMason *mason,
                                                   uint16_t flags,
                                                   uintptr_t *out_len);
 
+void *mason_node_get_pseudo_style_buffer_apple(struct CMason *mason,
+                                               struct CMasonNode *node,
+                                               uint16_t flags);
+
 /**
  * Prepare (create if needed) and return a mutable pseudo style buffer.
  * Clones from the base style if this is the first call for the given pseudo state.
@@ -283,6 +313,10 @@ uint8_t *mason_node_prepare_pseudo_style_buffer(struct CMason *mason,
                                                 struct CMasonNode *node,
                                                 uint16_t flags,
                                                 uintptr_t *out_len);
+
+void *mason_node_prepare_pseudo_style_buffer_apple(struct CMason *mason,
+                                                   struct CMasonNode *node,
+                                                   uint16_t flags);
 
 bool mason_node_is_children_same(struct CMason *mason,
                                  struct CMasonNode *node,

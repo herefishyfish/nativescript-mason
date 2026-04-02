@@ -143,17 +143,13 @@ public struct StyleKeys {
   public static let MAX_CONTENT_WIDTH = 190 // float (4 bytes: 190-193)
   public static let MAX_CONTENT_HEIGHT = 194 // float (4 bytes: 194-197)
   
-  // ----------------------------
   // Border Style (per side)
-  // ----------------------------
   public static let BORDER_LEFT_STYLE = 198
   public static let BORDER_RIGHT_STYLE = 199
   public static let BORDER_TOP_STYLE = 200
   public static let BORDER_BOTTOM_STYLE = 201
   
-  // ----------------------------
   // Border Color (per side)
-  // ----------------------------
   public static let BORDER_LEFT_COLOR = 202 // u32 (4 bytes: 202-205)
   public static let BORDER_RIGHT_COLOR = 206 // u32 (4 bytes: 206-209)
   public static let BORDER_TOP_COLOR = 210 // u32 (4 bytes: 210-213)
@@ -186,9 +182,7 @@ public struct StyleKeys {
   public static let BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 266 // f32 (4 bytes: 266-269)
   public static let BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270  // f32 (4 bytes: 270-273)
   
-  // ----------------------------
   // Float
-  // ----------------------------
   public static let FLOAT = 274
   public static let CLEAR = 275
   
@@ -271,7 +265,7 @@ public struct StyleKeys {
   public static let FONT_VARIANT_NUMERIC = 419 // byte (bitmask)
   public static let FONT_VARIANT_NUMERIC_STATE = 420 // byte
 
-  // ── Transform buffer region (bytes 422-559) ──────────────────────
+  // Transform buffer region (bytes 422-559)
   public static let TRANSFORM_COUNT = 422     // u8: number of inline ops (0-6)
   public static let TRANSFORM_FLAGS = 423     // u8: bit 0 = HAS_MATRIX, bit 1 = IS_3D
   public static let TRANSFORM_OP_0 = 424      // 12 bytes: type(u8) + pad(3) + a(f32) + b(f32)
@@ -405,8 +399,45 @@ public struct StateKeys: Equatable {
 
   /// Union of all text-relevant keys that may differ in a pseudo buffer.
   public static let pseudoText = StateKeys(
-    low:  color.low | fontSize.low | textAlign.low | fontWeight.low | fontStyle.low | fontFamily.low,
-    high: color.high | fontSize.high | textAlign.high | fontWeight.high | fontStyle.high | fontFamily.high | fontVariantNumeric.high
+    low: color.low
+      | fontSize.low
+      | fontWeight.low
+      | fontStyle.low
+      | fontFamily.low
+      | textWrap.low
+      | whiteSpace.low
+      | textTransform.low
+      | decorationLine.low
+      | decorationColor.low
+      | decorationStyle.low
+      | letterSpacing.low
+      | textJustify.low
+      | backgroundColor.low
+      | lineHeight.low
+      | textAlign.low
+      | textOverflow.low
+      | textShadow.low
+      | verticalAlign.low,
+    high: color.high
+      | fontSize.high
+      | fontWeight.high
+      | fontStyle.high
+      | fontFamily.high
+      | fontVariantNumeric.high
+      | textWrap.high
+      | whiteSpace.high
+      | textTransform.high
+      | decorationLine.high
+      | decorationColor.high
+      | decorationStyle.high
+      | letterSpacing.high
+      | textJustify.high
+      | backgroundColor.high
+      | lineHeight.high
+      | textAlign.high
+      | textOverflow.high
+      | textShadow.high
+      | verticalAlign.high
   )
 }
 
@@ -468,6 +499,8 @@ struct FontMetrics {
 @objc(MasonStyle)
 @objcMembers
 public class MasonStyle: NSObject {
+  private static let transformFnRegex: NSRegularExpression? = try? NSRegularExpression(pattern: "(\\w+)\\(([^)]*)\\)", options: [])
+
   public internal(set) var font: NSCFontFace!
   private var _cachedResolvedFont: NSCFontFace? = nil
   private var _resolvedFontKey: UInt64 = 0
@@ -813,7 +846,7 @@ public class MasonStyle: NSObject {
     }
   }
 
-  // ── Transform (buffer-backed) ───────────────────────────────────────
+  // Transform (buffer-backed)
 
   private struct TransformOp {
     let type: UInt8
@@ -866,7 +899,7 @@ public class MasonStyle: NSObject {
   private func parseTransformOps(_ input: String) -> [TransformOp] {
     if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [] }
     var ops: [TransformOp] = []
-    let fnRegex = try? NSRegularExpression(pattern: "(\\w+)\\(([^)]*)\\)", options: [])
+    let fnRegex = MasonStyle.transformFnRegex
     let ns = input as NSString
     guard let matches = fnRegex?.matches(in: input, options: [], range: NSRange(location: 0, length: ns.length)) else { return [] }
     for m in matches {
@@ -1345,7 +1378,7 @@ public class MasonStyle: NSObject {
     // Check pseudo string storage on node (Swift-side) using cascade order
     for state in PSEUDO_CSS_ORDER.reversed() {
       if node.hasPseudo(state) {
-        if let s = node.getPseudoString(state.rawValue, key: "filter"), !s.isEmpty {
+        if let s = node.getPseudoString(state.rawValue,"filter"), !s.isEmpty {
           return s
         }
       }
@@ -2724,8 +2757,6 @@ public class MasonStyle: NSObject {
   public var boxShadow: String = "" {
     didSet {
       boxShadows = ShadowParser.parseBoxShadow(style: self, value: boxShadow)
-      print("[mason][ios] MasonStyle.boxShadow set -> raw: \(boxShadow) parsedCount: \(boxShadows.count)")
-      
       if let view = node.view {
         let hasOutsetShadows = boxShadows.contains { !$0.inset }
         
@@ -4150,7 +4181,7 @@ extension MasonStyle {
     var result = base
     for state in PSEUDO_CSS_ORDER {
       if (mask & state.rawValue) != 0 {
-        if let buf = node.getPseudoBuffer(state.rawValue),
+        if let buf = node.getPseudoBufferRaw(state.rawValue),
            buf.count > stateKey {
           let lowOfs = StyleKeys.PSEUDO_SET_MASK_LOW
           let highOfs = StyleKeys.PSEUDO_SET_MASK_HIGH
@@ -4176,7 +4207,7 @@ extension MasonStyle {
     var result = base
     for state in PSEUDO_CSS_ORDER {
       if (mask & state.rawValue) != 0 {
-        if let buf = node.getPseudoBuffer(state.rawValue),
+        if let buf = node.getPseudoBufferRaw(state.rawValue),
            buf.count > stateKey {
           // Check if this property was explicitly set in the pseudo buffer
           let lowOfs = StyleKeys.PSEUDO_SET_MASK_LOW

@@ -382,13 +382,13 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     value = String(value.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
   }
   
-  // --- Entire layer is just a plain color ---
+  // Entire layer is just a plain color
   if let col = parseColor(value) {
     layer.backgroundColor = col
     return layer
   }
   
-  // --- Gradient ---
+  // Gradient
   if value.lowercased().hasPrefix("linear-gradient") || value.lowercased().hasPrefix("radial-gradient") {
     if let g = parseGradient(value) {
       layer.gradient = g
@@ -433,13 +433,13 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     }
   }
   
-  // --- Image ---
+  // Image
   if let url = parseImage(value) {
     layer.image = url
     value = removeImageURL(from: value)
   }
   
-  // --- Repeat keywords ---
+  // Repeat keywords
   ["repeat", "repeat-x", "repeat-y", "no-repeat"].forEach { key in
     if value.contains(key) {
       layer.repeatType = BackgroundRepeat(rawValue: key) ?? .noRepeat
@@ -447,7 +447,7 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     }
   }
   
-  // --- Position / Size ---
+  // Position / Size
   if value.contains("/") {
     let parts = value.components(separatedBy: "/").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     let posPart = parts[0]
@@ -458,7 +458,7 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     layer.position = parsePosition(value)
   }
   
-  // --- Background color token (after parsing gradient/image) ---
+  // Background color token (after parsing gradient/image)
   // Only parse **standalone tokens** that are a color, do NOT split inside parentheses
   let tokens = value.split(separator: " ").map(String.init)
   for token in tokens {

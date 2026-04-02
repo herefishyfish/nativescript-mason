@@ -618,8 +618,8 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
     case .Text, .Email, .Password, .Tel, .Url:
       textInput.tintColor = UIColor.colorFromARGB(style.resolvedColor)
       configure { style in
-        style.border = "2px"
-        style.borderRadius = "4px"
+        style.border = "1"
+        style.borderRadius = "4"
         style.padding = MasonRect(.Points(scale), .Points(scale * 2), .Points(scale), .Points(scale * 2))
         style.textAlign = TextAlign.Center
       }
@@ -657,8 +657,8 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
       break
     case .Button, .Submit:
       configure { style in
-        style.border = "2px"
-        style.borderRadius = "4px"
+        style.border = "1"
+        style.borderRadius = "4"
         style.padding = MasonRect(.Points(1), .Points(6), .Points(1), .Points(6))
         style.textAlign = TextAlign.Center
       }
@@ -679,8 +679,8 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
       break
     case .Number:
       configure { style in
-        style.border = "2px"
-        style.borderRadius = "4px"
+        style.border = "1"
+        style.borderRadius = "4"
         style.padding = MasonRect(.Points(1), .Points(2), .Points(1), .Points(2))
         style.textAlign = TextAlign.Center
       }

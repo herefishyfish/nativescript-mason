@@ -31,7 +31,7 @@ class TransformActivity : AppCompatActivity() {
 
     enableEdgeToEdge()
 
-    // ── Root Mason view (flex column, full screen) ──────────────────────
+    // Root Mason view (flex column, full screen)
     val root = mason.createView(this)
     root.style.display = Display.Flex
     root.style.flexDirection = FlexDirection.Column
@@ -44,7 +44,7 @@ class TransformActivity : AppCompatActivity() {
       insets
     }
 
-    // ── Preview area (flex: 1, centered) ────────────────────────────────
+    // Preview area (flex: 1, centered)
     val preview = mason.createView(this)
     preview.style.display = Display.Flex
     preview.style.flexGrow = 1f
@@ -73,7 +73,7 @@ class TransformActivity : AppCompatActivity() {
     preview.addView(box)
     root.addView(preview)
 
-    // ── Controls area ───────────────────────────────────────────────────
+    // Controls area
     val controls = mason.createView(this)
     controls.style.display = Display.Flex
     controls.style.flexDirection = FlexDirection.Column

@@ -29,7 +29,7 @@ class InlineLayoutInstrumentedTest {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
     val mason = Mason()
 
-    // --- Build: <p>Supports <code>flexbox</code>, <code>grid</code></p> ---
+    // Build: <p>Supports <code>flexbox</code>, <code>grid</code></p>
     val p = mason.createTextView(context, TextType.P)
 
     val code1 = mason.createTextView(context, TextType.Code)
@@ -283,7 +283,7 @@ class InlineLayoutInstrumentedTest {
     )
   }
 
-  // --- Helper ---
+  // Helper
 
   private fun computeAndLayout(
     tv: TextView, mason: Mason, width: Float, height: Float

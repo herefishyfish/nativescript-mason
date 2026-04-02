@@ -1420,7 +1420,7 @@ class NodeHelper(val mason: Mason) {
 
     fun getBackgroundColor(view: android.view.View): String {
       val node = mason.nodeForView(view)
-      return node.style.mBackground?.color?.rgbaToHexCSS() ?: ""
+      return node.style.mBackground?.color?.argbToCssHex() ?: ""
     }
 
     fun setBackgroundColor(

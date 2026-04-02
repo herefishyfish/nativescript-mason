@@ -1063,6 +1063,15 @@ impl Tree {
         &mut *self.inner_mut().style_arena
     }
 
+    pub fn reset_arena_defaults(&mut self) {
+        let preflight = crate::PREFLIGHT_ENABLED.load(std::sync::atomic::Ordering::Relaxed);
+        if preflight {
+            self.inner_mut().style_arena.apply_preflight();
+        } else {
+            self.inner_mut().style_arena.remove_preflight();
+        }
+    }
+
     pub fn create_node(&mut self) -> NodeRef {
         let mut node = Node::new(self.get_arena());
         node.inner_style_mut().device_scale = Some(Arc::clone(&*self.density()));

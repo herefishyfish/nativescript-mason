@@ -15,6 +15,8 @@ class MasonShadowLayer: CALayer {
   // Cache for invalidation
   private var cachedBounds: CGRect = .zero
   private var cachedShadowsHash: Int = 0
+  private var cachedOutsetShadows: [BoxShadow] = []
+  private var cachedOutsetHash: Int = 0
   
   override init() {
     super.init()
@@ -47,11 +49,21 @@ class MasonShadowLayer: CALayer {
     contentsScale = UIScreen.main.scale
   }
   
+  private func resolveOutsetShadows() -> [BoxShadow] {
+    guard let style = masonStyle else { return [] }
+    let h = style.boxShadows.hashValue
+    if h != cachedOutsetHash {
+      cachedOutsetHash = h
+      cachedOutsetShadows = style.boxShadows.filter { !$0.inset }
+    }
+    return cachedOutsetShadows
+  }
+
   /// Update the layer to match the view's frame (in superview coordinates) plus shadow expansion
   func updateBounds(viewBounds: CGRect, viewFrame: CGRect) {
     guard let style = masonStyle else { return }
-    
-    let outsetShadows = style.boxShadows.filter { !$0.inset }
+
+    let outsetShadows = resolveOutsetShadows()
     if outsetShadows.isEmpty {
       isHidden = true
       return
@@ -85,9 +97,9 @@ class MasonShadowLayer: CALayer {
   override func draw(in context: CGContext) {
     guard let style = masonStyle else { return }
     
-    let outsetShadows = style.boxShadows.filter { !$0.inset }
+    let outsetShadows = resolveOutsetShadows()
     if outsetShadows.isEmpty { return }
-    
+
     // The view's rect within our expanded bounds
     let viewRect = CGRect(
       x: bounds.width / 2 - cachedBounds.width / 2,
@@ -99,12 +111,22 @@ class MasonShadowLayer: CALayer {
     style.mBorderRender.resolve(for: cachedBounds)
     let hasRadii = style.mBorderRender.hasRadii()
     
+    // Pre-compute the inner clip used to mask every shadow iteration
+    let innerClipPath: UIBezierPath
+    if hasRadii {
+      innerClipPath = style.mBorderRender.getClipPath(rect: viewRect, radius: style.mBorderRender.radius)
+    } else {
+      innerClipPath = UIBezierPath(rect: viewRect)
+    }
+    let reversedInner = innerClipPath.reversing()
+
     // Draw shadows in reverse order (first shadow ends up on top)
-    for shadow in outsetShadows.reversed() {
+    for i in stride(from: outsetShadows.count - 1, through: 0, by: -1) {
+      let shadow = outsetShadows[i]
       context.saveGState()
-      
+
       let spread = shadow.spreadRadius
-      
+
       // Calculate shadow shape bounds (expanded by spread)
       let shadowRect = CGRect(
         x: viewRect.origin.x - spread,
@@ -112,7 +134,7 @@ class MasonShadowLayer: CALayer {
         width: viewRect.width + spread * 2,
         height: viewRect.height + spread * 2
       )
-      
+
       // Create shadow path
       let shadowPath: UIBezierPath
       if hasRadii {
@@ -121,30 +143,24 @@ class MasonShadowLayer: CALayer {
       } else {
         shadowPath = UIBezierPath(rect: shadowRect)
       }
-      
+
       // Set up shadow parameters
       let shadowColor = shadow.color.cgColor
       let shadowOffset = CGSize(width: shadow.offsetX, height: shadow.offsetY)
       let shadowBlur = shadow.blurRadius
-      
+
       // Clip to area outside the view rect to only show shadow
       let clipPath = UIBezierPath(rect: bounds)
-      let innerClipPath: UIBezierPath
-      if hasRadii {
-        innerClipPath = style.mBorderRender.getClipPath(rect: viewRect, radius: style.mBorderRender.radius)
-      } else {
-        innerClipPath = UIBezierPath(rect: viewRect)
-      }
-      clipPath.append(innerClipPath.reversing())
+      clipPath.append(reversedInner)
       context.addPath(clipPath.cgPath)
       context.clip()
-      
+
       // Draw shadow
       context.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
       context.setFillColor(shadow.color.cgColor)
       context.addPath(shadowPath.cgPath)
       context.fillPath()
-      
+
       context.restoreGState()
     }
   }

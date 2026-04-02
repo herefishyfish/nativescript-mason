@@ -97,9 +97,9 @@
       <p style="padding-left:16;padding-right:16;font-size: 22; font-weight: bold; color: #1a1a2e; margin-bottom: 4;">Mixed Sizing</p>
       <p style="padding-left:16;padding-right:16;font-size: 12; color: #888; margin-bottom: 8;">Fixed + fractional units</p>
 
-      <div style="display: grid; grid-template-columns: 80px 1fr 2fr; gap: 6;">
+      <div style="display: grid; grid-template-columns: 80 1fr 2fr; gap: 6;">
         <div style="background-color: #FF6B6B; border-radius: 6; height: 48; padding: 8;">
-          <p style="color: white; font-size: 11; text-align: center;">80px</p>
+          <p style="color: white; font-size: 11; text-align: center;">80</p>
         </div>
         <div style="background-color: #4ECDC4; border-radius: 6; height: 48; padding: 8;">
           <p style="color: white; font-size: 11; text-align: center;">1fr</p>
@@ -119,8 +119,8 @@
 <style scoped>
 .dashboard {
   display: grid;
-  grid-template-columns: 90px 1fr;
-  grid-template-rows: 50px 1fr 36px;
+  grid-template-columns: 90 1fr;
+  grid-template-rows: 50 1fr 36;
   grid-template-areas:
     "header header"
     "sidebar main"

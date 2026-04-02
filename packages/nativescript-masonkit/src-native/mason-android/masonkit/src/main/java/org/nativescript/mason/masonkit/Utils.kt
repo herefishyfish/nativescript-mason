@@ -1,7 +1,6 @@
 package org.nativescript.mason.masonkit
 
 import android.util.Log
-
 val LengthPercentageZeroSize =
   Size<LengthPercentage>(LengthPercentage.Zero, LengthPercentage.Zero)
 val LengthPercentageAutoZeroSize =

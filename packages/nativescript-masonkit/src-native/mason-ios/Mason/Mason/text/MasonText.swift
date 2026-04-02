@@ -524,12 +524,31 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
     if(view.superview == self){
       return
     }
-    
+
     if(view is MasonElement){
       node.addChildAt((view as! MasonElement).node, at)
     }else {
       node.addChildAt(node.mason.nodeForView(view), at)
     }
+  }
+
+  public func removeView(_ view: UIView) {
+    let childNode = (view as? MasonElement)?.node ?? node.mason.nodeForView(view)
+    node.removeChild(childNode)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeView(at index: Int) {
+    node.removeChildAt(index: index)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeAllViews() {
+    if let ptr = node.nativePtr {
+      mason_node_remove_children(node.mason.nativePtr, ptr)
+    }
+    node.children.removeAll()
+    engine.invalidateInlineSegments()
   }
   
   

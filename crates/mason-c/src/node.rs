@@ -1,8 +1,8 @@
-use std::ffi::{c_float, c_longlong, c_void};
-use once_cell::sync::Lazy;
-use std::sync::Mutex as StdMutex;
 use crate::{CMason, CMasonNode};
 use mason_core::{InlineSegment, Size};
+use once_cell::sync::Lazy;
+use std::ffi::{c_float, c_longlong, c_void};
+use std::sync::Mutex as StdMutex;
 
 static REGISTRY: Lazy<StdMutex<Vec<usize>>> = Lazy::new(|| StdMutex::new(Vec::new()));
 
@@ -73,14 +73,14 @@ pub struct CMasonInlineChildSegment {
 pub enum CMasonSegment {
     Text(CMasonInlineTextSegment),
     InlineChild(CMasonInlineChildSegment),
-    LineBreak
-
+    LineBreak,
 }
 
 impl From<&CMasonSegment> for InlineSegment {
     fn from(segment: &CMasonSegment) -> Self {
         match segment {
-            CMasonSegment::Text(text) => InlineSegment::Text { flags: text.flags,
+            CMasonSegment::Text(text) => InlineSegment::Text {
+                flags: text.flags,
                 width: text.width,
                 ascent: text.ascent,
                 descent: text.descent,
@@ -100,9 +100,7 @@ impl From<&CMasonSegment> for InlineSegment {
                     baseline: child.descent,
                 }
             }
-            CMasonSegment::LineBreak => {
-                InlineSegment::LineBreak
-            }
+            CMasonSegment::LineBreak => InlineSegment::LineBreak,
         }
     }
 }
@@ -110,7 +108,8 @@ impl From<&CMasonSegment> for InlineSegment {
 impl Into<InlineSegment> for CMasonSegment {
     fn into(self) -> InlineSegment {
         match self {
-            CMasonSegment::Text(text) => InlineSegment::Text { flags: text.flags,
+            CMasonSegment::Text(text) => InlineSegment::Text {
+                flags: text.flags,
                 width: text.width,
                 ascent: text.ascent,
                 descent: text.descent,
@@ -130,7 +129,7 @@ impl Into<InlineSegment> for CMasonSegment {
                     baseline: child.descent,
                 }
             }
-            CMasonSegment::LineBreak => InlineSegment::LineBreak
+            CMasonSegment::LineBreak => InlineSegment::LineBreak,
         }
     }
 }
@@ -246,7 +245,6 @@ pub extern "C" fn mason_node_new_button_node(mason: *mut CMason) -> *mut CMasonN
         ptr
     }
 }
-
 
 #[cfg(not(target_os = "android"))]
 #[no_mangle]
@@ -418,11 +416,8 @@ pub extern "C" fn mason_node_new_text_node_with_children(
     }
 }
 
-
 #[no_mangle]
-pub extern "C" fn mason_node_new_line_break_node(
-    mason: *mut CMason,
-) -> *mut CMasonNode {
+pub extern "C" fn mason_node_new_line_break_node(mason: *mut CMason) -> *mut CMasonNode {
     if mason.is_null() {
         return std::ptr::null_mut();
     }
@@ -437,7 +432,6 @@ pub extern "C" fn mason_node_new_line_break_node(
         ptr
     }
 }
-
 
 #[cfg(not(target_os = "android"))]
 #[no_mangle]
@@ -463,12 +457,8 @@ pub extern "C" fn mason_node_new_line_break_node_with_context(
     }
 }
 
-
-
 #[no_mangle]
-pub extern "C" fn mason_node_new_list_item_node(
-    mason: *mut CMason,
-) -> *mut CMasonNode {
+pub extern "C" fn mason_node_new_list_item_node(mason: *mut CMason) -> *mut CMasonNode {
     if mason.is_null() {
         return std::ptr::null_mut();
     }
@@ -569,7 +559,10 @@ pub extern "C" fn mason_node_get_float_rects_buffer(
         let output = mason.get_float_rects_with_nodes(node.id());
 
         if output.is_empty() {
-            return Box::into_raw(Box::new(CMasonBuffer { data: std::ptr::null_mut(), size: 0 }));
+            return Box::into_raw(Box::new(CMasonBuffer {
+                data: std::ptr::null_mut(),
+                size: 0,
+            }));
         }
 
         // We'll serialize each entry as: [node_ptr (usize), left(f32), top(f32), right(f32), bottom(f32)]
@@ -583,7 +576,7 @@ pub extern "C" fn mason_node_get_float_rects_buffer(
             let mut node_ptr_usize: usize = 0;
             for &entry in reg.iter() {
                 let candidate = entry as *mut CMasonNode;
-                if !candidate.is_null() &&  (*candidate).0.id() == id {
+                if !candidate.is_null() && (*candidate).0.id() == id {
                     node_ptr_usize = entry;
                     break;
                 }
@@ -602,7 +595,10 @@ pub extern "C" fn mason_node_get_float_rects_buffer(
         let len = boxed.len();
         std::mem::forget(boxed);
 
-        Box::into_raw(Box::new(CMasonBuffer { data: ptr, size: len }))
+        Box::into_raw(Box::new(CMasonBuffer {
+            data: ptr,
+            size: len,
+        }))
     }
 }
 
@@ -968,7 +964,11 @@ pub extern "C" fn mason_node_mark_dirty(mason: *mut CMason, node: *mut CMasonNod
 }
 
 #[no_mangle]
-pub extern "C" fn mason_node_set_pseudo_states(mason: *mut CMason, node: *mut CMasonNode, flags: u16) {
+pub extern "C" fn mason_node_set_pseudo_states(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    flags: u16,
+) {
     if mason.is_null() || node.is_null() {
         return;
     }
@@ -993,7 +993,11 @@ pub extern "C" fn mason_node_get_pseudo_states(mason: *mut CMason, node: *mut CM
 }
 
 #[no_mangle]
-pub extern "C" fn mason_node_has_pseudo_state(mason: *mut CMason, node: *mut CMasonNode, flag: u16) -> bool {
+pub extern "C" fn mason_node_has_pseudo_state(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    flag: u16,
+) -> bool {
     if mason.is_null() || node.is_null() {
         return false;
     }
@@ -1005,7 +1009,6 @@ pub extern "C" fn mason_node_has_pseudo_state(mason: *mut CMason, node: *mut CMa
     }
 }
 
-
 /// Return the node's state buffer as raw pointer + length.
 /// The state buffer holds pseudo flags and other per-node state.
 #[no_mangle]
@@ -1016,7 +1019,9 @@ pub extern "C" fn mason_node_get_state_buffer(
 ) -> *const u8 {
     if mason.is_null() || node.is_null() {
         if !out_len.is_null() {
-            unsafe { *out_len = 0; }
+            unsafe {
+                *out_len = 0;
+            }
         }
         return std::ptr::null();
     }
@@ -1031,7 +1036,6 @@ pub extern "C" fn mason_node_get_state_buffer(
     }
 }
 
-
 /// Return a mutable pointer to the node's state buffer.
 #[no_mangle]
 pub extern "C" fn mason_node_get_state_buffer_mut(
@@ -1041,7 +1045,9 @@ pub extern "C" fn mason_node_get_state_buffer_mut(
 ) -> *mut u8 {
     if mason.is_null() || node.is_null() {
         if !out_len.is_null() {
-            unsafe { *out_len = 0; }
+            unsafe {
+                *out_len = 0;
+            }
         }
         return std::ptr::null_mut();
     }
@@ -1067,7 +1073,9 @@ pub extern "C" fn mason_node_get_pseudo_style_buffer(
 ) -> *const u8 {
     if mason.is_null() || node.is_null() {
         if !out_len.is_null() {
-            unsafe { *out_len = 0; }
+            unsafe {
+                *out_len = 0;
+            }
         }
         return std::ptr::null();
     }
@@ -1082,6 +1090,21 @@ pub extern "C" fn mason_node_get_pseudo_style_buffer(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn mason_node_get_pseudo_style_buffer_apple(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    flags: u16,
+) -> *mut c_void {
+    if mason.is_null() || node.is_null() {
+        return 0 as _;
+    }
+    unsafe {
+        let mason = &(*mason);
+        let node_id = &(*node).0;
+        mason.0.pseudo_style_data(node_id.id(), flags)
+    }
+}
 
 /// Prepare (create if needed) and return a mutable pseudo style buffer.
 /// Clones from the base style if this is the first call for the given pseudo state.
@@ -1095,7 +1118,9 @@ pub extern "C" fn mason_node_prepare_pseudo_style_buffer(
 ) -> *mut u8 {
     if mason.is_null() || node.is_null() {
         if !out_len.is_null() {
-            unsafe { *out_len = 0; }
+            unsafe {
+                *out_len = 0;
+            }
         }
         return std::ptr::null_mut();
     }
@@ -1110,6 +1135,21 @@ pub extern "C" fn mason_node_prepare_pseudo_style_buffer(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn mason_node_prepare_pseudo_style_buffer_apple(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    flags: u16,
+) -> *mut c_void {
+    if mason.is_null() || node.is_null() {
+        return 0 as _;
+    }
+    unsafe {
+        let mason = &mut *mason;
+        let node_id = &(*node).0;
+        mason.0.pseudo_style_data_mut(node_id.id(), flags)
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn mason_node_is_children_same(

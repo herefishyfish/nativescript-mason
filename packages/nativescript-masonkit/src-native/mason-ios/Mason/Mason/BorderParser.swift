@@ -485,7 +485,7 @@ extension CSSBorderRenderer {
     style.setOrAppendState(.inset)
   }
 
-  // ─── corner-shape ────────────────────────────────────────────────────────
+  // corner-shape
   // CSS syntax:
   //   corner-shape: round                      → exponent 1 on all corners (default)
   //   corner-shape: superellipse               → exponent 0.5 on all corners
@@ -494,7 +494,7 @@ extension CSSBorderRenderer {
   //   corner-shape: notch                      → exponent 2 on all corners
   //   corner-shape: bevel                      → exponent 4 on all corners
   //   1–4 value shorthand follows CSS corner order: TL TR BR BL
-  // ─────────────────────────────────────────────────────────────────────────
+  
 
   private static let cornerShapeTokenRegex = try! NSRegularExpression(
     pattern: "^(round|superellipse(?:\\((-?\\d+(?:\\.\\d+)?)\\))?|squircle|notch|bevel)$",

@@ -976,7 +976,7 @@ class BorderRenderer(private val style: Style) {
     // Top edge
     path.lineTo(ofs + innerWidth - trX, ofs)
 
-    // --- Corners (reuse tempRadius to avoid PointF allocation) ---
+    // Corners (reuse tempRadius to avoid PointF allocation)
     tempRadius.set(trX, trY)
     addCorner(path, Corner.TOP_RIGHT, tempRadius, topRightExponent, innerWidth, innerHeight, ofs)
 
@@ -1699,7 +1699,7 @@ fun parseBorderSideShorthand(style: Style, side: Border.Side, value: String) {
   }
 }
 
-// ─── corner-shape ────────────────────────────────────────────────────────
+// corner-shape
 // CSS syntax:
 //   corner-shape: round                      → exponent 1 on all corners (default)
 //   corner-shape: superellipse               → exponent 0.5 on all corners
@@ -1708,7 +1708,7 @@ fun parseBorderSideShorthand(style: Style, side: Border.Side, value: String) {
 //   corner-shape: notch                      → exponent 2 on all corners
 //   corner-shape: bevel                      → exponent 4 on all corners
 //   1–4 value shorthand follows CSS corner order: TL TR BR BL
-// ─────────────────────────────────────────────────────────────────────────
+//
 
 private val cornerShapeTokenRegex =
   Regex("""(round|superellipse(?:\((-?\d+(?:\.\d+)?)\))?|squircle|notch|bevel)""")

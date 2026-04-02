@@ -2,12 +2,14 @@ use crate::style::utils::{set_style_data_i32, set_style_data_u32};
 use crate::style::{DisplayMode, StyleKeys};
 use crate::utils::{display_mode_to_enum, display_to_enum, text_align_to_enum};
 use crate::Style;
+use crate::PREFLIGHT_ENABLED;
 #[cfg(target_vendor = "apple")]
 use objc2::AllocAnyThread;
 #[cfg(target_vendor = "apple")]
 use objc2_foundation::NSMutableData;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::Ordering;
 use taffy::{Display, TextAlign};
 
 // always keep aligned 4
@@ -230,6 +232,7 @@ impl StyleArena {
             Style::init_default_data(data);
             // CSS spec: button { display: inline-block; text-align: center; box-sizing: border-box }
             crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN_STATE, 1);
             crate::style::utils::set_style_data_i8(
                 data,
                 StyleKeys::DISPLAY_MODE,
@@ -250,14 +253,18 @@ impl StyleArena {
         default_snapshots[Handle::ListItem as usize].copy_from_slice(list_item.bytes());
         default_snapshots[Handle::Button as usize].copy_from_slice(button.bytes());
 
-        Self {
+        let mut arena = Self {
             buffers: vec![default_buffer, inline, img, flex, grid, list, list_item, button],
             free_list: Vec::new(),
             default_snapshots,
-        }
-    }
+        };
 
-    /// Returns true if this handle index is a built-in default (immortal) buffer.
+        if PREFLIGHT_ENABLED.load(Ordering::Relaxed) {
+            arena.reset_defaults(true);
+        }
+
+        arena
+    }
     #[inline]
     fn is_default_index(idx: usize) -> bool {
         idx < NUM_DEFAULTS
@@ -375,6 +382,149 @@ impl StyleArena {
             total_refs: total_refs as usize,
             free_slots: self.free_list.len(),
             buffer_memory: active * STYLE_BUFFER_SIZE,
+        }
+    }
+
+    pub fn apply_preflight(&mut self) {
+        self.reset_defaults(true);
+    }
+
+    pub fn remove_preflight(&mut self) {
+        self.reset_defaults(false);
+    }
+
+    fn reset_defaults(&mut self, preflight: bool) {
+        let zero = [0u8; STYLE_BUFFER_SIZE];
+
+        let init_base: fn(&mut [u8]) = if preflight {
+            Style::init_preflight_base_data
+        } else {
+            Style::init_default_data
+        };
+
+        {
+            let ref_count = self.buffers[Handle::Default as usize].ref_count;
+            let data = self.buffers[Handle::Default as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Default as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Inline as usize].ref_count;
+            let data = self.buffers[Handle::Inline as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::DISPLAY_MODE, 1);
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Inline as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Img as usize].ref_count;
+            let data = self.buffers[Handle::Img as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_REPLACED, 1);
+            if preflight {
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY,
+                    display_to_enum(Display::Block),
+                );
+                crate::style::utils::set_style_data_i8(data, StyleKeys::DISPLAY_MODE, 0);
+            } else {
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY_MODE,
+                    display_mode_to_enum(DisplayMode::Inline),
+                );
+            }
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Img as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Flex as usize].ref_count;
+            let data = self.buffers[Handle::Flex as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY,
+                display_to_enum(Display::Flex),
+            );
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Flex as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Grid as usize].ref_count;
+            let data = self.buffers[Handle::Grid as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY,
+                display_to_enum(Display::Grid),
+            );
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Grid as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::List as usize].ref_count;
+            let data = self.buffers[Handle::List as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_LIST, 1);
+            if preflight {
+                crate::style::utils::set_style_data_u8(data, StyleKeys::LIST_STYLE_TYPE, 0);
+            }
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::List as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::ListItem as usize].ref_count;
+            let data = self.buffers[Handle::ListItem as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY_MODE,
+                display_mode_to_enum(DisplayMode::ListItem),
+            );
+            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_LIST_ITEM, 1);
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::ListItem as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Button as usize].ref_count;
+            let data = self.buffers[Handle::Button as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            if preflight {
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY_MODE,
+                    display_mode_to_enum(DisplayMode::Box),
+                );
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN_STATE, 1);
+            } else {
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN_STATE, 1);
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY_MODE,
+                    display_mode_to_enum(DisplayMode::Box),
+                );
+            }
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Button as usize].copy_from_slice(data);
         }
     }
 }

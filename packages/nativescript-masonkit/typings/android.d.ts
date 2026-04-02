@@ -2867,6 +2867,10 @@ declare module org {
 					public getNativePtr(): number;
 					public styleForView(this_: globalAndroid.view.View): org.nativescript.mason.masonkit.Style;
 					public createInput(context: globalAndroid.content.Context): org.nativescript.mason.masonkit.Input;
+					/** Enable or disable CSS Preflight defaults for the entire Mason tree. */
+					public setPreflight(enabled: boolean): void;
+					/** Returns whether CSS Preflight defaults are currently enabled. */
+					public getPreflight(): boolean;
 				}
 				export module Mason {
 					export class Companion {
@@ -3518,6 +3522,7 @@ declare module org {
 					public getNativePtr(): number;
 					public isTracked(): boolean;
 					public setMeasureFuncImpl$masonkit_release(value: org.nativescript.mason.masonkit.MeasureFuncImpl): void;
+					public static markPseudoSet(buf: java.nio.ByteBuffer, key: org.nativescript.mason.masonkit.StateKeys): void;
 				}
 				export module Node {
 					export class Companion {
@@ -4316,7 +4321,7 @@ declare module org {
 		export module mason {
 			export module masonkit {
 				export class StateKeys {
-					public static class: java.lang.Class<org.nativescript.mason.masonkit.StateKeys>;
+					public static class: java.lang.Class<ComputedStyle>;
 					public and(other: org.nativescript.mason.masonkit.StateKeys): org.nativescript.mason.masonkit.StateKeys;
 					public or(other: org.nativescript.mason.masonkit.StateKeys): org.nativescript.mason.masonkit.StateKeys;
 					public hasFlag(flag: org.nativescript.mason.masonkit.StateKeys): boolean;
@@ -4324,6 +4329,7 @@ declare module org {
 					public getHigh(): number;
 					public getLow(): number;
 					public getBits(): number;
+					public static flag(value: number): org.nativescript.mason.masonkit.StateKeys;
 				}
 				export module StateKeys {
 					export class Companion {

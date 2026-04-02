@@ -1,6 +1,6 @@
 import { layout } from '@nativescript/core/utils';
 import type { GridAutoFlow, Length, LengthAuto, VerticalAlign, View } from '.';
-import { CoreTypes, Length as CoreLength, PercentLength as CorePercentLength } from '@nativescript/core';
+import { Color, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength } from '@nativescript/core';
 import { AlignContent, AlignSelf, AlignItems, JustifyContent, JustifySelf, _parseGridAutoRowsColumns, _setGridAutoRows, _setGridAutoColumns, _parseGridLine, JustifyItems, GridTemplates, _parseGridTemplates, _setGridTemplateColumns, _setGridTemplateRows, _getGridTemplateRows, _getGridTemplateColumns, Float, Clear } from './utils';
 
 enum StyleKeys {
@@ -106,17 +106,13 @@ enum StyleKeys {
   MAX_CONTENT_WIDTH = 190, // float (4 bytes: 190-193)
   MAX_CONTENT_HEIGHT = 194, // float (4 bytes: 194-197)
 
-  // ----------------------------
   // Border Style (per side)
-  // ----------------------------
   BORDER_LEFT_STYLE = 198,
   BORDER_RIGHT_STYLE = 199,
   BORDER_TOP_STYLE = 200,
   BORDER_BOTTOM_STYLE = 201,
 
-  // ----------------------------
   // Border Color (per side)
-  // ----------------------------
   BORDER_LEFT_COLOR = 202, // u32 (4 bytes: 202-205)
   BORDER_RIGHT_COLOR = 206, // u32 (4 bytes: 206-209)
   BORDER_TOP_COLOR = 210, // u32 (4 bytes: 210-213)
@@ -149,9 +145,7 @@ enum StyleKeys {
   BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 266, // f32 (4 bytes: 266-269)
   BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270, // f32 (4 bytes: 270-273)
 
-  // ----------------------------
   // Float
-  // ----------------------------
   FLOAT = 274,
   CLEAR = 275,
 
@@ -435,6 +429,29 @@ const f32View = new Float32Array(f32Buffer.buffer);
 const i32Buffer = new Uint8Array(Int32Array.BYTES_PER_ELEMENT * 4);
 const i32View = new Int32Array(i32Buffer.buffer);
 
+function normalizeColorValue(value: number | string | { argb?: number }): number | null {
+  switch (typeof value) {
+    case 'number':
+      return value;
+    case 'string':
+      try {
+        return new Color(value).argb;
+      } catch (_) {
+        return null;
+      }
+    case 'object':
+      if (value instanceof Color) {
+        return value.argb;
+      }
+      if (value && typeof value.argb === 'number') {
+        return value.argb;
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
 export class Style {
   private view_: View;
   private style_view: DataView;
@@ -443,6 +460,8 @@ export class Style {
   private isDirty = -1n;
   private inBatch = false;
   private nativeView: any;
+  private nativeNode: any;
+  private _pseudo: number;
   static fromView(view: View, nativeView): Style {
     //console.time('fromView');
     const ret = new Style();
@@ -475,6 +494,129 @@ export class Style {
 
     return ret;
   }
+  static fromPseudo(pseudo: string, view: View, nativeView) {
+    var mask = -1;
+    switch (pseudo) {
+      case 'normal':
+        return Style.fromView(view, nativeView);
+      case 'hover':
+        mask = 1;
+        break;
+      case 'focus':
+        mask = 4;
+        break;
+      case 'highlighted':
+      case 'pressed':
+      case 'active':
+        mask = 2;
+        break;
+      case 'disabled':
+        mask = 64;
+        break;
+      default:
+        break;
+    }
+    if (mask === -1) {
+      return null;
+    }
+    const ret = new Style();
+    ret._pseudo = mask;
+    ret.view_ = view;
+
+    if (__ANDROID__) {
+      let node = (nativeView as org.nativescript.mason.masonkit.Element)?.getNode?.();
+      if (!node) {
+        // if a non mason view is passed
+        node = org.nativescript.mason.masonkit.Mason.getShared().nodeForView(nativeView);
+      }
+
+      ret.nativeNode = node;
+      const pseudoBuffer = node.preparePseudoBuffer(mask);
+
+      const buffer = (<any>ArrayBuffer).from(pseudoBuffer);
+      ret.style_view = new DataView(buffer);
+      ret.i8View = new Int8Array(buffer);
+      ret.u8View = new Uint8Array(buffer);
+      ret.clearPseudoSetMask();
+    } else if (__APPLE__) {
+      let node: MasonNode = nativeView?.node as never;
+      if (!node) {
+        node = NSCMason.shared.nodeForView(nativeView, false) as never;
+      }
+
+      ret.nativeNode = node;
+
+      //@ts-ignore
+      const pseudoBuffer = node.preparePseudoBuffer(mask);
+
+      const buffer = interop.bufferFromData(pseudoBuffer);
+      ret.style_view = new DataView(buffer);
+      ret.i8View = new Int8Array(buffer);
+      ret.u8View = new Uint8Array(buffer);
+      ret.clearPseudoSetMask();
+    }
+
+    return ret;
+  }
+
+  private clearPseudoSetMask() {
+    const LOW_OFFSET = StyleKeys.PSEUDO_SET_MASK_LOW;
+    const HIGH_OFFSET = StyleKeys.PSEUDO_SET_MASK_HIGH;
+
+    if (this.style_view.byteLength < HIGH_OFFSET + 8) {
+      return;
+    }
+
+    this.style_view.setBigUint64(LOW_OFFSET, 0n, true);
+    this.style_view.setBigUint64(HIGH_OFFSET, 0n, true);
+  }
+
+  markPseudoSet(key: StateKeys) {
+    const LOW_OFFSET = StyleKeys.PSEUDO_SET_MASK_LOW;
+    const HIGH_OFFSET = StyleKeys.PSEUDO_SET_MASK_HIGH;
+
+    if (this.style_view.byteLength < HIGH_OFFSET + 8) return;
+
+    const low = this.style_view.getBigUint64(LOW_OFFSET, true);
+    const high = this.style_view.getBigUint64(HIGH_OFFSET, true);
+
+    const MASK64 = (1n << 64n) - 1n;
+    const keyLow = key.bits & MASK64;
+    const keyHigh = (key.bits >> 64n) & MASK64;
+
+    this.style_view.setBigUint64(LOW_OFFSET, low | keyLow, true);
+    this.style_view.setBigUint64(HIGH_OFFSET, high | keyHigh, true);
+  }
+
+  private commitState(value: StateKeys) {
+    if (this._pseudo) {
+      this.markPseudoSet(value);
+    } else {
+      this.setOrAppendState(value);
+    }
+  }
+
+  private setPseudoCssStringValue(name: string, value: string, applyAndroid: () => void, applyApple: () => void) {
+    if (!this.nativeView) {
+      return;
+    }
+
+    if (__ANDROID__) {
+      if (this._pseudo) {
+        this.nativeNode.setPseudoString(this._pseudo, name, value);
+      } else {
+        applyAndroid();
+      }
+    }
+
+    if (__APPLE__) {
+      if (this._pseudo) {
+        (this.nativeNode as MasonNode).setPseudoString(this._pseudo, name, value);
+      } else {
+        applyApple();
+      }
+    }
+  }
 
   resetState() {
     this.isDirty = -1n;
@@ -483,10 +625,12 @@ export class Style {
   private syncStyle() {
     const [low, high] = splitBigIntToInt64Parts(this.isDirty);
     if (__ANDROID__) {
-      const view = this.view.android as never as org.nativescript.mason.masonkit.Element;
+      //@ts-ignore
+      const view = this.view?.android ?? (this.view._view as never as org.nativescript.mason.masonkit.Element);
       view.syncStyle(low, high);
     } else if (__APPLE__) {
-      const view = this.view.ios as never as MasonText;
+      //@ts-ignore
+      const view = this.view?.ios ?? (this.view._view as never as MasonText);
       // @ts-ignore
       view.mason_syncStyle(low, high);
     }
@@ -516,6 +660,10 @@ export class Style {
   }
 
   private prepareMut() {
+    // always mut
+    if (this._pseudo) {
+      return;
+    }
     const ref = getUint32(this.style_view, StyleKeys.REF_COUNT);
     if (ref !== 1) {
       if (__APPLE__) {
@@ -573,7 +721,7 @@ export class Style {
     if (boxSizing !== -1) {
       this.prepareMut();
       setUint8(this.style_view, StyleKeys.BOX_SIZING, boxSizing);
-      this.setOrAppendState(StateKeys.BOX_SIZING);
+      this.commitState(StateKeys.BOX_SIZING);
     }
   }
 
@@ -603,7 +751,7 @@ export class Style {
         setInt32(this.style_view, StyleKeys.FONT_SIZE, value);
         setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
         setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 0);
-        this.setOrAppendState(StateKeys.SIZE);
+        this.commitState(StateKeys.SIZE);
         break;
       case 'object':
         switch (value.unit) {
@@ -612,21 +760,21 @@ export class Style {
             setInt32(this.style_view, StyleKeys.FONT_SIZE, layout.toDeviceIndependentPixels(value.value));
             setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 0);
-            this.setOrAppendState(StateKeys.FONT_SIZE);
+            this.commitState(StateKeys.FONT_SIZE);
             break;
           case 'px':
             this.prepareMut();
             setInt32(this.style_view, StyleKeys.FONT_SIZE, value.value);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 0);
-            this.setOrAppendState(StateKeys.FONT_SIZE);
+            this.commitState(StateKeys.FONT_SIZE);
             break;
           case '%':
             this.prepareMut();
             setInt32(this.style_view, StyleKeys.FONT_SIZE, value.value * 100);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 1);
-            this.setOrAppendState(StateKeys.FONT_SIZE);
+            this.commitState(StateKeys.FONT_SIZE);
             break;
         }
         break;
@@ -671,7 +819,7 @@ export class Style {
       this.prepareMut();
       setInt32(this.style_view, StyleKeys.FONT_STYLE_TYPE, style);
       setInt8(this.style_view, StyleKeys.FONT_STYLE_STATE, 1);
-      this.setOrAppendState(StateKeys.FONT_STYLE);
+      this.commitState(StateKeys.FONT_STYLE);
     }
   }
 
@@ -729,7 +877,7 @@ export class Style {
       this.prepareMut();
       setInt32(this.style_view, StyleKeys.FONT_WEIGHT, weight);
       setInt8(this.style_view, StyleKeys.FONT_WEIGHT_STATE, 1);
-      this.setOrAppendState(StateKeys.FONT_WEIGHT);
+      this.commitState(StateKeys.FONT_WEIGHT);
     }
   }
 
@@ -742,14 +890,27 @@ export class Style {
     return getUint32(this.style_view, StyleKeys.FONT_COLOR);
   }
 
-  set color(value: number) {
+  set color(value: number | string | { argb?: number }) {
     if (!this.style_view) {
       return;
     }
+    const normalized = normalizeColorValue(value);
+    if (normalized == null) {
+      return;
+    }
     this.prepareMut();
-    setUint32(this.style_view, StyleKeys.FONT_COLOR, value);
+    setUint32(this.style_view, StyleKeys.FONT_COLOR, normalized);
     setInt8(this.style_view, StyleKeys.FONT_COLOR_STATE, 1);
-    this.setOrAppendState(StateKeys.FONT_COLOR);
+
+    this.commitState(StateKeys.FONT_COLOR);
+  }
+
+  set 'background-color'(value: number | string | { argb?: number }) {
+    this.backgroundColor = value;
+  }
+
+  get 'background-color'() {
+    return this.backgroundColor;
   }
 
   get backgroundColor() {
@@ -760,16 +921,19 @@ export class Style {
     return getUint32(this.style_view, StyleKeys.BACKGROUND_COLOR);
   }
 
-  set backgroundColor(value: number) {
+  set backgroundColor(value: number | string | { argb?: number }) {
     if (!this.style_view) {
       return;
     }
+    const normalized = normalizeColorValue(value);
+    if (normalized == null) {
+      return;
+    }
     this.prepareMut();
-    setUint32(this.style_view, StyleKeys.BACKGROUND_COLOR, value);
+    setUint32(this.style_view, StyleKeys.BACKGROUND_COLOR, normalized);
     setInt8(this.style_view, StyleKeys.BACKGROUND_COLOR_STATE, 1);
     setInt8(this.style_view, StyleKeys.BACKGROUND_COLOR_TYPE, 0);
-
-    this.setOrAppendState(StateKeys.BACKGROUND_COLOR);
+    this.commitState(StateKeys.BACKGROUND_COLOR);
   }
 
   get textWrap() {
@@ -807,7 +971,7 @@ export class Style {
       this.prepareMut();
       setInt32(this.style_view, StyleKeys.TEXT_WRAP, wrap);
       setInt8(this.style_view, StyleKeys.TEXT_WRAP_STATE, 1);
-      this.setOrAppendState(StateKeys.TEXT_WRAP);
+      this.commitState(StateKeys.TEXT_WRAP);
     }
   }
 
@@ -888,7 +1052,7 @@ export class Style {
       } else {
         this.isDirty = this.isDirty | StateKeys.DISPLAY_MODE.bits;
       }
-      this.setOrAppendState(StateKeys.DISPLAY.and(StateKeys.DISPLAY_MODE));
+      this.commitState(StateKeys.DISPLAY.and(StateKeys.DISPLAY_MODE));
     }
   }
 
@@ -914,7 +1078,7 @@ export class Style {
     if (position != -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.POSITION, position);
-      this.setOrAppendState(StateKeys.POSITION);
+      this.commitState(StateKeys.POSITION);
     }
   }
 
@@ -950,7 +1114,7 @@ export class Style {
     if (flex != -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.FLEX_DIRECTION, flex);
-      this.setOrAppendState(StateKeys.FLEX_DIRECTION);
+      this.commitState(StateKeys.FLEX_DIRECTION);
     }
   }
 
@@ -981,7 +1145,7 @@ export class Style {
     if (wrap != -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.FLEX_WRAP, wrap);
-      this.setOrAppendState(StateKeys.FLEX_WRAP);
+      this.commitState(StateKeys.FLEX_WRAP);
     }
   }
   // get flex(): string | 'auto' | 'none' | number | 'initial' {
@@ -1026,7 +1190,7 @@ export class Style {
         break;
     }
 
-    this.setOrAppendState(StateKeys.MIN_SIZE);
+    this.commitState(StateKeys.MIN_SIZE);
   }
 
   get minHeight() {
@@ -1066,7 +1230,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MIN_SIZE);
+    this.commitState(StateKeys.MIN_SIZE);
   }
 
   get width() {
@@ -1105,7 +1269,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.SIZE);
+    this.commitState(StateKeys.SIZE);
   }
 
   get height() {
@@ -1145,7 +1309,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.SIZE);
+    this.commitState(StateKeys.SIZE);
   }
 
   get maxWidth() {
@@ -1184,7 +1348,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MAX_SIZE);
+    this.commitState(StateKeys.MAX_SIZE);
   }
 
   get maxHeight() {
@@ -1223,7 +1387,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MAX_SIZE);
+    this.commitState(StateKeys.MAX_SIZE);
   }
 
   get borderLeftWidth(): Length {
@@ -1259,7 +1423,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
   }
 
   get borderRightWidth(): Length {
@@ -1295,7 +1459,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
   }
 
   get borderTopWidth(): Length {
@@ -1331,7 +1495,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
   }
 
   get borderBottomWidth(): Length {
@@ -1367,7 +1531,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
   }
 
   set inset(value: LengthAuto) {
@@ -1411,7 +1575,7 @@ export class Style {
 
       this.u8View.set(f32Buffer, StyleKeys.INSET_LEFT_VALUE);
 
-      this.setOrAppendState(StateKeys.INSET);
+      this.commitState(StateKeys.INSET);
     }
   }
 
@@ -1454,7 +1618,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   get right(): LengthAuto {
@@ -1496,7 +1660,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   get top(): LengthAuto {
@@ -1538,7 +1702,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   get bottom(): LengthAuto {
@@ -1580,7 +1744,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   set margin(value: LengthAuto) {
@@ -1624,7 +1788,7 @@ export class Style {
 
       this.u8View.set(f32Buffer, StyleKeys.MARGIN_LEFT_VALUE);
 
-      this.setOrAppendState(StateKeys.MARGIN);
+      this.commitState(StateKeys.MARGIN);
     }
   }
 
@@ -1665,7 +1829,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   get marginRight() {
@@ -1705,7 +1869,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   get marginTop() {
@@ -1745,7 +1909,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   get marginBottom() {
@@ -1784,14 +1948,14 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   set padding(value: Length) {
     this.inBatch = true;
     this.paddingBottom = this.paddingLeft = this.paddingRight = this.paddingTop = value;
     this.inBatch = false;
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingLeft() {
@@ -1827,7 +1991,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingRight() {
@@ -1862,7 +2026,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingTop() {
@@ -1898,7 +2062,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingBottom() {
@@ -1933,7 +2097,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get gridGap() {
@@ -2009,7 +2173,7 @@ export class Style {
         break;
     }
 
-    this.setOrAppendState(StateKeys.GAP);
+    this.commitState(StateKeys.GAP);
   }
 
   get columnGap(): Length {
@@ -2045,7 +2209,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.GAP);
+    this.commitState(StateKeys.GAP);
   }
 
   get aspectRatio(): number {
@@ -2055,7 +2219,7 @@ export class Style {
   set aspectRatio(value: number) {
     this.prepareMut();
     setFloat32(this.style_view, StyleKeys.ASPECT_RATIO, value);
-    this.setOrAppendState(StateKeys.ASPECT_RATIO);
+    this.commitState(StateKeys.ASPECT_RATIO);
   }
 
   get flexBasis(): LengthAuto {
@@ -2095,7 +2259,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.FLEX_BASIS);
+    this.commitState(StateKeys.FLEX_BASIS);
   }
   get alignItems() {
     switch (getInt8(this.style_view, StyleKeys.ALIGN_ITEMS)) {
@@ -2149,7 +2313,7 @@ export class Style {
     if (align !== -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, align);
-      this.setOrAppendState(StateKeys.ALIGN_ITEMS);
+      this.commitState(StateKeys.ALIGN_ITEMS);
     }
   }
 
@@ -2205,7 +2369,7 @@ export class Style {
     if (align !== -2) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.ALIGN_SELF, align);
-      this.setOrAppendState(StateKeys.ALIGN_SELF);
+      this.commitState(StateKeys.ALIGN_SELF);
     }
   }
 
@@ -2261,7 +2425,7 @@ export class Style {
     if (align !== -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, align);
-      this.setOrAppendState(StateKeys.ALIGN_CONTENT);
+      this.commitState(StateKeys.ALIGN_CONTENT);
     }
   }
 
@@ -2316,7 +2480,7 @@ export class Style {
     if (v !== -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, v);
-      this.setOrAppendState(StateKeys.JUSTIFY_ITEMS);
+      this.commitState(StateKeys.JUSTIFY_ITEMS);
     }
   }
 
@@ -2372,7 +2536,7 @@ export class Style {
     if (v !== -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, v);
-      this.setOrAppendState(StateKeys.JUSTIFY_SELF);
+      this.commitState(StateKeys.JUSTIFY_SELF);
     }
   }
 
@@ -2432,7 +2596,7 @@ export class Style {
     if (v !== -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, v);
-      this.setOrAppendState(StateKeys.JUSTIFY_CONTENT);
+      this.commitState(StateKeys.JUSTIFY_CONTENT);
     }
   }
   get gridAutoRows() {
@@ -2510,7 +2674,7 @@ export class Style {
     if (v !== undefined) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.GRID_AUTO_FLOW, v);
-      this.setOrAppendState(StateKeys.GRID_AUTO_FLOW);
+      this.commitState(StateKeys.GRID_AUTO_FLOW);
     }
   }
 
@@ -2842,7 +3006,7 @@ export class Style {
         break;
       }
     }
-    this.setOrAppendState(StateKeys.OVERFLOW);
+    this.commitState(StateKeys.OVERFLOW);
   }
   get overflowX() {
     switch (getInt8(this.style_view, StyleKeys.OVERFLOW_X)) {
@@ -2860,7 +3024,7 @@ export class Style {
     if (v !== undefined) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.OVERFLOW_X, v);
-      this.setOrAppendState(StateKeys.OVERFLOW_X);
+      this.commitState(StateKeys.OVERFLOW_X);
     }
   }
 
@@ -2884,7 +3048,7 @@ export class Style {
     if (v !== undefined) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.OVERFLOW_Y, v);
-      this.setOrAppendState(StateKeys.OVERFLOW_Y);
+      this.commitState(StateKeys.OVERFLOW_Y);
     }
   }
 
@@ -2895,7 +3059,7 @@ export class Style {
   set flexGrow(value: number) {
     this.prepareMut();
     setFloat32(this.style_view, StyleKeys.FLEX_GROW, value);
-    this.setOrAppendState(StateKeys.FLEX_GROW);
+    this.commitState(StateKeys.FLEX_GROW);
   }
 
   get flexShrink(): number {
@@ -2905,7 +3069,7 @@ export class Style {
   set flexShrink(value: number) {
     this.prepareMut();
     setFloat32(this.style_view, StyleKeys.FLEX_SHRINK, value);
-    this.setOrAppendState(StateKeys.FLEX_SHRINK);
+    this.commitState(StateKeys.FLEX_SHRINK);
   }
 
   get scrollBarWidth(): number | CoreTypes.LengthType {
@@ -2916,18 +3080,18 @@ export class Style {
     if (typeof value === 'number') {
       this.prepareMut();
       setFloat32(this.style_view, StyleKeys.SCROLLBAR_WIDTH, value);
-      this.setOrAppendState(StateKeys.SCROLLBAR_WIDTH);
+      this.commitState(StateKeys.SCROLLBAR_WIDTH);
     } else if (typeof value === 'object') {
       switch (value.unit) {
         case 'dip':
           this.prepareMut();
           setFloat32(this.style_view, StyleKeys.SCROLLBAR_WIDTH, layout.toDevicePixels(value.value));
-          this.setOrAppendState(StateKeys.SCROLLBAR_WIDTH);
+          this.commitState(StateKeys.SCROLLBAR_WIDTH);
           break;
         case 'px':
           this.prepareMut();
           setFloat32(this.style_view, StyleKeys.SCROLLBAR_WIDTH, value.value);
-          this.setOrAppendState(StateKeys.SCROLLBAR_WIDTH);
+          this.commitState(StateKeys.SCROLLBAR_WIDTH);
           break;
       }
     }
@@ -2942,20 +3106,20 @@ export class Style {
       this.prepareMut();
       setFloat32(this.style_view, StyleKeys.LETTER_SPACING, value);
       setUint8(this.style_view, StyleKeys.LETTER_SPACING_STATE, 1);
-      this.setOrAppendState(StateKeys.LETTER_SPACING);
+      this.commitState(StateKeys.LETTER_SPACING);
     } else if (typeof value === 'object') {
       switch (value.unit) {
         case 'dip':
           this.prepareMut();
           setFloat32(this.style_view, StyleKeys.LETTER_SPACING, layout.toDevicePixels(value.value));
           setUint8(this.style_view, StyleKeys.LETTER_SPACING_STATE, 1);
-          this.setOrAppendState(StateKeys.LETTER_SPACING);
+          this.commitState(StateKeys.LETTER_SPACING);
           break;
         case 'px':
           this.prepareMut();
           setFloat32(this.style_view, StyleKeys.LETTER_SPACING, value.value);
           setUint8(this.style_view, StyleKeys.LETTER_SPACING_STATE, 1);
-          this.setOrAppendState(StateKeys.LETTER_SPACING);
+          this.commitState(StateKeys.LETTER_SPACING);
           break;
       }
     }
@@ -2971,7 +3135,7 @@ export class Style {
       setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, value);
       setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
       setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 0);
-      this.setOrAppendState(StateKeys.LINE_HEIGHT);
+      this.commitState(StateKeys.LINE_HEIGHT);
     } else if (typeof value === 'object') {
       switch (value.unit) {
         case 'dip':
@@ -2979,14 +3143,14 @@ export class Style {
           setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, layout.toDevicePixels(value.value));
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 1);
-          this.setOrAppendState(StateKeys.LINE_HEIGHT);
+          this.commitState(StateKeys.LINE_HEIGHT);
           break;
         case 'px':
           this.prepareMut();
           setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, value.value);
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 1);
-          this.setOrAppendState(StateKeys.LINE_HEIGHT);
+          this.commitState(StateKeys.LINE_HEIGHT);
           break;
       }
     }
@@ -3004,16 +3168,6 @@ export class Style {
       case 1:
         return 'ellipsis';
       default:
-    }
-
-    if (__ANDROID__) {
-      // @ts-ignore
-      const overflow = this.view_._view.getTextOverflow();
-    }
-
-    if (__APPLE__) {
-      // @ts-ignore
-      const overflow = this.view_._view.textOverflow;
     }
 
     return 'clip';
@@ -3034,17 +3188,7 @@ export class Style {
         flow = 1;
         break;
       default:
-        {
-          if (__ANDROID__) {
-            // @ts-ignore
-            const overflow = this.view_._view.getTextOverflow();
-          }
-
-          if (__APPLE__) {
-            // @ts-ignore
-            const overflow = this.view_._view.textOverflow;
-          }
-        }
+        // noop
         break;
     }
 
@@ -3052,7 +3196,7 @@ export class Style {
       this.prepareMut();
       setInt32(this.style_view, StyleKeys.TEXT_OVERFLOW, flow);
       setInt8(this.style_view, StyleKeys.TEXT_OVERFLOW_STATE, 1);
-      this.setOrAppendState(StateKeys.TEXT_OVERFLOW);
+      this.commitState(StateKeys.TEXT_OVERFLOW);
     }
   }
 
@@ -3117,7 +3261,7 @@ export class Style {
       this.prepareMut();
       setInt32(this.style_view, StyleKeys.TEXT_ALIGN, align);
       setInt8(this.style_view, StyleKeys.TEXT_ALIGN_STATE, 1);
-      this.setOrAppendState(StateKeys.TEXT_ALIGN);
+      this.commitState(StateKeys.TEXT_ALIGN);
     }
   }
 
@@ -3137,16 +3281,12 @@ export class Style {
   }
 
   set background(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackground(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.background = value;
-    }
+    this.setPseudoCssStringValue(
+      'background',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackground(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.background = value),
+    );
   }
 
   get backgroundImage() {
@@ -3165,16 +3305,12 @@ export class Style {
   }
 
   set backgroundImage(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundImage(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundImage = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-image',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundImage(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundImage = value),
+    );
   }
 
   get backgroundRepeat() {
@@ -3193,16 +3329,12 @@ export class Style {
   }
 
   set backgroundRepeat(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundRepeat(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundRepeat = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-repeat',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundRepeat(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundRepeat = value),
+    );
   }
 
   get backgroundPosition() {
@@ -3221,16 +3353,12 @@ export class Style {
   }
 
   set backgroundPosition(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundPosition(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundPosition = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-position',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundPosition(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundPosition = value),
+    );
   }
 
   get backgroundSize() {
@@ -3249,16 +3377,12 @@ export class Style {
   }
 
   set backgroundSize(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundSize(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundSize = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-size',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundSize(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundSize = value),
+    );
   }
 
   get backgroundClip() {
@@ -3277,16 +3401,12 @@ export class Style {
   }
 
   set backgroundClip(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundClip(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundClip = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-clip',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundClip(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundClip = value),
+    );
   }
 
   get borderRadius() {
@@ -3305,34 +3425,12 @@ export class Style {
   }
 
   set borderRadius(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      switch (typeof value) {
-        case 'number':
-          org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, `${value}`);
-          break;
-        case 'string':
-          org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, value);
-          break;
-        default:
-          return;
-      }
-    }
-
-    if (__APPLE__) {
-      switch (typeof value) {
-        case 'number':
-          (this.nativeView as MasonElementObjc).style.borderRadius = `${value}`;
-          break;
-        case 'string':
-          (this.nativeView as MasonElementObjc).style.borderRadius = value;
-          break;
-        default:
-          return;
-      }
-    }
+    this.setPseudoCssStringValue(
+      'border-radius',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderRadius = value),
+    );
   }
 
   get border() {
@@ -3350,16 +3448,12 @@ export class Style {
   }
 
   set border(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorder(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.border = value;
-    }
+    this.setPseudoCssStringValue(
+      'border',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorder(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.border = value),
+    );
   }
 
   get paddingCss() {
@@ -3374,13 +3468,12 @@ export class Style {
   }
 
   set paddingCss(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setPaddingCss(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.paddingCss = value;
-    }
+    this.setPseudoCssStringValue(
+      'padding',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setPaddingCss(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.paddingCss = value),
+    );
   }
 
   get marginCss() {
@@ -3395,13 +3488,12 @@ export class Style {
   }
 
   set marginCss(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setMarginCss(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.marginCss = value;
-    }
+    this.setPseudoCssStringValue(
+      'margin',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setMarginCss(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.marginCss = value),
+    );
   }
 
   get insetCss() {
@@ -3416,13 +3508,12 @@ export class Style {
   }
 
   set insetCss(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setInsetCss(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.insetCss = value;
-    }
+    this.setPseudoCssStringValue(
+      'inset',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setInsetCss(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.insetCss = value),
+    );
   }
 
   get borderLeft() {
@@ -3430,16 +3521,12 @@ export class Style {
   }
 
   set borderLeft(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderLeft(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.borderLeft = value;
-    }
+    this.setPseudoCssStringValue(
+      'border-left',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderLeft(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderLeft = value),
+    );
   }
 
   get borderTop() {
@@ -3447,16 +3534,12 @@ export class Style {
   }
 
   set borderTop(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderTop(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.borderTop = value;
-    }
+    this.setPseudoCssStringValue(
+      'border-top',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderTop(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderTop = value),
+    );
   }
 
   get borderRight() {
@@ -3464,16 +3547,12 @@ export class Style {
   }
 
   set borderRight(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRight(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.borderRight = value;
-    }
+    this.setPseudoCssStringValue(
+      'border-right',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRight(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderRight = value),
+    );
   }
 
   get borderBottom() {
@@ -3481,16 +3560,12 @@ export class Style {
   }
 
   set borderBottom(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderBottom(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.borderBottom = value;
-    }
+    this.setPseudoCssStringValue(
+      'border-bottom',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderBottom(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderBottom = value),
+    );
   }
 
   get filter() {
@@ -3509,16 +3584,12 @@ export class Style {
   }
 
   set filter(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setFilter(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.filter = value;
-    }
+    this.setPseudoCssStringValue(
+      'filter',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setFilter(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.filter = value),
+    );
   }
 
   get boxShadow() {
@@ -3536,18 +3607,21 @@ export class Style {
     return '';
   }
 
+  set 'box-shadow'(value: string) {
+    this.boxShadow = value;
+  }
+
+  get 'box-shadow'() {
+    return this.boxShadow;
+  }
+
   set boxShadow(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBoxShadow(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.boxShadow = value;
-    }
+    this.setPseudoCssStringValue(
+      'box-shadow',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBoxShadow(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.boxShadow = value),
+    );
   }
 
   get transform() {
@@ -3566,16 +3640,12 @@ export class Style {
   }
 
   set transform(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setTransform(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.transform = value;
-    }
+    this.setPseudoCssStringValue(
+      'transform',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setTransform(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.transform = value),
+    );
   }
 
   get verticalAlign() {
@@ -3724,7 +3794,7 @@ export class Style {
         }
       }
     }
-    this.setOrAppendState(StateKeys.VERTICAL_ALIGN);
+    this.commitState(StateKeys.VERTICAL_ALIGN);
   }
 
   get textShadow() {
@@ -3743,16 +3813,12 @@ export class Style {
   }
 
   set textShadow(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setTextShadow(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.textShadow = value;
-    }
+    this.setPseudoCssStringValue(
+      'text-shadow',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setTextShadow(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.textShadow = value),
+    );
   }
 
   get zIndex(): number {
@@ -3762,7 +3828,7 @@ export class Style {
   set zIndex(value: number) {
     this.prepareMut();
     setInt32(this.style_view, StyleKeys.Z_INDEX, value);
-    this.setOrAppendState(StateKeys.Z_INDEX);
+    this.commitState(StateKeys.Z_INDEX);
   }
 
   get float() {
@@ -3800,7 +3866,7 @@ export class Style {
 
     this.prepareMut();
     setInt8(this.style_view, StyleKeys.FLOAT, enumVal);
-    this.setOrAppendState(StateKeys.FLOAT);
+    this.commitState(StateKeys.FLOAT);
   }
 
   get clear() {
@@ -3836,20 +3902,16 @@ export class Style {
         setInt8(this.style_view, StyleKeys.CLEAR, Clear.Both);
         break;
     }
-    this.setOrAppendState(StateKeys.CLEAR);
+    this.commitState(StateKeys.CLEAR);
   }
 
   set cornerShape(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShape(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShape = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShape(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShape = value),
+    );
   }
 
   get cornerShape(): string {
@@ -3879,13 +3941,12 @@ export class Style {
   }
 
   set cornerShapeTopLeft(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopLeft(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeTopLeft = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape-top-left',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopLeft(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeTopLeft = value),
+    );
   }
 
   get cornerShapeTopRight() {
@@ -3900,13 +3961,12 @@ export class Style {
   }
 
   set cornerShapeTopRight(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopRight(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeTopRight = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape-top-right',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopRight(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeTopRight = value),
+    );
   }
 
   get cornerShapeBottomRight() {
@@ -3921,13 +3981,12 @@ export class Style {
   }
 
   set cornerShapeBottomRight(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomRight(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeBottomRight = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape-bottom-right',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomRight(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeBottomRight = value),
+    );
   }
 
   get cornerShapeBottomLeft() {
@@ -3942,13 +4001,12 @@ export class Style {
   }
 
   set cornerShapeBottomLeft(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomLeft(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeBottomLeft = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape-bottom-left',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomLeft(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeBottomLeft = value),
+    );
   }
 
   toJSON() {
@@ -4002,6 +4060,7 @@ export class Style {
       gridTemplateColumns: this.gridTemplateColumns,
       filter: this.filter,
       zIndex: this.zIndex,
+      backgroundColor: this.backgroundColor,
     };
   }
 }

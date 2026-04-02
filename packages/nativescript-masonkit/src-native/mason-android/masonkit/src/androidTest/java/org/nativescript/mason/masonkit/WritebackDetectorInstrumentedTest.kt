@@ -62,7 +62,7 @@ class WritebackDetectorInstrumentedTest {
     val captured: List<Triple<Int, Float, Float>> = synchronized(events) { events.toList() }
     android.util.Log.i("WritebackDetectorTest", "Captured events (count=${captured.size}): $captured")
 
-    // --- Phase 2: exercise platform TextEngine measurement paths ---
+    // Phase 2: exercise platform TextEngine measurement paths
     val textEvents = mutableListOf<Triple<Int, Float, Float>>()
 
     Node.setComputedSizeTestCallback { id, w, h ->

@@ -10,6 +10,8 @@ import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import androidx.core.view.ViewCompat
 import androidx.core.widget.TextViewCompat
 import org.nativescript.mason.masonkit.enums.BoxSizing
 import org.nativescript.mason.masonkit.enums.Display
@@ -62,7 +64,11 @@ class Button @JvmOverloads constructor(
     }
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach { it.shader = null } // force rebuild on next draw
+    style.mBackground?.layers?.forEach {
+      it.shader = null
+      it.shaderWidth = -1
+      it.shaderHeight = -1
+    } // force rebuild on next draw
     style.mBorderRenderer.invalidate()
     super.onSizeChanged(w, h, oldw, oldh)
   }
@@ -72,6 +78,15 @@ class Button @JvmOverloads constructor(
     Paint().apply {
       color = Color.argb(40, 0, 0, 0) // subtle dark overlay
     }
+  }
+
+  private val pressedStateTouchSlop by lazy(LazyThreadSafetyMode.NONE) {
+    ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+  }
+
+  private fun isWithinPressedBounds(x: Float, y: Float): Boolean {
+    val slop = pressedStateTouchSlop
+    return x >= -slop && y >= -slop && x < width + slop && y < height + slop
   }
 
   override fun onDraw(canvas: Canvas) {
@@ -134,15 +149,13 @@ class Button @JvmOverloads constructor(
     isFocusable = true
     outlineProvider = null
     setBackgroundResource(0)
+    ViewCompat.setBackgroundTintList(view, null)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
       foreground = null
     }
-
     configure { style ->
-      // CSS spec UA defaults for <button>:
-      //   display: inline-block; box-sizing: border-box; text-align: center;
-      //   padding: 1px 6px; border: 2px outset buttonborder;
-      //   background-color: buttonface; color: buttontext;
+      // Mason button defaults stay close to UA expectations, but use a lighter
+      // 1px border so the native appearance does not feel overly heavy.
       style.display = Display.InlineBlock
       style.boxSizing = BoxSizing.BorderBox
       style.padding = Rect(
@@ -153,8 +166,9 @@ class Button @JvmOverloads constructor(
       )
       style.fontSize = Constants.DEFAULT_FONT_SIZE
       style.background = "#F0F0F0"
-      style.border = "2 solid #767676"
+      style.border = "1 solid #767676"
       style.borderRadius = "4"
+      style.textAlign
       style.syncFontMetrics()
     }
 
@@ -189,10 +203,19 @@ class Button @JvmOverloads constructor(
     // trigger a rebuild even when the node's pseudo buffer was updated
     // earlier (e.g., from touch handlers).
     var pseudoChanged = false
+    var textAffectingPseudoChanged = false
+    val key = StateKeys.ALL_TEXT
+    val hadPseudoTextBefore = node.hasPseudoSetFor(key)
+    var changedTextKeys = StateKeys.NONE
 
     val wantActive = isPressed
     if (wantActive != lastPressed) {
       lastPressed = wantActive
+      val activeTextKeys = node.getPseudoSetFlags(PseudoState.ACTIVE.mask) and key
+      if (activeTextKeys != StateKeys.NONE) {
+        textAffectingPseudoChanged = true
+        changedTextKeys = changedTextKeys or activeTextKeys
+      }
       node.setPseudo(PseudoState.ACTIVE, wantActive, true)
       pseudoChanged = true
     }
@@ -200,6 +223,11 @@ class Button @JvmOverloads constructor(
     val wantDisabled = !isEnabled
     if (wantDisabled != lastDisabled) {
       lastDisabled = wantDisabled
+      val disabledTextKeys = node.getPseudoSetFlags(PseudoState.DISABLED.mask) and key
+      if (disabledTextKeys != StateKeys.NONE) {
+        textAffectingPseudoChanged = true
+        changedTextKeys = changedTextKeys or disabledTextKeys
+      }
       node.setPseudo(PseudoState.DISABLED, wantDisabled, true)
       pseudoChanged = true
     }
@@ -207,26 +235,32 @@ class Button @JvmOverloads constructor(
     val wantFocus = isFocused
     if (wantFocus != lastFocus) {
       lastFocus = wantFocus
+      val focusTextKeys = node.getPseudoSetFlags(PseudoState.FOCUS.mask) and key
+      if (focusTextKeys != StateKeys.NONE) {
+        textAffectingPseudoChanged = true
+        changedTextKeys = changedTextKeys or focusTextKeys
+      }
       node.setPseudo(PseudoState.FOCUS, wantFocus, true)
       pseudoChanged = true
     }
 
     if (pseudoChanged) {
-      // Re-resolve text paint properties for pseudo-aware values, but only
-      // when the active pseudo buffers actually override any of these keys.
-      val key = StateKeys.ALL_TEXT
-
-      if (node.hasPseudoSetFor(key)) {
-        onChange(key.low, key.high)
-      } else {
-        // Pseudo buffers didn't explicitly set these text keys; schedule
-        // the paint/span update on the next loop to ensure native buffers
-        // are visible/readable (avoids direct-read races).
-        post { onChange(key.low, key.high) }
+      // Re-resolve text paint properties only when one of the toggled pseudo
+      // buffers can affect text. This still restores base text on the way back
+      // to normal, but avoids unnecessary layout work for visual-only pseudos.
+      if (textAffectingPseudoChanged) {
+        val nowHasPseudoText = node.hasPseudoSetFor(key)
+        if (hadPseudoTextBefore || nowHasPseudoText) {
+          onChange(changedTextKeys.low, changedTextKeys.high)
+        }
       }
 
       // Force background/border rebuild when pressed state changes
-      style.mBackground?.layers?.forEach { it.shader = null }
+      style.mBackground?.layers?.forEach {
+        it.shader = null
+        it.shaderWidth = -1
+        it.shaderHeight = -1
+      }
       style.mBorderRenderer.invalidate()
 
       invalidate()
@@ -234,6 +268,7 @@ class Button @JvmOverloads constructor(
   }
 
   override fun onHoverEvent(event: MotionEvent): Boolean {
+    if (!isEnabled) return super.onHoverEvent(event)
     when (event.actionMasked) {
       MotionEvent.ACTION_HOVER_ENTER -> node.setPseudo(PseudoState.HOVER, true)
       MotionEvent.ACTION_HOVER_EXIT -> node.setPseudo(PseudoState.HOVER, false)
@@ -242,12 +277,30 @@ class Button @JvmOverloads constructor(
   }
 
   override fun onTouchEvent(ev: MotionEvent): Boolean {
+    if (!isEnabled) return super.onTouchEvent(ev)
     when (ev.actionMasked) {
       MotionEvent.ACTION_DOWN -> {
-        node.setPseudo(PseudoState.ACTIVE, true)
+        isPressed = true
+        return true
       }
-      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-        node.setPseudo(PseudoState.ACTIVE, false)
+
+      MotionEvent.ACTION_MOVE -> {
+        isPressed = isWithinPressedBounds(ev.x, ev.y)
+        return true
+      }
+
+      MotionEvent.ACTION_UP -> {
+        val shouldClick = isWithinPressedBounds(ev.x, ev.y)
+        isPressed = false
+        if (shouldClick) {
+          performClick()
+        }
+        return true
+      }
+
+      MotionEvent.ACTION_CANCEL -> {
+        isPressed = false
+        return true
       }
     }
     return super.onTouchEvent(ev)
@@ -268,5 +321,28 @@ class Button @JvmOverloads constructor(
 
   override fun onChange(low: Long, high: Long) {
     engine.onTextStyleChanged(low, high, paint, resources.displayMetrics)
+  }
+
+  fun addView(view: Element) {
+    node.addChildAt(view.node, -1)
+  }
+
+  fun addView(view: Element, index: Int) {
+    node.addChildAt(view.node, index)
+  }
+
+  fun removeView(view: Element) {
+    node.removeChild(view.node)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeView(index: Int) {
+    node.removeChildAt(index)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeAllViews() {
+    node.removeChildren()
+    engine.invalidateInlineSegments()
   }
 }

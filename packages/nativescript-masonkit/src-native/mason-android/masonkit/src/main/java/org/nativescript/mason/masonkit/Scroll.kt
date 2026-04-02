@@ -96,7 +96,7 @@ class Scroll @JvmOverloads constructor(
     }
   }
 
-  // ── addView: manage Mason node tree, then delegate to FrameLayout ──────
+  // addView: manage Mason node tree, then delegate to FrameLayout
 
   override fun addView(child: android.view.View) {
     child ?: return
@@ -131,7 +131,7 @@ class Scroll @JvmOverloads constructor(
     node.addChildAt(childNode, index)
   }
 
-  // ── Measurement ────────────────────────────────────────────────────────
+  // Measurement
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val specWidth = MeasureSpec.getSize(widthMeasureSpec)
@@ -149,8 +149,6 @@ class Scroll @JvmOverloads constructor(
         }
 
         computeAndLayout(widthArg, heightArg)
-
-        node.mason.printTree(node)
 
         if (node.layoutTree.nodeCount == 0) {
           setMeasuredDimension(0, 0)
@@ -199,7 +197,7 @@ class Scroll @JvmOverloads constructor(
     scrollContentHeight = if (_enableScrollY) maxOf(ch, computedH) else computedH
   }
 
-  // ── Layout ─────────────────────────────────────────────────────────────
+  // Layout
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
     // Run base TwoDScrollView logic (focus, scroll-position clamping).

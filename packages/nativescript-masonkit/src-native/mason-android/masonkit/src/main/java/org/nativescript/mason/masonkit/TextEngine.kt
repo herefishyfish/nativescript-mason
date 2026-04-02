@@ -145,17 +145,21 @@ class TextEngine(val container: TextContainer) {
       )
     ) {
       val fontSize = style.resolvedFontSize
-      if (fontSize == 0) {
-        paint.textSize = 0f
+      val prevTextSize = paint.textSize
+      val newTextSize = if (fontSize == 0) {
+        0f
       } else {
-        paint.textSize = TypedValue.applyDimension(
+        TypedValue.applyDimension(
           TypedValue.COMPLEX_UNIT_SP,
           fontSize.toFloat(),
           displayMetrics
         )
       }
-      layout = true
-      dirty = true
+      if (newTextSize != prevTextSize) {
+        paint.textSize = newTextSize
+        layout = true
+        dirty = true
+      }
     }
 
     if (StateKeys.hasFlag(
@@ -179,18 +183,25 @@ class TextEngine(val container: TextContainer) {
     }
 
 
-    // Compute whether any text-related style flags changed. If none of
-    // these changed we can skip the expensive span/attribute rebuild.
-    val textStyleChanged = hasTextStyleFlags(low, high)
-    if (textStyleChanged) {
+    // Layout-affecting text flags: require invalidateInlineSegments (full recompute).
+    val textLayoutChanged = hasTextLayoutFlags(low, high)
+    // Visual-only text flags: span rebuild + invalidate, no layout recompute needed.
+    val textVisualChanged = !textLayoutChanged && hasTextVisualFlags(low, high)
+
+    if (textLayoutChanged || textVisualChanged) {
       dirty = true
     }
 
-
     if (dirty) {
-      if (textStyleChanged) {
+      if (textLayoutChanged) {
         updateStyleOnTextNodes()
         invalidateInlineSegments()
+      } else if (textVisualChanged) {
+        // Visual-only change (color, decoration, shadow): rebuild spans and redraw,
+        // but do NOT call invalidateInlineSegments which would set root.computeCacheDirty
+        // and trigger a spurious full layout recompute that shifts sibling views.
+        updateStyleOnTextNodes()
+        (node.view as? View)?.invalidate()
       }
       if (layout) {
         if (node.isAnonymous) {
@@ -201,11 +212,10 @@ class TextEngine(val container: TextContainer) {
     }
   }
 
-  // Return true when any flags that affect text spans/attributes changed.
-  private fun hasTextStyleFlags(low: Long, high: Long): Boolean {
+  // Flags that affect text measurement/layout (require full inline-segment recompute).
+  private fun hasTextLayoutFlags(low: Long, high: Long): Boolean {
     return (
-      StateKeys.hasFlag(low, high, StateKeys.FONT_COLOR) ||
-        StateKeys.hasFlag(low, high, StateKeys.FONT_SIZE) ||
+      StateKeys.hasFlag(low, high, StateKeys.FONT_SIZE) ||
         StateKeys.hasFlag(low, high, StateKeys.FONT_WEIGHT) ||
         StateKeys.hasFlag(low, high, StateKeys.FONT_STYLE) ||
         StateKeys.hasFlag(low, high, StateKeys.FONT_FAMILY) ||
@@ -213,15 +223,23 @@ class TextEngine(val container: TextContainer) {
         StateKeys.hasFlag(low, high, StateKeys.TEXT_WRAP) ||
         StateKeys.hasFlag(low, high, StateKeys.WHITE_SPACE) ||
         StateKeys.hasFlag(low, high, StateKeys.TEXT_TRANSFORM) ||
+        StateKeys.hasFlag(low, high, StateKeys.LETTER_SPACING) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_JUSTIFY) ||
+        StateKeys.hasFlag(low, high, StateKeys.LINE_HEIGHT) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_ALIGN) ||
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_OVERFLOW)
+      )
+  }
+
+  // Flags that only affect visual appearance (color, decoration, shadow).
+  // These require span rebuilds but NOT a layout recompute.
+  private fun hasTextVisualFlags(low: Long, high: Long): Boolean {
+    return (
+      StateKeys.hasFlag(low, high, StateKeys.FONT_COLOR) ||
         StateKeys.hasFlag(low, high, StateKeys.DECORATION_LINE) ||
         StateKeys.hasFlag(low, high, StateKeys.DECORATION_COLOR) ||
         StateKeys.hasFlag(low, high, StateKeys.DECORATION_STYLE) ||
-        StateKeys.hasFlag(low, high, StateKeys.LETTER_SPACING) ||
-        StateKeys.hasFlag(low, high, StateKeys.TEXT_JUSTIFY) ||
         StateKeys.hasFlag(low, high, StateKeys.BACKGROUND_COLOR) ||
-        StateKeys.hasFlag(low, high, StateKeys.LINE_HEIGHT) ||
-        StateKeys.hasFlag(low, high, StateKeys.TEXT_ALIGN) ||
-        StateKeys.hasFlag(low, high, StateKeys.TEXT_OVERFLOW) ||
         StateKeys.hasFlag(low, high, StateKeys.TEXT_SHADOWS)
       )
   }

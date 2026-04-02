@@ -265,11 +265,15 @@ extension MasonElement {
       root.view as? MasonElement
     }
 
-    // Schedule a main-thread compute for the root Mason element so layout
-    // is recomputed naturally after content or style changes. This ensures
-    // callers don't have to manually call computeWithViewSize everywhere.
     if let view = view {
-      DispatchQueue.main.async {
+      if view.isInLayout {
+        // Currently inside a layout pass — defer to avoid re-entrant layout.
+        DispatchQueue.main.async {
+          view.computeWithViewSize(layout: true)
+        }
+      } else {
+        view.isInLayout = true
+        defer { view.isInLayout = false }
         view.computeWithViewSize(layout: true)
       }
     }
@@ -342,6 +346,15 @@ extension MasonElement {
       objc_setAssociatedObject(self, &MasonElementProperties.computeCacheDirty, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
   }
+
+  internal var isInLayout: Bool {
+    get {
+      return objc_getAssociatedObject(self, &MasonElementProperties.isInLayout) as? Bool ?? false
+    }
+    set {
+      objc_setAssociatedObject(self, &MasonElementProperties.isInLayout, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
   
   internal func computeCache() -> CGSize {
     return objc_getAssociatedObject(self, &MasonElementProperties.computeCache) as? CGSize ?? .zero
@@ -377,6 +390,8 @@ extension MasonElement {
       // Preserve root view's frame — it's managed by the parent
       // (autolayout/autoresize), not by Mason. Only children get repositioned.
       let savedFrame = uiView.frame
+      isInLayout = true
+      defer { isInLayout = false }
       computeWithSize(w, h)
       computeCacheDirty = false
       if uiView.frame != savedFrame {
@@ -614,6 +629,8 @@ class MasonElementHelpers: NSObject {
     if let view = node.view, !(view is MasonBr.FakeView) {
       var isTextView = false
       var realLayout = layout
+      // Diagnostic: log raw layout values coming from the engine
+      print("[Mason.applyToView] node:", Unmanaged.passUnretained(node).toOpaque(), "layout:", "x=\(layout.x)", "y=\(layout.y)", "w=\(layout.width)", "h=\(layout.height)", "contentWidth=\(layout.contentWidth)", "contentHeight=\(layout.contentHeight)")
       var hasWidthConstraint: Bool = false
       var hasHeightConstraint: Bool = false
       if let view = view as? MasonText {
@@ -693,7 +710,13 @@ class MasonElementHelpers: NSObject {
       let borderRender = node.style.mBorderRender
       borderRender.resolve(for: view.bounds)
 
-      if clipX && clipY {
+      // UIScrollView (Scroll) sets clipsToBounds = true once in init and it must
+      // never be changed here. Changing clipsToBounds on UIScrollView during
+      // layoutSubviews (which runs during touch processing) corrupts UIKit's
+      // gesture graph and causes UIGestureGraphEdge assertion failures.
+      if view is UIScrollView {
+        // Nothing to do — clipping is fixed at init time.
+      } else if clipX && clipY {
         // Both axes clip — use clipsToBounds (+ border-radius mask if needed)
         view.clipsToBounds = true
         if borderRender.hasRadii() {
@@ -715,20 +738,15 @@ class MasonElementHelpers: NSObject {
         // Only one axis clips — use a layer mask that extends beyond
         // the view on the non-clipped axis so shadows/content can overflow.
         view.clipsToBounds = false
-//        let pad = node.style.padding
-//        let padL = CGFloat(pad.left.value / NSCMason.scale)
-//        let padR = CGFloat(pad.right.value / NSCMason.scale)
-//        let padT = CGFloat(pad.top.value / NSCMason.scale)
-//        let padB = CGFloat(pad.bottom.value / NSCMason.scale)
 
         // Large overflow allowance for the unclipped axis
-        let overflow: CGFloat = 10000
+        let overflowPad: CGFloat = 10000
 
         let clipRect: CGRect
         if clipX && !clipY {
-          clipRect = CGRect(x: 0, y: -overflow, width: view.bounds.width, height: view.bounds.height + overflow * 2)
+          clipRect = CGRect(x: 0, y: -overflowPad, width: view.bounds.width, height: view.bounds.height + overflowPad * 2)
         } else {
-          clipRect = CGRect(x: -overflow, y: 0, width: view.bounds.width + overflow * 2, height: view.bounds.height)
+          clipRect = CGRect(x: -overflowPad, y: 0, width: view.bounds.width + overflowPad * 2, height: view.bounds.height)
         }
 
         if borderRender.hasRadii() {
@@ -740,7 +758,7 @@ class MasonElementHelpers: NSObject {
         } else {
           let maskLayer = (view.layer.mask as? CAShapeLayer) ?? CAShapeLayer()
           maskLayer.path = UIBezierPath(rect: clipRect).cgPath
-         // view.layer.mask = maskLayer
+          view.layer.mask = maskLayer
         }
       } else {
         view.clipsToBounds = false
@@ -751,9 +769,11 @@ class MasonElementHelpers: NSObject {
       
       node.isLayoutValid = true
       
-      if let scroll = node.view as? Scroll {
-        let overflow = node.style.overflow
-
+      // Compute content size for any scrollable view (Scroll or MasonUIView).
+      let _overflow = node.style.overflow
+      let _hasScrollOverflow = _overflow.x == .Scroll || _overflow.x == .Auto
+        || _overflow.y == .Scroll || _overflow.y == .Auto
+      if _hasScrollOverflow {
         let cw = CGFloat(realLayout.contentWidth.isNaN ? 0 : realLayout.contentWidth/NSCMason.scale)
         let ch = CGFloat(realLayout.contentHeight.isNaN ? 0 : realLayout.contentHeight/NSCMason.scale)
         let bw = CGFloat(realLayout.width.isNaN ? 0 : realLayout.width/NSCMason.scale)
@@ -763,32 +783,26 @@ class MasonElementHelpers: NSObject {
         // For `auto`: use content size only when it overflows the box
         // For `visible`/`hidden`/`clip`: use box size (no scrolling)
         let scrollWidth: CGFloat
-        switch overflow.x {
-        case .Scroll:
-          scrollWidth = max(cw, bw)
-        case .Auto:
-          scrollWidth = cw > bw ? cw : bw
-        default:
-          scrollWidth = bw
+        switch _overflow.x {
+        case .Scroll: scrollWidth = max(cw, bw)
+        case .Auto:   scrollWidth = cw > bw ? cw : bw
+        default:      scrollWidth = bw
         }
-
         let scrollHeight: CGFloat
-        switch overflow.y {
-        case .Scroll:
-          scrollHeight = max(ch, bh)
-        case .Auto:
-          scrollHeight = ch > bh ? ch : bh
-        default:
-          scrollHeight = bh
+        switch _overflow.y {
+        case .Scroll: scrollHeight = max(ch, bh)
+        case .Auto:   scrollHeight = ch > bh ? ch : bh
+        default:      scrollHeight = bh
         }
-
         let newContentSize = CGSize(width: scrollWidth, height: scrollHeight)
-        if scroll.contentSize != newContentSize {
-          scroll.contentSize = newContentSize
-        }
 
-        MasonElementHelpers.handleOverflow(overflow.x, scroll)
-        MasonElementHelpers.handleOverflow(overflow.y, scroll, true)
+        if let scroll = node.view as? Scroll {
+          if scroll.contentSize != newContentSize { scroll.contentSize = newContentSize }
+          MasonElementHelpers.handleOverflow(_overflow.x, scroll)
+          MasonElementHelpers.handleOverflow(_overflow.y, scroll, true)
+        } else if let masonView = node.view as? MasonUIView {
+          if masonView.contentSize != newContentSize { masonView.contentSize = newContentSize }
+        }
       }
 
     }
@@ -801,6 +815,7 @@ class MasonElementHelpers: NSObject {
 
       let count = children.count
       for i in 0..<count{
+        guard i < layout.children.count else { break }
         let child = children[i]
         if(child.type == .text){
           continue

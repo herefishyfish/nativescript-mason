@@ -39,6 +39,7 @@ import org.nativescript.mason.masonkit.input.DateInput
 import org.nativescript.mason.masonkit.input.FileInputControl
 import org.nativescript.mason.masonkit.input.NumberControl
 import org.nativescript.mason.masonkit.input.TextInput
+import org.nativescript.mason.masonkit.input.TextInputOwner
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -47,7 +48,7 @@ import kotlin.math.max
 @SuppressLint("DiscouragedPrivateApi")
 class Input @JvmOverloads constructor(
   context: Context, attrs: AttributeSet? = null, override: Boolean = false
-) : FrameLayout(context, attrs), Element, MeasureFunc, StyleChangeListener {
+) : FrameLayout(context, attrs), Element, MeasureFunc, StyleChangeListener, TextInputOwner {
 
   override val view: View
     get() = this
@@ -59,7 +60,11 @@ class Input @JvmOverloads constructor(
     private set
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach { it.shader = null } // force rebuild on next draw
+    style.mBackground?.layers?.forEach {
+      it.shader = null
+      it.shaderWidth = -1
+      it.shaderHeight = -1
+    } // force rebuild on next draw
     style.mBorderRenderer.invalidate()
     super.onSizeChanged(w, h, oldw, oldh)
   }
@@ -99,10 +104,10 @@ class Input @JvmOverloads constructor(
   }
 
 
-  internal fun onBeforeInput(
+  override fun onBeforeInput(
     type: String,
-    data: String? = null,
-    options: EventOptions? = null
+    data: String?,
+    options: EventOptions?
   ): Boolean {
     val event = InputEvent(
       type = "beforeinput",
@@ -120,7 +125,7 @@ class Input @JvmOverloads constructor(
 
   internal val textInput: TextInput by lazy {
     TextInput(context).apply {
-      input = this@Input
+      owner = this@Input
       isSingleLine = true
       maxLines = 1
       textSize = style.fontSize.toFloat()
@@ -542,8 +547,8 @@ class Input @JvmOverloads constructor(
           textInput.setPadding(
             x, y, x, y
           )
-          style.border = "2px"
-          style.borderRadius = "4px"
+          style.border = "1"
+          style.borderRadius = "4"
           style.textAlign = TextAlign.Center
         }
         when (type) {
@@ -589,8 +594,8 @@ class Input @JvmOverloads constructor(
 //            LengthPercentage.Points(x),
 //          )
 
-          style.border = "2px"
-          style.borderRadius = "4px"
+          style.border = "1"
+          style.borderRadius = "4"
           style.textAlign = TextAlign.Center
         }
 
@@ -628,8 +633,8 @@ class Input @JvmOverloads constructor(
 //            LengthPercentage.Points(x),
 //          )
 
-          style.border = "2px"
-          style.borderRadius = "4px"
+          style.border = "1"
+          style.borderRadius = "4"
           style.textAlign = TextAlign.Center
         }
         addView(numberInput)
@@ -653,7 +658,7 @@ class Input @JvmOverloads constructor(
 //            LengthPercentage.Points(x),
 //          )
 
-          style.border = "2px"
+          style.border = "1"
         }
         addView(colorInput)
       }

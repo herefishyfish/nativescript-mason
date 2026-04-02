@@ -216,7 +216,7 @@ fn adding_more_flattened_children_does_not_inflate_height() {
     let pid = parent.id();
     mason.set_measure(pid, Some(measure_paragraph), std::ptr::null_mut());
 
-    // --- With 1 child ---
+    // With 1 child
     let child1 = mason.create_text_node();
     let c1id = child1.id();
     mason.set_measure(c1id, Some(measure_code), std::ptr::null_mut());
@@ -234,7 +234,7 @@ fn adding_more_flattened_children_does_not_inflate_height() {
     let out1 = mason.layout(pid);
     let h_with_1_child = out1[4];
 
-    // --- With 2 children ---
+    // With 2 children
     let child2 = mason.create_text_node();
     let c2id = child2.id();
     mason.set_measure(c2id, Some(measure_code), std::ptr::null_mut());

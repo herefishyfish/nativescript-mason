@@ -68,6 +68,25 @@ public enum MasonNodeType: Int32, RawRepresentable {
   }
 }
 
+
+// MARK: - Pseudo State Support
+
+@objc(PseudoState)
+public enum PseudoState: UInt16 {
+  case `default` = 0
+  case hover     = 0x01
+  case active    = 0x02
+  case focus     = 0x04
+  case focusWithin  = 0x08
+  case focusVisible = 0x10
+  case disabled  = 0x40
+  case checked   = 0x80
+}
+
+/// CSS cascade order for pseudo state resolution: hover → focus → active → disabled
+internal let PSEUDO_CSS_ORDER: [PseudoState] = [.hover, .focus, .active, .disabled]
+
+
 @objc(MasonNode)
 @objcMembers
 public class MasonNode: NSObject {
@@ -135,7 +154,9 @@ public class MasonNode: NSObject {
   
   public internal(set) var computedLayout = MasonLayout.empty
   
-  internal var isLayoutValid: Bool = false
+  /// Set to true by applyToView after Mason has applied layout to this node's view.
+  /// NativeScript can read this to skip redundant layout passes for Mason-managed children.
+  @objc public var isLayoutValid: Bool = false
   internal var hasClickGesture: Bool = false
   
   public internal(set) var document: MasonDocument? = nil
@@ -152,21 +173,181 @@ public class MasonNode: NSObject {
   // Example: pseudoStrings[active.rawValue] = ["filter": "brightness(0.88)"]
   private var pseudoStrings: [UInt16: [String: String]] = [:]
 
-  public func setPseudoString(_ pseudoState: UInt16, key: String, value: String) {
+  public func setPseudoString(_ pseudoState: UInt16, _ key: String, _ value: String) {
     var dict = pseudoStrings[pseudoState] ?? [:]
     dict[key] = value
     pseudoStrings[pseudoState] = dict
   }
 
-  public func getPseudoString(_ pseudoState: UInt16, key: String) -> String? {
+  public func getPseudoString(_ pseudoState: UInt16, _ key: String) -> String? {
     return pseudoStrings[pseudoState]?[key]
   }
 
-  public func clearPseudoString(_ pseudoState: UInt16, key: String) {
+  public func clearPseudoString(_ pseudoState: UInt16, _ key: String) {
     guard var dict = pseudoStrings[pseudoState] else { return }
     dict.removeValue(forKey: key)
     pseudoStrings[pseudoState] = dict.isEmpty ? nil : dict
   }
+  
+  // MARK: - Pseudo State Read/Write
+
+  /// Current active pseudo state bitmask read from the native state buffer.
+  public var pseudoMask: UInt16 {
+    var len: Int = 0
+    let ptr = mason_node_get_state_buffer(mason.nativePtr, nativePtr, &len)
+    guard let ptr = ptr, len >= 5 else { return 0 }
+    // Pseudo flags are at indices 3 (low byte) and 4 (high byte)
+    let low = UInt16(ptr[3])
+    let high = UInt16(ptr[4])
+    return low | (high << 8)
+  }
+
+  public func hasPseudo(_ state: PseudoState) -> Bool {
+    if state == .default { return pseudoMask == 0 }
+    return (pseudoMask & state.rawValue) != 0
+  }
+
+  public func setPseudo(_ state: PseudoState, _ enabled: Bool, autoDirty: Bool = true) {
+    var len: Int = 0
+    let ptr = mason_node_get_state_buffer_mut(mason.nativePtr, nativePtr, &len)
+    guard let ptr = ptr, len >= 5 else { return }
+    let orig = UInt16(ptr[3]) | (UInt16(ptr[4]) << 8)
+    let updated = enabled ? (orig | state.rawValue) : (orig & ~state.rawValue)
+    ptr[3] = UInt8(updated & 0xFF)
+    ptr[4] = UInt8((updated >> 8) & 0xFF)
+    if autoDirty {
+      mason_node_mark_dirty(mason.nativePtr, nativePtr)
+    }
+  }
+
+  var isActive: Bool { hasPseudo(.active) }
+  var isHover: Bool  { hasPseudo(.hover) }
+  var isFocused: Bool { hasPseudo(.focus) }
+  var isDisabledState: Bool { hasPseudo(.disabled) }
+
+  // MARK: - Pseudo Style Buffers
+
+  private static var pseudoBufferCache = NSMapTable<MasonNode, NSMutableDictionary>.weakToStrongObjects()
+
+  private var pseudoCache: NSMutableDictionary {
+    if let existing = MasonNode.pseudoBufferCache.object(forKey: self) {
+      return existing
+    }
+    let dict = NSMutableDictionary()
+    MasonNode.pseudoBufferCache.setObject(dict, forKey: self)
+    return dict
+  }
+
+  /// Get existing pseudo style buffer (read-only).
+  internal func getPseudoBufferRaw(_ flags: UInt16) -> UnsafeBufferPointer<UInt8>? {
+    var len: Int = 0
+    let ptr = mason_node_get_pseudo_style_buffer(mason.nativePtr, nativePtr, flags, &len)
+    guard let ptr = ptr, len > 0 else { return nil }
+    return UnsafeBufferPointer(start: ptr, count: len)
+  }
+
+  /// Prepare (create if needed) a mutable pseudo style buffer.
+  /// Clones from base style on first call for a given state.
+  internal func preparePseudoBufferRaw(_ flags: UInt16) -> UnsafeMutableBufferPointer<UInt8> {
+    var len: Int = 0
+    let ptr = mason_node_prepare_pseudo_style_buffer(mason.nativePtr, nativePtr, flags, &len)
+    guard let ptr = ptr, len > 0 else {
+      return UnsafeMutableBufferPointer(start: nil, count: 0)
+    }
+    return UnsafeMutableBufferPointer(start: ptr, count: len)
+  }
+  
+  /// Get existing pseudo style buffer (read-only).
+  public func getPseudoBuffer(_ flags: UInt16) -> NSMutableData? {
+    let buffer = mason_node_get_pseudo_style_buffer_apple(mason.nativePtr, nativePtr, flags)
+    guard let buffer = buffer else { return nil }
+    return Unmanaged<NSMutableData>.fromOpaque(buffer).takeRetainedValue()
+  }
+
+  /// Prepare (create if needed) a mutable pseudo style buffer.
+  /// Clones from base style on first call for a given state.
+  public func preparePseudoBuffer(_ flags: UInt16) -> NSMutableData {
+    let buffer = mason_node_prepare_pseudo_style_buffer_apple(mason.nativePtr, nativePtr, flags)
+    guard let buffer = buffer else {
+      return NSMutableData()
+    }
+    return Unmanaged<NSMutableData>.fromOpaque(buffer).takeRetainedValue()
+  }
+
+  /// Returns true when any active pseudo buffer explicitly set the given StateKeys.
+  public func hasPseudoSetFor(_ key: StateKeys) -> Bool {
+    let mask = pseudoMask
+    guard mask != 0 else { return false }
+    let knownStates: [PseudoState] = [.hover, .active, .focus, .focusWithin, .focusVisible, .disabled, .checked]
+    for state in knownStates {
+      guard (mask & state.rawValue) != 0 else { continue }
+      if hasPseudoSetInBuffer(UInt16(state.rawValue), key) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /// Returns true when the specified pseudo buffer explicitly set the given StateKeys,
+  /// regardless of whether that pseudo-state is currently active.
+  public func hasPseudoSetInBuffer(_ flags: UInt16, _ key: StateKeys) -> Bool {
+    guard let buf = getPseudoBufferRaw(flags),
+          buf.count >= StyleKeys.PSEUDO_SET_MASK_HIGH + 8 else { return false }
+    let base = buf.baseAddress!
+    var setLow: UInt64 = 0
+    var setHigh: UInt64 = 0
+    memcpy(&setLow, base + StyleKeys.PSEUDO_SET_MASK_LOW, 8)
+    memcpy(&setHigh, base + StyleKeys.PSEUDO_SET_MASK_HIGH, 8)
+    return (setLow & key.low) != 0 || (setHigh & key.high) != 0
+  }
+
+  public func getPseudoSetFlags(_ flags: UInt16) -> StateKeys {
+    guard let buf = getPseudoBufferRaw(flags),
+          buf.count >= StyleKeys.PSEUDO_SET_MASK_HIGH + 8 else { return .none }
+    let base = buf.baseAddress!
+    var setLow: UInt64 = 0
+    var setHigh: UInt64 = 0
+    memcpy(&setLow, base + StyleKeys.PSEUDO_SET_MASK_LOW, 8)
+    memcpy(&setHigh, base + StyleKeys.PSEUDO_SET_MASK_HIGH, 8)
+    return StateKeys(low: setLow, high: setHigh)
+  }
+
+  /// Mark a property as explicitly set in a pseudo style buffer's bitmask.
+  public static func markPseudoSet(buf: UnsafeMutableBufferPointer<UInt8>, key: StateKeys) {
+    let lowOfs = StyleKeys.PSEUDO_SET_MASK_LOW
+    let highOfs = StyleKeys.PSEUDO_SET_MASK_HIGH
+    guard buf.count >= highOfs + 8 else { return }
+
+    let base = buf.baseAddress!
+    var low: UInt64 = 0
+    memcpy(&low, base + lowOfs, 8)
+    low |= key.low
+    memcpy(base + lowOfs, &low, 8)
+
+    var high: UInt64 = 0
+    memcpy(&high, base + highOfs, 8)
+    high |= key.high
+    memcpy(base + highOfs, &high, 8)
+  }
+  
+  
+  public static func markPseudoSet(_ buf: NSMutableData, _ key: StateKeys) {
+    let lowOfs = StyleKeys.PSEUDO_SET_MASK_LOW
+    let highOfs = StyleKeys.PSEUDO_SET_MASK_HIGH
+    guard buf.count >= highOfs + 8 else { return }
+
+    let base = buf.mutableBytes
+    var low: UInt64 = 0
+    memcpy(&low, base + lowOfs, 8)
+    low |= key.low
+    memcpy(base + lowOfs, &low, 8)
+
+    var high: UInt64 = 0
+    memcpy(&high, base + highOfs, 8)
+    high |= key.high
+    memcpy(base + highOfs, &high, 8)
+  }
+  
   
   public func getRootNode() -> MasonNode {
     var current = self
@@ -656,7 +837,7 @@ extension MasonNode {
   
   
   internal func replaceChildAt(_ child: MasonNode, _ index: Int) {
-    // --- Handle invalid indices ---
+    // Handle invalid indices
     if index <= -1 {
       appendChild(child)
       return
@@ -673,7 +854,7 @@ extension MasonNode {
       return
     }
     
-    // --- Handle TextNode replacement ---
+    // Handle TextNode replacement
     if let textChild = child as? MasonTextNode {
       if let referenceText = reference as? MasonTextNode {
         guard
@@ -712,7 +893,7 @@ extension MasonNode {
       return
     }
     
-    // --- Non-text child handling ---
+    // Non-text child handling
     guard let idx: Int = {
       if let i = children.firstIndex(where: { $0 === reference }) {
         return i
@@ -728,7 +909,7 @@ extension MasonNode {
       return
     }
     
-    // --- Text node inside anonymous container (split handling) ---
+    // Text node inside anonymous container (split handling)
     if let referenceText = reference as? MasonTextNode {
       let containerNode = referenceText.layoutParent ?? referenceText.container?.node
       if let containerNode = containerNode, containerNode.parent === self {
@@ -817,7 +998,7 @@ extension MasonNode {
             }
           }
           
-          // --- Insert or replace the element child ---
+          // Insert or replace the element child
           switch (hasLeft, hasRight) {
           case (true, true):
             if let pos = children.firstIndex(where: { $0 === containerNode }) {
@@ -875,7 +1056,7 @@ extension MasonNode {
       }
     }
     
-    // --- Default non-text replacement ---
+    // Default non-text replacement
     children[idx] = child
     child.parent = self
     reference.parent = nil
@@ -1227,112 +1408,4 @@ extension MasonNode {
   }
 
 
-}
-
-
-// MARK: - Pseudo State Support
-
-@objc(PseudoState)
-public enum PseudoState: UInt16 {
-  case `default` = 0
-  case hover     = 0x01
-  case active    = 0x02
-  case focus     = 0x04
-  case focusWithin  = 0x08
-  case focusVisible = 0x10
-  case disabled  = 0x40
-  case checked   = 0x80
-}
-
-/// CSS cascade order for pseudo state resolution: hover → focus → active → disabled
-internal let PSEUDO_CSS_ORDER: [PseudoState] = [.hover, .focus, .active, .disabled]
-
-
-extension MasonNode {
-
-  // MARK: - Pseudo State Read/Write
-
-  /// Current active pseudo state bitmask read from the native state buffer.
-  public var pseudoMask: UInt16 {
-    var len: Int = 0
-    let ptr = mason_node_get_state_buffer(mason.nativePtr, nativePtr, &len)
-    guard let ptr = ptr, len >= 5 else { return 0 }
-    // Pseudo flags are at indices 3 (low byte) and 4 (high byte)
-    let low = UInt16(ptr[3])
-    let high = UInt16(ptr[4])
-    return low | (high << 8)
-  }
-
-  public func hasPseudo(_ state: PseudoState) -> Bool {
-    if state == .default { return pseudoMask == 0 }
-    return (pseudoMask & state.rawValue) != 0
-  }
-
-  public func setPseudo(_ state: PseudoState, _ enabled: Bool, autoDirty: Bool = true) {
-    var len: Int = 0
-    let ptr = mason_node_get_state_buffer_mut(mason.nativePtr, nativePtr, &len)
-    guard let ptr = ptr, len >= 5 else { return }
-    let orig = UInt16(ptr[3]) | (UInt16(ptr[4]) << 8)
-    let updated = enabled ? (orig | state.rawValue) : (orig & ~state.rawValue)
-    ptr[3] = UInt8(updated & 0xFF)
-    ptr[4] = UInt8((updated >> 8) & 0xFF)
-    if autoDirty {
-      mason_node_mark_dirty(mason.nativePtr, nativePtr)
-    }
-  }
-
-  var isActive: Bool { hasPseudo(.active) }
-  var isHover: Bool  { hasPseudo(.hover) }
-  var isFocused: Bool { hasPseudo(.focus) }
-  var isDisabledState: Bool { hasPseudo(.disabled) }
-
-  // MARK: - Pseudo Style Buffers
-
-  private static var pseudoBufferCache = NSMapTable<MasonNode, NSMutableDictionary>.weakToStrongObjects()
-
-  private var pseudoCache: NSMutableDictionary {
-    if let existing = MasonNode.pseudoBufferCache.object(forKey: self) {
-      return existing
-    }
-    let dict = NSMutableDictionary()
-    MasonNode.pseudoBufferCache.setObject(dict, forKey: self)
-    return dict
-  }
-
-  /// Get existing pseudo style buffer (read-only).
-  public func getPseudoBuffer(_ flags: UInt16) -> UnsafeBufferPointer<UInt8>? {
-    var len: Int = 0
-    let ptr = mason_node_get_pseudo_style_buffer(mason.nativePtr, nativePtr, flags, &len)
-    guard let ptr = ptr, len > 0 else { return nil }
-    return UnsafeBufferPointer(start: ptr, count: len)
-  }
-
-  /// Prepare (create if needed) a mutable pseudo style buffer.
-  /// Clones from base style on first call for a given state.
- public func preparePseudoBuffer(_ flags: UInt16) -> UnsafeMutableBufferPointer<UInt8> {
-    var len: Int = 0
-    let ptr = mason_node_prepare_pseudo_style_buffer(mason.nativePtr, nativePtr, flags, &len)
-    guard let ptr = ptr, len > 0 else {
-      return UnsafeMutableBufferPointer(start: nil, count: 0)
-    }
-    return UnsafeMutableBufferPointer(start: ptr, count: len)
-  }
-
-  /// Mark a property as explicitly set in a pseudo style buffer's bitmask.
-  public static func markPseudoSet(_ buf: UnsafeMutableBufferPointer<UInt8>, _ key: StateKeys) {
-    let lowOfs = StyleKeys.PSEUDO_SET_MASK_LOW
-    let highOfs = StyleKeys.PSEUDO_SET_MASK_HIGH
-    guard buf.count >= highOfs + 8 else { return }
-
-    let base = buf.baseAddress!
-    var low: UInt64 = 0
-    memcpy(&low, base + lowOfs, 8)
-    low |= key.low
-    memcpy(base + lowOfs, &low, 8)
-
-    var high: UInt64 = 0
-    memcpy(&high, base + highOfs, 8)
-    high |= key.high
-    memcpy(base + highOfs, &high, 8)
-  }
 }

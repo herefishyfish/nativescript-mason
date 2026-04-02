@@ -793,3 +793,37 @@ pub extern "system" fn Java_org_nativescript_mason_masonkit_Mason_nativePrintAre
         log::info!("Arena stats: {:#?}", stats);
     }
 }
+
+
+#[no_mangle]
+pub extern "system" fn Java_org_nativescript_mason_masonkit_Mason_nativeSetPreflight(
+    _: JNIEnv,
+    _: JObject,
+    mason: jlong,
+    enabled: jni::sys::jboolean,
+) {
+    mason_core::PREFLIGHT_ENABLED.store(
+        enabled != 0,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    if mason == 0 {
+        return;
+    }
+    unsafe {
+        let mason = &mut *(mason as *mut Mason);
+        mason.reset_arena_defaults();
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_org_nativescript_mason_masonkit_Mason_nativeGetPreflight(
+    _: JNIEnv,
+    _: JObject,
+) -> jni::sys::jboolean {
+    if mason_core::PREFLIGHT_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+        1
+    } else {
+        0
+    }
+}

@@ -21,7 +21,7 @@ class TextTypeDefaultsInstrumentedTest {
 
   private val TAG = "TextTypeDefaults"
 
-  // --- Display defaults ---
+  // Display defaults
 
   @Test
   fun blockquoteHasBlockDisplay() {
@@ -77,7 +77,7 @@ class TextTypeDefaultsInstrumentedTest {
     Assert.assertEquals("A should be display: inline", Display.Inline, tv.style.display)
   }
 
-  // --- Font weight defaults ---
+  // Font weight defaults
 
   @Test
   fun strongHasBoldFontWeight() {
@@ -106,7 +106,7 @@ class TextTypeDefaultsInstrumentedTest {
     )
   }
 
-  // --- Font style defaults ---
+  // Font style defaults
 
   @Test
   fun emHasItalicFontStyle() {
@@ -126,7 +126,7 @@ class TextTypeDefaultsInstrumentedTest {
     )
   }
 
-  // --- Blockquote: web-standard defaults (NO italic, has margins) ---
+  // Blockquote: web-standard defaults (NO italic, has margins)
 
   @Test
   fun blockquoteHasNoItalic() {
@@ -168,7 +168,7 @@ class TextTypeDefaultsInstrumentedTest {
     )
   }
 
-  // --- Font property state tracking: inline children must resolve correctly ---
+  // Font property state tracking: inline children must resolve correctly
 
   @Test
   fun emFontStyleStateIsSet() {
@@ -221,7 +221,7 @@ class TextTypeDefaultsInstrumentedTest {
     )
   }
 
-  // --- Pre defaults ---
+  // Pre defaults
 
   @Test
   fun preHasMonospaceFont() {
@@ -232,7 +232,7 @@ class TextTypeDefaultsInstrumentedTest {
     )
   }
 
-  // --- Code defaults ---
+  // Code defaults
 
   @Test
   fun codeHasMonospaceFont() {
@@ -243,7 +243,7 @@ class TextTypeDefaultsInstrumentedTest {
     )
   }
 
-  // --- Helpers ---
+  // Helpers
 
   private fun createTextView(type: TextType): TextView {
     val context = InstrumentationRegistry.getInstrumentation().targetContext

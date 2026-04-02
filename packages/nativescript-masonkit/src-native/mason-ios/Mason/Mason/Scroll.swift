@@ -10,13 +10,13 @@ import UIKit
 @objcMembers
 public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonElement, MasonElementObjc, StyleChangeListener {
   func onStyleChange(_ low: UInt64, _ high: UInt64) {
-    if isHandlingStyleChange { return }
-    isHandlingStyleChange = true
-    defer { isHandlingStyleChange = false }
+    if isScrollHandlingStyleChange { return }
+    isScrollHandlingStyleChange = true
+    defer { isScrollHandlingStyleChange = false }
 
     MasonNode.invalidateDescendantTextViews(node, low, high)
   }
-  
+
   public override func draw(_ rect: CGRect) {
 
     let hasBackground = style.mBackground.color != nil || !style.mBackground.layers.isEmpty
@@ -76,7 +76,11 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
     }
 
     isApplyingLayout = true
-    defer { isApplyingLayout = false }
+    isInLayout = true  // MasonElement associated-object — seen by autoComputeIfRoot
+    defer {
+      isApplyingLayout = false
+      isInLayout = false
+    }
 
     super.layoutSubviews()
 
@@ -94,15 +98,15 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
   public var uiView: UIView {
     return self
   }
-  
+
   public var style: MasonStyle {
     return node.style
   }
 
   private var isApplyingLayout: Bool = false
-  private var isHandlingStyleChange: Bool = false
+  private var isScrollHandlingStyleChange: Bool = false
   private var lastBounds: CGRect = .null
-  
+
   internal var canScroll: (Bool, Bool) {
     let flow = node.style.overflow
     let viewBounds = bounds.size
@@ -140,18 +144,22 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
     self.delegate = self
     style.setStyleChangeListener(listener: self)
     isOpaque = false
+    // Must always be true — changing this during touch processing corrupts
+    // UIKit's gesture graph and causes UIGestureGraphEdge assertion failures.
+    // Border-radius is painted manually in draw() so this doesn't affect visuals.
+    clipsToBounds = true
   }
-  
+
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
   }
-  
+
   private var lastContentOffset: CGPoint = .zero
   public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
     lastContentOffset = scrollView.contentOffset
   }
-  
-  
+
+
   public func scrollViewDidScroll(_ scrollView: UIScrollView) {
     let (canScrollHorizontally, canScrollVertically) = canScroll
 
@@ -170,8 +178,8 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
 
     lastContentOffset = targetOffset
   }
-  
-  
+
+
   public func addView(_ view: UIView){
     if(view.superview == self){
       return
@@ -182,7 +190,7 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
       append(node: mason.nodeForView(view))
     }
   }
-  
+
   public func addView(_ view: UIView, at: Int){
     if(view.superview == self){
       return
@@ -194,14 +202,14 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
       node.addChildAt(mason.nodeForView(view), at)
     }
   }
-  
-  
+
+
   func checkAndUpdateStyle() {
       if (!node.inBatch) {
         node.style.updateNativeStyle()
       }
   }
-  
+
   @objc public func setSize(_ width: Float,_  height: Float) {
       node.style.size = MasonSize(
           MasonDimension.Points(width),
@@ -209,5 +217,5 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
       )
       checkAndUpdateStyle()
   }
-  
+
 }

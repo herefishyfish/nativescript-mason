@@ -823,7 +823,7 @@ impl Node {
             // List style type (u8)
             merge_u8!(StyleKeys::LIST_STYLE_TYPE, StyleKeys::LIST_STYLE_TYPE_STATE);
 
-            // --- Bitmask-based merge for properties without STATE bytes ---
+            // Bitmask-based merge for properties without STATE bytes
             // These use the pseudo set mask to detect explicit overrides.
             use crate::style::StateKeys as SK;
 
@@ -842,7 +842,7 @@ impl Node {
                 copy_range!(198, 202); // BORDER_LEFT_STYLE..BORDER_BOTTOM_STYLE
             }
 
-            // --- Single-byte enum properties ---
+            // Single-byte enum properties
             if is_pseudo_set!(SK::DISPLAY) {
                 copy_range!(0, 1); // DISPLAY
             }
@@ -883,7 +883,7 @@ impl Node {
                 copy_range!(12, 13); // JUSTIFY_CONTENT
             }
 
-            // --- Type+value pair properties ---
+            // Type+value pair properties
             if is_pseudo_set!(SK::INSET) {
                 copy_range!(13, 33); // INSET_LEFT through INSET_BOTTOM (4 sides x 5 bytes)
             }

@@ -100,7 +100,11 @@ class TextView @JvmOverloads constructor(
   // Height applied by float-aware expansion so onSizeChanged can skip clearing the cache
   private var floatExpandedHeight: Int = -1
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach { it.shader = null } // force rebuild on next draw
+    style.mBackground?.layers?.forEach {
+      it.shader = null
+      it.shaderWidth = -1
+      it.shaderHeight = -1
+    } // force rebuild on next draw
     style.mBorderRenderer.invalidate()
     // Invalidate cached StaticLayout when size changes, but skip if this
     // size change was triggered by our own float-aware height expansion.
@@ -676,5 +680,20 @@ class TextView @JvmOverloads constructor(
 
   fun addView(view: Element, index: Int) {
     addChildAt(view, index)
+  }
+
+  fun removeView(view: Element) {
+    node.removeChild(view.node)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeView(index: Int) {
+    node.removeChildAt(index)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeAllViews() {
+    node.removeChildren()
+    engine.invalidateInlineSegments()
   }
 }

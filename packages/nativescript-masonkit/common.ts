@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import { AddChildFromBuilder, CustomLayoutView, View as NSView, ViewBase as NSViewBase, getViewById, Property, widthProperty, heightProperty, View, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength, marginLeftProperty, marginRightProperty, marginTopProperty, marginBottomProperty, minWidthProperty, minHeightProperty, fontSizeProperty, fontWeightProperty, fontStyleProperty, colorProperty, Color, lineHeightProperty, letterSpacingProperty, textAlignmentProperty, borderLeftWidthProperty, borderTopWidthProperty, borderRightWidthProperty, borderBottomWidthProperty, backgroundColorProperty, paddingLeftProperty, paddingRightProperty, paddingTopProperty, paddingBottomProperty, zIndexProperty } from '@nativescript/core';
+import { AddChildFromBuilder, CustomLayoutView, View as NSView, ViewBase as NSViewBase, getViewById, Property, widthProperty, heightProperty, View, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength, marginLeftProperty, marginRightProperty, marginTopProperty, marginBottomProperty, minWidthProperty, minHeightProperty, fontSizeProperty, fontWeightProperty, fontStyleProperty, colorProperty, Color, lineHeightProperty, letterSpacingProperty, textAlignmentProperty, borderLeftWidthProperty, borderTopWidthProperty, borderRightWidthProperty, borderBottomWidthProperty, backgroundColorProperty, paddingLeftProperty, paddingRightProperty, paddingTopProperty, paddingBottomProperty, zIndexProperty, PseudoClassHandler } from '@nativescript/core';
 import { Display, Gap, GridAutoFlow, JustifyItems, JustifySelf, Length, LengthAuto, Overflow, Position, BoxSizing, VerticalAlign, FlexDirection, Float, Clear } from '.';
 import { alignItemsProperty, alignSelfProperty, flexDirectionProperty, flexGrowProperty, flexShrinkProperty, flexWrapProperty, justifyContentProperty } from '@nativescript/core/ui/layouts/flexbox-layout';
 import { _forceStyleUpdate, _setGridAutoRows } from './utils';
-import { Style as MasonStyle } from './style';
+import { Style as MasonStyle, Style } from './style';
 import {
   alignContentProperty,
   aspectRatioProperty,
@@ -58,9 +58,10 @@ import {
   boxShadowProperty,
   transformProperty,
 } from './properties';
-import { isMasonView_, isTextChild_, isText_, isPlaceholder_, text_, native_, textNode_, textNodeIndex_ } from './symbols';
+import { isMasonView_, isTextChild_, isText_, isPlaceholder_, text_, native_, textNode_, textNodeIndex_, pseudoStyles_ } from './symbols';
 import { Tree } from './tree';
 import { TextNode } from './text-node';
+import { compile } from './pseudo';
 
 declare const kotlin;
 
@@ -198,8 +199,46 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
   _children: (NSView | { text?: string } | TextNode)[] = [];
   [isMasonView_] = false;
 
+  /**
+   * Enable or disable CSS Preflight (web-normalised / Tailwind-like) defaults
+   * for the entire Mason tree.
+   *
+   * When `true` every element starts from a clean, browser-normalised slate:
+   *  - `box-sizing: border-box`
+   *  - `margin: 0`, `padding: 0`, `border-width: 0`
+   *  - `background: transparent`
+   *  - `list-style: none` on `<ul>` / `<ol>`
+   *  - `display: block` on `<img>` (replaced elements)
+   *
+   * This is a **tree-global** flag; it should ideally be set **before** views are
+   * created so that all new nodes inherit the preflight baseline.  Changing it
+   * after views have been created re-seeds the arena defaults but does not
+   * retroactively restyle individually modified nodes.
+   *
+   * @example
+   * ```ts
+   * import { ViewBase } from '@triniwiz/nativescript-masonkit';
+   * ViewBase.preflight = true; // enable at app startup
+   * ```
+   */
+  static get preflight(): boolean {
+    return Tree.instance.preflight;
+  }
+
+  static set preflight(value: boolean) {
+    Tree.instance.preflight = value;
+  }
+
   [isTextChild_] = false;
   [isText_] = false;
+
+  [pseudoStyles_]: {
+    active?: Style;
+    focus?: Style;
+    blur?: Style;
+    hover?: Style;
+    disabled?: Style;
+  } = {};
 
   constructor() {
     super();
@@ -346,6 +385,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     switch (arg) {
       case 'input':
       case 'change':
+      case 'click':
         this._registerNativeEvent(arg, callback, thisArg);
         break;
     }
@@ -363,9 +403,55 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     switch (arg) {
       case 'input':
       case 'change':
+      case 'click':
         this._unregisterNativeEvent(arg, callback, thisArg);
         break;
     }
+  }
+
+  private _applyPseudoClassStyles(pseudoClass: string, view, styles: Record<string, any>) {
+    if (pseudoClass && styles && pseudoClass in styles) {
+      const current = styles[pseudoClass];
+      //@ts-ignore
+      const existing = this[pseudoStyles_]?.[pseudoClass];
+
+      const style = existing ?? Style.fromPseudo(pseudoClass, this as never, view);
+
+      if (style) {
+        for (const prop in current) {
+          style[prop] = current[prop];
+        }
+        this[pseudoStyles_][pseudoClass] = style;
+      }
+    }
+  }
+
+  @PseudoClassHandler('highlighted', 'pressed', 'active')
+  _handler(subscribe: boolean) {
+    const styles = compile(this);
+    //@ts-ignore
+    this._applyPseudoClassStyles('active', this._view, styles);
+  }
+
+  @PseudoClassHandler('disabled')
+  _disableHandler(subscribe: boolean) {
+    const styles = compile(this);
+    //@ts-ignore
+    this._applyPseudoClassStyles('disabled', this._view, styles);
+  }
+
+  @PseudoClassHandler('focus')
+  _focusHandler(subscribe: boolean) {
+    const styles = compile(this);
+    //@ts-ignore
+    this._applyPseudoClassStyles('focus', this._view, styles);
+  }
+
+  @PseudoClassHandler('blur')
+  _blurHandler(subscribe: boolean) {
+    const styles = compile(this);
+    //@ts-ignore
+    this._applyPseudoClassStyles('blur', this._view, styles);
   }
 
   forceStyleUpdate() {

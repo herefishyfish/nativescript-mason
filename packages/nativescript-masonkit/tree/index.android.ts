@@ -117,6 +117,11 @@ export class Tree {
     return this.native.createBr(context);
   }
 
+  createTextArea(context) {
+    //@ts-ignore
+    return this.native.createTextArea(context);
+  }
+
   createInputView(context?, type?: InputType) {
     switch (type) {
       case 'number':
@@ -171,5 +176,13 @@ export class Tree {
 
   createListItem(context) {
     return this.native.createListItem(context);
+  }
+
+  get preflight(): boolean {
+    return this.native.getPreflight();
+  }
+
+  set preflight(value: boolean) {
+    this.native.setPreflight(value);
   }
 }

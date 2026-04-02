@@ -8,4 +8,5 @@ export { Br } from './br';
 export { TextNode } from './text-node';
 export { Li } from './li';
 export { OrderedList as Ol, UnorderedList as Ul } from './list';
+export { TextArea } from './textarea';
 export * from './web';

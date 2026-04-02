@@ -14,7 +14,7 @@ fn parse_repeat<'i, 't>(
     device_scale: f32,
 ) -> Result<GridTemplateRepetition<Atom>, ParseError<'i, ()>> {
     parser.parse_nested_block(|parser| {
-        // --- Parse repetition count ---
+        // Parse repetition count
         let repetition_ident = parser.expect_ident_or_string()?.as_ref().to_string();
         let repetition = match repetition_ident.as_str() {
             "auto-fit" => RepetitionCount::AutoFit,
@@ -27,7 +27,7 @@ fn parse_repeat<'i, 't>(
 
         parser.expect_comma()?;
 
-        // --- Parse tracks ---
+        // Parse tracks
         let mut tracks = vec![];
         let mut line_names = vec![];
 

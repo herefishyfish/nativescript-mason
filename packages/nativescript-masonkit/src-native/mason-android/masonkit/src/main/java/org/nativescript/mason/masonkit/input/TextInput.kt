@@ -1,6 +1,7 @@
 package org.nativescript.mason.masonkit.input
 
 import android.annotation.SuppressLint
+import android.text.InputFilter
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -15,15 +16,47 @@ import android.view.inputmethod.InputConnectionWrapper
 import android.widget.EditText
 import androidx.core.view.ViewCompat
 import org.nativescript.mason.masonkit.Input
+import org.nativescript.mason.masonkit.Element
 import org.nativescript.mason.masonkit.events.Event
 import org.nativescript.mason.masonkit.events.EventOptions
 import org.nativescript.mason.masonkit.events.InputEvent
 
+interface TextInputOwner : Element {
+  fun onBeforeInput(
+    type: String,
+    data: String? = null,
+    options: EventOptions? = null
+  ): Boolean
+}
+
 @SuppressLint("AppCompatCustomView")
-class TextInput @JvmOverloads constructor(
+open class TextInput @JvmOverloads constructor(
   context: Context, attrs: AttributeSet? = null
 ) : EditText(context, attrs) {
-  internal var input: Input? = null
+  internal var owner: TextInputOwner? = null
+
+  // Shared beforeinput filter used by input-like controls. Subclasses can
+  // reference `beforeFilter` when configuring `filters` to ensure unified
+  // 'beforeinput' dispatch semantics.
+  protected val beforeFilter = InputFilter { source, start, end, dest, dstart, dend ->
+    val ownerRef = owner ?: return@InputFilter null
+
+    val event = InputEvent(
+      type = "beforeinput",
+      data = source?.toString(),
+      inputType = org.nativescript.mason.masonkit.events.Event.InputType.InsertText.value
+    ).apply {
+      target = ownerRef
+    }
+
+    ownerRef.node.mason.dispatch(event)
+
+    if (event.defaultPrevented) {
+      "" // Cancel mutation
+    } else {
+      null // Allow mutation
+    }
+  }
 
   private val undoStack = ArrayDeque<String>()
   private val redoStack = ArrayDeque<String>()
@@ -60,7 +93,7 @@ class TextInput @JvmOverloads constructor(
 
       lastInputType = Event.InputType.InsertFromPaste.value
       lastInputData = text
-      input?.onBeforeInput(lastInputType!!, text.toString())
+      owner?.onBeforeInput(lastInputType!!, text.toString())
 
       // Skip the next commitText call (keyboard might try to commit the same text)
       skipNextCommitText = true
@@ -69,7 +102,7 @@ class TextInput @JvmOverloads constructor(
     }
 
     setOnFocusChangeListener { _, hasFocus ->
-      input?.let {
+      owner?.let {
         it.node.mason.dispatch(
           Event(
             type = if (hasFocus) "focus" else "blur",
@@ -86,7 +119,7 @@ class TextInput @JvmOverloads constructor(
 
         val type = lastInputType ?: return
 
-        input?.let {
+        owner?.let {
           it.node.mason.dispatch(
             InputEvent(
               type = "input",
@@ -117,7 +150,7 @@ class TextInput @JvmOverloads constructor(
         if (before > 0 && count == 0) {
           lastInputType = Event.InputType.DeleteContentBackward.value
           lastInputData = null
-          input?.onBeforeInput(lastInputType!!)
+          owner?.onBeforeInput(lastInputType!!)
           return
         }
 
@@ -130,7 +163,7 @@ class TextInput @JvmOverloads constructor(
           lastInputData = inserted
           lastIsComposing = isComposingText
 
-          input?.onBeforeInput(
+          owner?.onBeforeInput(
             lastInputType!!,
             inserted?.toString(),
             EventOptions().apply {
@@ -145,7 +178,7 @@ class TextInput @JvmOverloads constructor(
   fun undo() {
     if (undoStack.isEmpty()) return
 
-    val allowed = input?.onBeforeInput(
+    val allowed = owner?.onBeforeInput(
       Event.InputType.HistoryUndo.value
     ) ?: true
 
@@ -165,7 +198,7 @@ class TextInput @JvmOverloads constructor(
   fun redo() {
     if (redoStack.isEmpty()) return
 
-    val allowed = input?.onBeforeInput(
+    val allowed = owner?.onBeforeInput(
       Event.InputType.HistoryRedo.value
     ) ?: true
 
@@ -210,13 +243,13 @@ class TextInput @JvmOverloads constructor(
             android.view.KeyEvent.KEYCODE_DEL -> {
               lastInputType = Event.InputType.DeleteContentBackward.value
               lastInputData = null
-              input?.onBeforeInput(lastInputType!!)
+              owner?.onBeforeInput(lastInputType!!)
             }
 
             android.view.KeyEvent.KEYCODE_FORWARD_DEL -> {
               lastInputType = Event.InputType.DeleteContentForward.value
               lastInputData = null
-              input?.onBeforeInput(lastInputType!!)
+              owner?.onBeforeInput(lastInputType!!)
             }
           }
         }
@@ -229,7 +262,7 @@ class TextInput @JvmOverloads constructor(
           else Event.InputType.DeleteContentForward.value
 
         lastInputData = null
-        input?.onBeforeInput(lastInputType!!)
+        owner?.onBeforeInput(lastInputType!!)
         return super.deleteSurroundingText(before, after)
       }
 
@@ -254,7 +287,7 @@ class TextInput @JvmOverloads constructor(
         lastIsComposing = false
 
 
-        input?.onBeforeInput(
+        owner?.onBeforeInput(
           lastInputType!!,
           text?.toString(),
         )
@@ -272,7 +305,7 @@ class TextInput @JvmOverloads constructor(
         lastInputData = text
         lastIsComposing = true
 
-        input?.onBeforeInput(
+        owner?.onBeforeInput(
           lastInputType!!,
           text?.toString(),
           EventOptions().apply {
@@ -290,7 +323,7 @@ class TextInput @JvmOverloads constructor(
         lastInputData = null
         lastIsComposing = false
 
-        input?.onBeforeInput(
+        owner?.onBeforeInput(
           lastInputType!!,
           null
         )
@@ -305,7 +338,7 @@ class TextInput @JvmOverloads constructor(
   }
 
   internal val cursorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    color = input?.style?.resolvedColor ?: Color.BLACK
+    color = owner?.style?.resolvedColor ?: Color.BLACK
     strokeWidth = resources.displayMetrics.density
   }
 
