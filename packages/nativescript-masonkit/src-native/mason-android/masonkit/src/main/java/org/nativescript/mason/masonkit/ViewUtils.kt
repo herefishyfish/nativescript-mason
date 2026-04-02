@@ -116,7 +116,8 @@ class ViewUtils {
                 canvas.drawRect(0f, 0f, width, height, background.bgPaint)
               }
 
-              background.layers.forEach { layer ->
+              // Reverse so the first layer in the list is drawn on top.
+              background.layers.asReversed().forEach { layer ->
                 canvas.withSave {
                   // pass measured bounds so clip uses the real size instead of the
                   // potentially-zero computedWidth/Height stored on the node
