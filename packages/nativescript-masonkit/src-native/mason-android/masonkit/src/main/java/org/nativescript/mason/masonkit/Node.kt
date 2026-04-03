@@ -335,7 +335,7 @@ open class Node internal constructor(
 
   var view: Any? = null
 
-  internal var children = ArrayList<Node>(32)
+  internal var children = ArrayList<Node>(4)
   internal val style = Style(this)
 
   internal var suppressChildOps = 0

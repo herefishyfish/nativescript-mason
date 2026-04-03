@@ -53,10 +53,6 @@
           </div>
         </div>
 
-     <textarea id="story" name="story">
-It was a dark and stormy night...
-</textarea>
-
       </div>
     </Page>
   </Frame>

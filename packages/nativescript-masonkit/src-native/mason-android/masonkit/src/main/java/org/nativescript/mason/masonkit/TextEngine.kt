@@ -7,6 +7,8 @@ import android.text.Layout
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.StaticLayout
+import android.text.TextDirectionHeuristic
+import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.AlignmentSpan
@@ -26,6 +28,7 @@ import androidx.core.graphics.withTranslation
 import org.nativescript.mason.masonkit.Styles.TextWrap
 import org.nativescript.mason.masonkit.TextNode.FixedLineHeightSpan
 import org.nativescript.mason.masonkit.TextNode.RelativeLineHeightSpan
+import org.nativescript.mason.masonkit.enums.Direction
 import org.nativescript.mason.masonkit.enums.Display
 import org.nativescript.mason.masonkit.enums.FontVariantNumeric
 import org.nativescript.mason.masonkit.enums.TextAlign
@@ -47,7 +50,11 @@ private fun maxWordWidth(text: CharSequence, paint: TextPaint, useLayout: Boolea
     if (i == len || isWs) {
       if (i > start) {
         val sub = text.subSequence(start, i)
-        val w = if (useLayout) Layout.getDesiredWidth(sub, paint) else paint.measureText(sub, 0, sub.length)
+        val w = if (useLayout) Layout.getDesiredWidth(sub, paint) else paint.measureText(
+          sub,
+          0,
+          sub.length
+        )
         if (w > maxW) maxW = w
       }
       start = i + 1
@@ -182,6 +189,19 @@ class TextEngine(val container: TextContainer) {
       dirty = true
     }
 
+    if (StateKeys.hasFlag(low, high, StateKeys.WORD_SPACING)) {
+      paint.wordSpacing = style.resolvedWordSpacing
+      dirty = true
+    }
+
+    if (StateKeys.hasFlag(low, high, StateKeys.FONT_STRETCH)) {
+      val stretchPct = style.resolvedFontStretch
+      if (stretchPct > 0 && android.os.Build.VERSION.SDK_INT >= 31) {
+        paint.fontVariationSettings = "'wdth' $stretchPct"
+      }
+      dirty = true
+    }
+
 
     // Layout-affecting text flags: require invalidateInlineSegments (full recompute).
     val textLayoutChanged = hasTextLayoutFlags(low, high)
@@ -227,7 +247,12 @@ class TextEngine(val container: TextContainer) {
         StateKeys.hasFlag(low, high, StateKeys.TEXT_JUSTIFY) ||
         StateKeys.hasFlag(low, high, StateKeys.LINE_HEIGHT) ||
         StateKeys.hasFlag(low, high, StateKeys.TEXT_ALIGN) ||
-        StateKeys.hasFlag(low, high, StateKeys.TEXT_OVERFLOW)
+        StateKeys.hasFlag(low, high, StateKeys.TEXT_OVERFLOW) ||
+        StateKeys.hasFlag(low, high, StateKeys.WORD_SPACING) ||
+        StateKeys.hasFlag(low, high, StateKeys.WRITING_MODE) ||
+        StateKeys.hasFlag(low, high, StateKeys.UNICODE_BIDI) ||
+        StateKeys.hasFlag(low, high, StateKeys.HYPHENS) ||
+        StateKeys.hasFlag(low, high, StateKeys.FONT_STRETCH)
       )
   }
 
@@ -382,15 +407,7 @@ class TextEngine(val container: TextContainer) {
 
     var layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
 
-//      val heuristic = when (textDirection) {
-//        View.TEXT_DIRECTION_ANY_RTL -> android.text.TextDirectionHeuristics.ANYRTL_LTR
-//        View.TEXT_DIRECTION_LTR -> android.text.TextDirectionHeuristics.LTR
-//        View.TEXT_DIRECTION_RTL -> android.text.TextDirectionHeuristics.RTL
-//        View.TEXT_DIRECTION_LOCALE -> android.text.TextDirectionHeuristics.LOCALE
-//        View.TEXT_DIRECTION_FIRST_STRONG_RTL -> android.text.TextDirectionHeuristics.FIRSTSTRONG_RTL
-//        View.TEXT_DIRECTION_FIRST_STRONG_LTR -> android.text.TextDirectionHeuristics.FIRSTSTRONG_LTR
-//        else -> android.text.TextDirectionHeuristics.FIRSTSTRONG_LTR
-//      }
+      val heuristic = getTextDirectionHeuristic()
 
       var builder = StaticLayout.Builder.obtain(
         spannable, 0, spannable.length, paint, widthConstraint
@@ -398,7 +415,7 @@ class TextEngine(val container: TextContainer) {
         .setAlignment(alignment)
         .setLineSpacing(0f, 1f)
         .setIncludePad(includePadding)
-      //.setTextDirection(heuristic)
+        .setTextDirection(heuristic as  android.text.TextDirectionHeuristic)
 
 
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -512,15 +529,7 @@ class TextEngine(val container: TextContainer) {
       // rebuild static layout with the measuredWidth
       layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
 
-//      val heuristic = when (textDirection) {
-//        View.TEXT_DIRECTION_ANY_RTL -> android.text.TextDirectionHeuristics.ANYRTL_LTR
-//        View.TEXT_DIRECTION_LTR -> android.text.TextDirectionHeuristics.LTR
-//        View.TEXT_DIRECTION_RTL -> android.text.TextDirectionHeuristics.RTL
-//        View.TEXT_DIRECTION_LOCALE -> android.text.TextDirectionHeuristics.LOCALE
-//        View.TEXT_DIRECTION_FIRST_STRONG_RTL -> android.text.TextDirectionHeuristics.FIRSTSTRONG_RTL
-//        View.TEXT_DIRECTION_FIRST_STRONG_LTR -> android.text.TextDirectionHeuristics.FIRSTSTRONG_LTR
-//        else -> android.text.TextDirectionHeuristics.FIRSTSTRONG_LTR
-//      }
+        val heuristic = getTextDirectionHeuristic()
 
         var builder = StaticLayout.Builder.obtain(
           spannable, 0, spannable.length, paint, measuredWidth.toInt()
@@ -528,7 +537,7 @@ class TextEngine(val container: TextContainer) {
           .setAlignment(alignment)
           .setLineSpacing(0f, 1f)
           .setIncludePad(includePadding)
-        //.setTextDirection(heuristic)
+          .setTextDirection(heuristic as android.text.TextDirectionHeuristic)
 
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -578,6 +587,50 @@ class TextEngine(val container: TextContainer) {
       }
 
       else -> android.text.Layout.Alignment.ALIGN_NORMAL
+    }
+  }
+
+  /**
+   * Resolve CSS `direction` / `unicode-bidi` / `writing-mode` into a
+   * [TextDirectionHeuristic] for [StaticLayout.Builder.setTextDirection].
+   *
+   * Writing-mode values:
+   *   0 = horizontal-tb (default)
+   *   1 = vertical-rl
+   *   2 = vertical-lr
+   *   3 = sideways-rl
+   *   4 = sideways-lr
+   *
+   * Unicode-bidi values:
+   *   0 = normal         → use first-strong heuristic
+   *   1 = embed           → force LTR/RTL based on writing-mode direction
+   *   2 = bidi-override   → force LTR/RTL (override character bidi)
+   *   3 = isolate          → use first-strong heuristic
+   *   4 = isolate-override → force LTR/RTL
+   *   5 = plaintext        → use first-strong heuristic
+   */
+
+  internal fun getTextDirectionHeuristic(): TextDirectionHeuristic {
+    val writingMode = style.resolvedWritingMode.toInt()
+    val bidi = style.resolvedUnicodeBidi.toInt()
+    val direction = style.direction
+
+    // Determine the base direction from CSS `direction` property.
+    // writing-mode vertical-rl / sideways-rl are inherently RTL in the
+    // cross axis, but character direction still follows `direction`.
+    val isRTL = direction == Direction.RTL
+
+    return when (bidi) {
+      // embed, bidi-override, isolate-override → force direction
+      1, 2, 4 -> {
+        if (isRTL) TextDirectionHeuristics.RTL
+        else TextDirectionHeuristics.LTR
+      }
+      // normal, isolate, plaintext → first-strong heuristic
+      else -> {
+        if (isRTL) TextDirectionHeuristics.FIRSTSTRONG_RTL
+        else TextDirectionHeuristics.FIRSTSTRONG_LTR
+      }
     }
   }
 
@@ -765,10 +818,13 @@ class TextEngine(val container: TextContainer) {
 
     val alignment = getLayoutAlignment()
 
+    val heuristic = getTextDirectionHeuristic()
+
     var builder = StaticLayout.Builder.obtain(text, 0, text.length, paint, contentWidth)
       .setAlignment(alignment)
       .setLineSpacing(0f, 1f)
       .setIncludePad(includePadding)
+      .setTextDirection(heuristic)
       .setIndents(leftIndents, rightIndents)
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -1768,12 +1824,69 @@ class TextEngine(val container: TextContainer) {
 
     isBuilding = false
 
+    // Wrap with Unicode bidi control characters when unicode-bidi requires
+    // character-level overrides beyond what StaticLayout's text direction
+    // heuristic provides.
+    val bidi = style.resolvedUnicodeBidi.toInt()
+    val isRTL = style.direction == Direction.RTL
+
+    val wrapped = when (bidi) {
+      1 -> {
+        // embed: LRE (U+202A) or RLE (U+202B) + PDF (U+202C)
+        val result = SpannableStringBuilder()
+        result.append(if (isRTL) "\u202B" else "\u202A")
+        result.append(composed)
+        result.append("\u202C")
+        result
+      }
+
+      2 -> {
+        // bidi-override: LRO (U+202D) or RLO (U+202E) + PDF (U+202C)
+        val result = SpannableStringBuilder()
+        result.append(if (isRTL) "\u202E" else "\u202D")
+        result.append(composed)
+        result.append("\u202C")
+        result
+      }
+
+      3 -> {
+        // isolate: LRI (U+2066) or RLI (U+2067) + PDI (U+2069)
+        val result = SpannableStringBuilder()
+        result.append(if (isRTL) "\u2067" else "\u2066")
+        result.append(composed)
+        result.append("\u2069")
+        result
+      }
+
+      4 -> {
+        // isolate-override: LRI/RLI + LRO/RLO + content + PDF + PDI
+        val result = SpannableStringBuilder()
+        result.append(if (isRTL) "\u2067" else "\u2066")
+        result.append(if (isRTL) "\u202E" else "\u202D")
+        result.append(composed)
+        result.append("\u202C")
+        result.append("\u2069")
+        result
+      }
+
+      5 -> {
+        // plaintext: FSI (U+2068) + PDI (U+2069)
+        val result = SpannableStringBuilder()
+        result.append("\u2068")
+        result.append(composed)
+        result.append("\u2069")
+        result
+      }
+
+      else -> composed // 0 = normal, no wrapping needed
+    }
+
     // Cache the result
-    cachedAttributedString = composed
+    cachedAttributedString = wrapped
     // mark cached string as up-to-date with the current invalidate version
     attributedStringVersion = segmentsInvalidateVersion
 
-    return composed
+    return wrapped
   }
 
   internal fun invalidateInlineSegments(markDirty: Boolean = true) {

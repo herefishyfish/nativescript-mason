@@ -56,12 +56,16 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
   func onStyleChange(_ low: UInt64, _ high: UInt64) {
     let state = StateKeys(low: low, high: high)
     let color = state.contains(.color)
+    let caretColorChanged = state.contains(.caretColor)
     let size = state.contains(.fontSize)
     let font = state.contains(.fontWeight) || state.contains(.fontStyle) || state.contains(.fontFamily)
     switch self.type {
     case .Text, .Number, .Email, .Password, .Tel, .Url:
       if(color){
         textInput.textColor = UIColor.colorFromARGB(style.resolvedColor)
+        textInput.tintColor = UIColor.colorFromARGB(style.resolvedCaretColor)
+      } else if(caretColorChanged){
+        textInput.tintColor = UIColor.colorFromARGB(style.resolvedCaretColor)
       }
       if(font || size){
         let resolved = style.resolvedFontFace
@@ -616,7 +620,7 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
     }
     switch type {
     case .Text, .Email, .Password, .Tel, .Url:
-      textInput.tintColor = UIColor.colorFromARGB(style.resolvedColor)
+      textInput.tintColor = UIColor.colorFromARGB(style.resolvedCaretColor)
       configure { style in
         style.border = "1"
         style.borderRadius = "4"

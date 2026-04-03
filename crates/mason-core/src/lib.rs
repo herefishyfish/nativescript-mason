@@ -115,10 +115,18 @@ impl MeasureOutput {
 }
 
 fn copy_output(taffy: &Tree, node: Id, output: &mut Vec<f32>) {
-    let layout = taffy.layout_raw(node);
-    // (previously had a defensive clamp here; reverted to preserve raw
-    // computed values so we can trace origins upstream)
-    if let Some(children) = taffy.inner().children.get(node) {
+    // Hold a single read lock for the entire tree walk instead of acquiring
+    // 2 locks per node (layout_raw + inner().children).
+    let inner = taffy.inner();
+    let use_rounding = inner.use_rounding;
+    copy_output_inner(&inner, node, output, use_rounding);
+}
+
+fn copy_output_inner(inner: &crate::tree::TreeInner, node: Id, output: &mut Vec<f32>, use_rounding: bool) {
+    let n = &inner.nodes[node];
+    let layout = if use_rounding { n.final_layout } else { n.unrounded_layout };
+
+    if let Some(children) = inner.children.get(node) {
         let len = children.len();
         output.reserve(len * 22);
 
@@ -126,19 +134,11 @@ fn copy_output(taffy: &Tree, node: Id, output: &mut Vec<f32>) {
         output.push(layout.location.x);
         output.push(layout.location.y);
         output.push(layout.size.width);
-        // If the computed layout height is tiny (possibly from underflow or
-        // an uninitialized/near-zero result) but the content_size indicates
-        // a meaningful height, prefer exporting the content_size so the
-        // platform receives a usable value. Do not mutate the internal
-        // layout; only adjust the exported value.
         let mut export_h = layout.size.height;
         if export_h.abs() <= 1e-6 && layout.content_size.height > export_h {
             export_h = layout.content_size.height;
         }
         output.push(export_h);
-
-        // reorder if rect constructor changes
-        // Current order T,R,B,L
 
         output.push(layout.border.top);
         output.push(layout.border.right);
@@ -164,14 +164,22 @@ fn copy_output(taffy: &Tree, node: Id, output: &mut Vec<f32>) {
         output.push(len as f32);
 
         for child in children {
-            copy_output(taffy, *child, output);
+            copy_output_inner(inner, *child, output, use_rounding);
         }
     }
 }
 
 fn copy_output_count(taffy: &Tree, node: Id, output: &mut Vec<f32>, count: &mut usize) {
-    let layout = taffy.layout(node);
-    if let Some(children) = taffy.inner().children.get(node) {
+    let inner = taffy.inner();
+    let use_rounding = inner.use_rounding;
+    copy_output_count_inner(&inner, node, output, count, use_rounding);
+}
+
+fn copy_output_count_inner(inner: &crate::tree::TreeInner, node: Id, output: &mut Vec<f32>, count: &mut usize, use_rounding: bool) {
+    let n = &inner.nodes[node];
+    let layout = if use_rounding { n.final_layout } else { n.unrounded_layout };
+
+    if let Some(children) = inner.children.get(node) {
         let len = children.len();
         *count += 1;
         output.reserve(len * 22);
@@ -206,7 +214,7 @@ fn copy_output_count(taffy: &Tree, node: Id, output: &mut Vec<f32>, count: &mut 
         output.push(len as f32);
 
         for child in children {
-            copy_output_count(taffy, *child, output, count);
+            copy_output_count_inner(inner, *child, output, count, use_rounding);
         }
     }
 }
@@ -380,36 +388,9 @@ impl Mason {
             .nodes_mut()
             .get_mut(node)
             .and_then(|node| {
-                if let Some(p) = &node.pseudo_styles {
-                    use crate::node::PseudoStates;
-                    let bits = PseudoStates::from_bits_truncate(flags);
-                    if bits.contains(PseudoStates::HOVER) {
-                        if let Some(s) = &p.hover {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if let Some(s) = &p.active {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if let Some(s) = &p.focus {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if let Some(s) = &p.disabled {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if let Some(s) = &p.checked {
-                            return Some(s.buffer());
-                        }
-                    }
-                }
-                None
+                node.pseudo_styles.as_ref()
+                    .and_then(|p| p.resolve(flags))
+                    .map(|s| s.buffer())
             })
             .unwrap_or(-1 as _)
     }
@@ -420,36 +401,9 @@ impl Mason {
             .nodes()
             .get(node)
             .and_then(|node| {
-                if let Some(p) = &node.pseudo_styles {
-                    use crate::node::PseudoStates;
-                    let bits = PseudoStates::from_bits_truncate(flags);
-                    if bits.contains(PseudoStates::HOVER) {
-                        if let Some(s) = &p.hover {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if let Some(s) = &p.active {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if let Some(s) = &p.focus {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if let Some(s) = &p.disabled {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if let Some(s) = &p.checked {
-                            return Some(s.raw());
-                        }
-                    }
-                }
-                None
+                node.pseudo_styles.as_ref()
+                    .and_then(|p| p.resolve(flags))
+                    .map(|s| s.raw())
             })
             .unwrap_or((0 as _, 0))
     }
@@ -458,36 +412,9 @@ impl Mason {
     #[track_caller]
     pub fn pseudo_style_handle(&self, node: Id, flags: u16) -> Option<u32> {
         self.0.nodes().get(node).and_then(|node| {
-            if let Some(p) = &node.pseudo_styles {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
-                if bits.contains(PseudoStates::HOVER) {
-                    if let Some(s) = &p.hover {
-                        return Some(s.handle.index() as u32);
-                    }
-                }
-                if bits.contains(PseudoStates::ACTIVE) {
-                    if let Some(s) = &p.active {
-                        return Some(s.handle.index() as u32);
-                    }
-                }
-                if bits.contains(PseudoStates::FOCUS) {
-                    if let Some(s) = &p.focus {
-                        return Some(s.handle.index() as u32);
-                    }
-                }
-                if bits.contains(PseudoStates::DISABLED) {
-                    if let Some(s) = &p.disabled {
-                        return Some(s.handle.index() as u32);
-                    }
-                }
-                if bits.contains(PseudoStates::CHECKED) {
-                    if let Some(s) = &p.checked {
-                        return Some(s.handle.index() as u32);
-                    }
-                }
-            }
-            None
+            node.pseudo_styles.as_ref()
+                .and_then(|p| p.resolve(flags))
+                .map(|s| s.handle.index() as u32)
         })
     }
 
@@ -500,67 +427,12 @@ impl Mason {
             .nodes_mut()
             .get_mut(node)
             .and_then(|node| {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
-
                 if node.pseudo_styles.is_none() {
                     node.pseudo_styles = Some(node::PseudoStyles::default());
                 }
-
-                if let Some(p) = &mut node.pseudo_styles {
-                    // choose first matching pseudo in priority order
-                    if bits.contains(PseudoStates::HOVER) {
-                        if p.hover.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.hover = Some(s);
-                        } else {
-                            p.hover.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.hover.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if p.active.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.active = Some(s);
-                        } else {
-                            p.active.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.active.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if p.focus.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.focus = Some(s);
-                        } else {
-                            p.focus.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.focus.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if p.disabled.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.disabled = Some(s);
-                        } else {
-                            p.disabled.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.disabled.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if p.checked.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.checked = Some(s);
-                        } else {
-                            p.checked.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.checked.as_mut().unwrap().raw_mut());
-                    }
-                }
-                None
+                node.pseudo_styles.as_mut().unwrap()
+                    .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                    .map(|s| s.raw_mut())
             })
             .unwrap_or((0 as _, 0))
     }
@@ -572,36 +444,9 @@ impl Mason {
             .nodes()
             .get(node)
             .and_then(|node| {
-                if let Some(p) = &node.pseudo_styles {
-                    use crate::node::PseudoStates;
-                    let bits = PseudoStates::from_bits_truncate(flags);
-                    if bits.contains(PseudoStates::HOVER) {
-                        if let Some(s) = &p.hover {
-                            return Some(objc2::rc::Retained::into_raw(s.buffer()) as _);
-                        }
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if let Some(s) = &p.active {
-                            return Some(objc2::rc::Retained::into_raw(s.buffer()) as _);
-                        }
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if let Some(s) = &p.focus {
-                            return Some(objc2::rc::Retained::into_raw(s.buffer()) as _);
-                        }
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if let Some(s) = &p.disabled {
-                            return Some(objc2::rc::Retained::into_raw(s.buffer()) as _);
-                        }
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if let Some(s) = &p.checked {
-                            return Some(objc2::rc::Retained::into_raw(s.buffer()) as _);
-                        }
-                    }
-                }
-                None
+                node.pseudo_styles.as_ref()
+                    .and_then(|p| p.resolve(flags))
+                    .map(|s| objc2::rc::Retained::into_raw(s.buffer()) as _)
             })
             .unwrap_or(0 as _)
     }
@@ -613,77 +458,12 @@ impl Mason {
             .nodes_mut()
             .get_mut(node)
             .and_then(|node| {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
-
                 if node.pseudo_styles.is_none() {
                     node.pseudo_styles = Some(node::PseudoStyles::default());
                 }
-
-                if let Some(p) = &mut node.pseudo_styles {
-                    // choose first matching pseudo in priority order
-                    if bits.contains(PseudoStates::HOVER) {
-                        if p.hover.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.hover = Some(s);
-                        } else {
-                            p.hover.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(objc2::rc::Retained::into_raw(
-                            p.hover.as_mut().unwrap().buffer(),
-                        ) as *mut c_void);
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if p.active.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.active = Some(s);
-                        } else {
-                            p.active.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(objc2::rc::Retained::into_raw(
-                            p.active.as_mut().unwrap().buffer(),
-                        ) as *mut c_void);
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if p.focus.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.focus = Some(s);
-                        } else {
-                            p.focus.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(objc2::rc::Retained::into_raw(
-                            p.focus.as_mut().unwrap().buffer(),
-                        ) as *mut c_void);
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if p.disabled.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.disabled = Some(s);
-                        } else {
-                            p.disabled.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(objc2::rc::Retained::into_raw(
-                            p.disabled.as_mut().unwrap().buffer(),
-                        ) as *mut c_void);
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if p.checked.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.checked = Some(s);
-                        } else {
-                            p.checked.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(objc2::rc::Retained::into_raw(
-                            p.checked.as_mut().unwrap().buffer(),
-                        ) as *mut c_void);
-                    }
-                }
-                None
+                node.pseudo_styles.as_mut().unwrap()
+                    .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                    .map(|s| objc2::rc::Retained::into_raw(s.buffer()) as *mut c_void)
             })
             .unwrap_or(0 as _)
     }
@@ -693,67 +473,12 @@ impl Mason {
     #[track_caller]
     pub fn pseudo_style_handle_mut(&mut self, node: Id, flags: u16) -> Option<u32> {
         self.0.nodes_mut().get_mut(node).and_then(|node| {
-            use crate::node::PseudoStates;
-            let bits = PseudoStates::from_bits_truncate(flags);
-
             if node.pseudo_styles.is_none() {
                 node.pseudo_styles = Some(crate::node::PseudoStyles::default());
             }
-
-            if let Some(p) = &mut node.pseudo_styles {
-                // choose first matching pseudo in priority order
-                if bits.contains(PseudoStates::HOVER) {
-                    if p.hover.is_none() {
-                        let mut s = node.style.clone();
-                        initialize_pseudo_style_from_base(&mut s);
-                        p.hover = Some(s);
-                    } else {
-                        p.hover.as_mut().unwrap().prepare_mut();
-                    }
-                    return Some(p.hover.as_ref().unwrap().handle.index() as u32);
-                }
-                if bits.contains(PseudoStates::ACTIVE) {
-                    if p.active.is_none() {
-                        let mut s = node.style.clone();
-                        initialize_pseudo_style_from_base(&mut s);
-                        p.active = Some(s);
-                    } else {
-                        p.active.as_mut().unwrap().prepare_mut();
-                    }
-                    return Some(p.active.as_ref().unwrap().handle.index() as u32);
-                }
-                if bits.contains(PseudoStates::FOCUS) {
-                    if p.focus.is_none() {
-                        let mut s = node.style.clone();
-                        initialize_pseudo_style_from_base(&mut s);
-                        p.focus = Some(s);
-                    } else {
-                        p.focus.as_mut().unwrap().prepare_mut();
-                    }
-                    return Some(p.focus.as_ref().unwrap().handle.index() as u32);
-                }
-                if bits.contains(PseudoStates::DISABLED) {
-                    if p.disabled.is_none() {
-                        let mut s = node.style.clone();
-                        initialize_pseudo_style_from_base(&mut s);
-                        p.disabled = Some(s);
-                    } else {
-                        p.disabled.as_mut().unwrap().prepare_mut();
-                    }
-                    return Some(p.disabled.as_ref().unwrap().handle.index() as u32);
-                }
-                if bits.contains(PseudoStates::CHECKED) {
-                    if p.checked.is_none() {
-                        let mut s = node.style.clone();
-                        initialize_pseudo_style_from_base(&mut s);
-                        p.checked = Some(s);
-                    } else {
-                        p.checked.as_mut().unwrap().prepare_mut();
-                    }
-                    return Some(p.checked.as_ref().unwrap().handle.index() as u32);
-                }
-            }
-            None
+            node.pseudo_styles.as_mut().unwrap()
+                .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                .map(|s| s.handle.index() as u32)
         })
     }
 
@@ -764,67 +489,12 @@ impl Mason {
             .nodes_mut()
             .get_mut(node)
             .and_then(|node| {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
-
                 if node.pseudo_styles.is_none() {
                     node.pseudo_styles = Some(crate::node::PseudoStyles::default());
                 }
-
-                if let Some(p) = &mut node.pseudo_styles {
-                    if bits.contains(PseudoStates::HOVER) {
-                        if p.hover.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.hover = Some(s);
-                        } else {
-                            p.hover.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.hover.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if p.active.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.active = Some(s);
-                        } else {
-                            p.active.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.active.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if p.focus.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.focus = Some(s);
-                        } else {
-                            p.focus.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.focus.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if p.disabled.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.disabled = Some(s);
-                        } else {
-                            p.disabled.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.disabled.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if p.checked.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.checked = Some(s);
-                        } else {
-                            p.checked.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.checked.as_ref().unwrap().buffer());
-                    }
-                }
-
-                None
+                node.pseudo_styles.as_mut().unwrap()
+                    .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                    .map(|s| s.buffer())
             })
             .unwrap_or(-1 as _)
     }

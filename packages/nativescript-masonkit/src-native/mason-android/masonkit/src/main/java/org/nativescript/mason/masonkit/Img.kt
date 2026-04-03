@@ -174,13 +174,19 @@ class Img @JvmOverloads constructor(
     dstF.set(dstLeft, dstTop, dstLeft + cw.toFloat(), dstTop + ch.toFloat())
 
     mImgMatrix.reset()
+    // Read object-position offsets from style buffer (percentage 0..100, default 50 = center)
+    val opXType = style.values.get(StyleKeys.OBJECT_POSITION_X_TYPE)
+    val opYType = style.values.get(StyleKeys.OBJECT_POSITION_Y_TYPE)
+    val opXPct = if (opXType != 0.toByte()) style.values.getFloat(StyleKeys.OBJECT_POSITION_X_VALUE) / 100f else 0.5f
+    val opYPct = if (opYType != 0.toByte()) style.values.getFloat(StyleKeys.OBJECT_POSITION_Y_VALUE) / 100f else 0.5f
+
     when (style.objectFit) {
       ObjectFit.Cover -> {
         if (iw > 0 && ih > 0) {
           val scale = max(cw.toFloat() / iw, ch.toFloat() / ih)
 
-          val dx = dstLeft + (cw - iw * scale) / 2f
-          val dy = dstTop + (ch - ih * scale) / 2f
+          val dx = dstLeft + (cw - iw * scale) * opXPct
+          val dy = dstTop + (ch - ih * scale) * opYPct
 
           mImgMatrix.reset()
           mImgMatrix.setScale(scale, scale)
@@ -194,8 +200,8 @@ class Img @JvmOverloads constructor(
       ObjectFit.Contain -> {
         if (iw > 0 && ih > 0) {
           val scale = kotlin.math.min(cw.toFloat() / iw, ch.toFloat() / ih)
-          val dx = dstLeft + (cw - iw * scale) / 2f
-          val dy = dstTop + (ch - ih * scale) / 2f
+          val dx = dstLeft + (cw - iw * scale) * opXPct
+          val dy = dstTop + (ch - ih * scale) * opYPct
           mImgMatrix.setScale(scale, scale)
           mImgMatrix.postTranslate(dx, dy)
         } else {
@@ -215,8 +221,8 @@ class Img @JvmOverloads constructor(
         if (iw > 0 && ih > 0) {
           val containScale = kotlin.math.min(cw.toFloat() / iw, ch.toFloat() / ih)
           val scale = kotlin.math.min(1f, containScale)
-          val dx = dstLeft + (cw - iw * scale) / 2f
-          val dy = dstTop + (ch - ih * scale) / 2f
+          val dx = dstLeft + (cw - iw * scale) * opXPct
+          val dy = dstTop + (ch - ih * scale) * opYPct
           mImgMatrix.setScale(scale, scale)
           mImgMatrix.postTranslate(dx, dy)
         } else {
@@ -230,24 +236,22 @@ class Img @JvmOverloads constructor(
     val suppress = (getTag(R.id.tag_suppress_ops) as? Boolean) == true
     val callSuper = suppress || !(iw > 0 && ih > 0 && cw > 0 && ch > 0)
 
-    if (!callSuper) {
-      // clip to the image content box so object-fit results don't paint outside the view bounds
-      val clipLeft = paddingLeft.toFloat()
-      val clipTop = paddingTop.toFloat()
-      val clipRight = clipLeft + cw.toFloat()
-      val clipBottom = clipTop + ch.toFloat()
-
-      canvas.withClip(clipLeft, clipTop, clipRight, clipBottom) {
-        canvas.withMatrix(mImgMatrix) {
-          d.setBounds(0, 0, iw, ih)
-          d.draw(this)
-        }
-      }
-    }
-
-    ViewUtils.onDraw(this, canvas, style) {
+    ViewUtils.onDraw(this, canvas, style) { c ->
       if (callSuper) {
-        super.onDraw(it)
+        super.onDraw(c)
+      } else {
+        // clip to the image content box so object-fit results don't paint outside the view bounds
+        val clipLeft = paddingLeft.toFloat()
+        val clipTop = paddingTop.toFloat()
+        val clipRight = clipLeft + cw.toFloat()
+        val clipBottom = clipTop + ch.toFloat()
+
+        c.withClip(clipLeft, clipTop, clipRight, clipBottom) {
+          c.withMatrix(mImgMatrix) {
+            d!!.setBounds(0, 0, iw, ih)
+            d.draw(this)
+          }
+        }
       }
     }
   }

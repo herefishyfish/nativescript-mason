@@ -279,6 +279,25 @@ public struct StyleKeys {
   public static let MAX_INLINE_TRANSFORM_OPS = 6
   public static let TRANSFORM_FLAG_HAS_MATRIX: UInt8 = 0x01
   public static let TRANSFORM_FLAG_IS_3D: UInt8 = 0x02
+
+  public static let OBJECT_POSITION_X_TYPE = 560
+  public static let OBJECT_POSITION_Y_TYPE = 561
+  public static let OBJECT_POSITION_X_VALUE = 562    // f32
+  public static let OBJECT_POSITION_Y_VALUE = 566    // f32
+  public static let OBJECT_POSITION_STATE = 570
+  public static let WRITING_MODE = 571
+  public static let WRITING_MODE_STATE = 572
+  public static let UNICODE_BIDI = 573
+  public static let UNICODE_BIDI_STATE = 574
+  public static let HYPHENS = 575
+  public static let HYPHENS_STATE = 576
+  public static let CARET_COLOR = 577                // u32
+  public static let CARET_COLOR_STATE = 581
+  public static let WORD_SPACING = 582               // f32
+  public static let WORD_SPACING_TYPE = 586
+  public static let WORD_SPACING_STATE = 587
+  public static let FONT_STRETCH = 588               // i32 (pct * 100)
+  public static let FONT_STRETCH_STATE = 592
 }
 
 @objc public enum TransformOpType: UInt8 {
@@ -396,6 +415,13 @@ public struct StateKeys: Equatable {
   public static let fontFamily = StateKeys(69)
   public static let letterSpacing = StateKeys(70)
   public static let fontVariantNumeric = StateKeys(71)
+  public static let objectPosition = StateKeys(72)
+  public static let writingMode = StateKeys(73)
+  public static let unicodeBidi = StateKeys(74)
+  public static let hyphens = StateKeys(75)
+  public static let caretColor = StateKeys(76)
+  public static let wordSpacing = StateKeys(77)
+  public static let fontStretch = StateKeys(78)
 
   /// Union of all text-relevant keys that may differ in a pseudo buffer.
   public static let pseudoText = StateKeys(
@@ -581,6 +607,9 @@ public class MasonStyle: NSObject {
   internal var isDirty: UInt64 = 0
   // high 64-bit half for expanded 128-bit state keys
   internal var isDirtyHigh: UInt64 = 0
+  /// Monotonically increasing counter bumped on every style sync.
+  /// Used by MasonNode to invalidate cached getDefaultAttributes().
+  internal private(set) var styleVersion: UInt64 = 0
   internal var isSlowDirty = false {
     didSet {
       if (!inBatch) {
@@ -613,10 +642,12 @@ public class MasonStyle: NSObject {
   
   
   internal func notifyTextStyleChanged(_ low: UInt64, _ high: UInt64) {
+    styleVersion &+= 1
     styleChangeListener?.onStyleChange(low, high)
   }
   
   internal func notifyTextStyleChanged(_ state: StateKeys) {
+    styleVersion &+= 1
     styleChangeListener?.onStyleChange(state.low, state.high)
   }
   
@@ -806,41 +837,30 @@ public class MasonStyle: NSObject {
     let lowDirty = isDirty
     let highDirty = isDirtyHigh
     if (lowDirty > 0 || highDirty > 0) {
-      var invalidate = false
-      let value = StateKeys(low: isDirty, high: highDirty)
-      let colorDirty = value.contains(.color)
-      let sizeDirty = value.contains(.fontSize)
-      let weightDirty = value.contains(.fontWeight)
-      let styleDirty = value.contains(.fontStyle)
-      if (value.contains(.textTransform) || value.contains(.textWrap) || value.contains(.whiteSpace) || value.contains(.textOverflow) || colorDirty || value.contains(.backgroundColor) || value.contains(.decorationColor) || value.contains(.decorationLine) || sizeDirty || weightDirty || styleDirty || value.contains(.letterSpacing) || value.contains(.lineHeight)
-      ) {
-        invalidate = true
-      }
-      
+      let value = StateKeys(low: lowDirty, high: highDirty)
+
+      // All text-relevant keys that TextEngine.onStyleChange checks.
+      // Forward the intersection of dirty flags and text keys so the
+      // engine takes the correct layout vs visual-only branch.
+      let textKeys: [StateKeys] = [
+        .color, .fontSize, .fontWeight, .fontStyle, .fontFamily,
+        .textTransform, .textWrap, .whiteSpace, .textOverflow,
+        .backgroundColor, .decorationColor, .decorationLine, .decorationStyle,
+        .letterSpacing, .lineHeight, .textAlign, .textJustify,
+        .verticalAlign, .textShadow, .fontVariantNumeric,
+        .hyphens, .wordSpacing, .writingMode, .unicodeBidi, .fontStretch,
+        .decorationThinkness
+      ]
+
       var state: StateKeys = .none
-      
-      if (styleDirty) {
-        state = state.union(.fontStyle)
+      for key in textKeys {
+        if value.contains(key) {
+          state = state.union(key)
+        }
       }
-      
-      if (weightDirty) {
-        state = state.union(.fontWeight)
-      }
-      
-      if (sizeDirty) {
-        state = state.union(.fontSize)
-      }
-      
-      if (colorDirty) {
-        state = state.union(.color)
-      }
-      
-      
-      if(invalidate){
-        pendingInvalidation = pendingInvalidation.union(.pending)
-      }
-      
+
       if (state != .none) {
+        pendingInvalidation = pendingInvalidation.union(.pending)
         notifyTextStyleChanged(state)
       }
     }
@@ -1003,7 +1023,14 @@ public class MasonStyle: NSObject {
     let flags = getUInt8(StyleKeys.TRANSFORM_FLAGS)
 
     if count == 0 && (flags & StyleKeys.TRANSFORM_FLAG_HAS_MATRIX) == 0 {
-      DispatchQueue.main.async { view.transform = .identity; view.layer.transform = CATransform3DIdentity }
+      // Only reset if currently transformed
+      if view.transform != .identity || !CATransform3DIsIdentity(view.layer.transform) {
+        if Thread.isMainThread {
+          view.transform = .identity; view.layer.transform = CATransform3DIdentity
+        } else {
+          DispatchQueue.main.async { view.transform = .identity; view.layer.transform = CATransform3DIdentity }
+        }
+      }
       return
     }
 
@@ -2783,7 +2810,13 @@ public class MasonStyle: NSObject {
           mShadowLayer.isHidden = true
         }
         
-        view.setNeedsDisplay()
+        // Invalidate draw flags so _cachedHasBoxShadow is recalculated
+        // before the next draw() pass — prevents stale early-out.
+        if let masonView = view as? MasonUIView {
+          masonView.invalidateDrawFlags()
+        } else {
+          view.setNeedsDisplay()
+        }
       }
     }
   }
@@ -2827,6 +2860,10 @@ public class MasonStyle: NSObject {
   public var borderRadius: String = "" {
     didSet {
       CSSBorderRenderer.parseBorderRadius(self, borderRadius)
+      // Ensure draw flags are refreshed so border-radius-dependent
+      // rendering (background clip, overflow mask) picks up the change
+      // even when the view's size hasn't changed.
+      (node.view as? MasonUIView)?.invalidateDrawFlags()
     }
   }
   
@@ -3851,6 +3888,51 @@ public class MasonStyle: NSObject {
     }
   }
   
+  // MARK: - border-image (string-based, parsed natively)
+  
+  @objc public var borderImage: String = "" {
+    didSet {
+      if let view = node.view {
+        view.setNeedsDisplay()
+      }
+    }
+  }
+  
+  
+  // MARK: - backdrop-filter (string-based, parsed natively)
+
+  lazy var mBackdropFilter: CSSFilters.CSSFilter = {
+    CSSFilters.CSSFilter()
+  }()
+
+  @objc public var backdropFilter: String = "" {
+    didSet {
+      if backdropFilter.isEmpty && !mBackdropFilter.filters.isEmpty {
+        mBackdropFilter.reset()
+        if let view = node.view {
+          view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop" })?.removeFromSuperlayer()
+        }
+        return
+      }
+
+      mBackdropFilter.parse(css: backdropFilter)
+
+      if !mBackdropFilter.filters.isEmpty {
+        if let view = node.view {
+          mBackdropFilter.applyAsBackdrop(to: view)
+        }
+      }
+    }
+  }
+  
+  
+  // MARK: - font-feature-settings (string-based)
+
+  @objc public var fontFeatureSettings: String = "normal" {
+    didSet {
+      notifyTextStyleChanged(StateKeys.fontFamily)
+    }
+  }
   
   public func updateNativeStyle() {
     if(inBatch || pendingInvalidation.contains(.invalidating) || pendingInvalidation.rawValue == 0){
@@ -3998,11 +4080,18 @@ public class MasonStyle: NSObject {
         if(state.contains(.zIndex)){
           element?.uiView.layer.zPosition = CGFloat(zIndex)
         }
+        if state.contains(.caretColor) {
+          notifyTextStyleChanged(.caretColor)
+        }
+        if state.contains(.objectPosition) {
+          (node.view as? Img)?.masonLayer.setNeedsLayout()
+        }
       }
       
       isSlowDirty = false
       isDirty = 0
       isDirtyHigh = 0
+      styleVersion &+= 1
       pendingInvalidation = pendingInvalidation.union(.invalidating)
       (node.view as? MasonElement)?.requestLayout()
       pendingInvalidation = .none
@@ -4012,18 +4101,29 @@ public class MasonStyle: NSObject {
     if (isDirty != 0 || isDirtyHigh != 0) {
       
       let element = node.view as? MasonElement
+      let state = StateKeys(low: isDirty, high: isDirtyHigh)
 
        updateTextStyle()
       
       if(isDirty > 0){
-        let state = StateKeys(low: isDirty, high: isDirtyHigh)
         if(state.contains(.zIndex)){
           element?.uiView.layer.zPosition = CGFloat(zIndex)
         }
       }
+
+      // Dispatch caret-color to input views
+      if state.contains(.caretColor) {
+        notifyTextStyleChanged(.caretColor)
+      }
+
+      // Dispatch object-position to image views
+      if state.contains(.objectPosition) {
+        (node.view as? Img)?.masonLayer.setNeedsLayout()
+      }
       
       isDirty = 0
       isDirtyHigh = 0
+      styleVersion &+= 1
       pendingInvalidation = pendingInvalidation.union(.invalidating)
       element?.requestLayout()
       pendingInvalidation = .none
@@ -4458,5 +4558,93 @@ extension MasonStyle {
   func resetFontVariantNumericToInherit() {
     setUInt8(StyleKeys.FONT_VARIANT_NUMERIC_STATE, StyleState.INHERIT)
     notifyTextStyleChanged(StateKeys.fontVariantNumeric)
+  }
+
+  internal var resolvedBorderImageString: String {
+    for state in PSEUDO_CSS_ORDER.reversed() {
+      if node.hasPseudo(state) {
+        if let s = node.getPseudoString(state.rawValue, "border-image"), !s.isEmpty {
+          return s
+        }
+      }
+    }
+    return borderImage
+  }
+
+  internal var resolvedBackdropFilterString: String {
+    for state in PSEUDO_CSS_ORDER.reversed() {
+      if node.hasPseudo(state) {
+        if let s = node.getPseudoString(state.rawValue, "backdrop-filter"), !s.isEmpty {
+          return s
+        }
+      }
+    }
+    return backdropFilter
+  }
+
+
+  internal var resolvedFontFeatureSettingsString: String {
+    for state in PSEUDO_CSS_ORDER.reversed() {
+      if node.hasPseudo(state) {
+        if let s = node.getPseudoString(state.rawValue, "font-feature-settings"), !s.isEmpty {
+          return s
+        }
+      }
+    }
+    return fontFeatureSettings
+  }
+
+  internal var resolvedCaretColor: UInt32 {
+    let state = getUInt8(StyleKeys.CARET_COLOR_STATE)
+    if state == StyleState.SET {
+      return getUInt32(Int(StyleKeys.CARET_COLOR))
+    } else if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedCaretColor ?? resolvedColor
+    }
+    // auto → fall back to currentColor
+    return resolvedColor
+  }
+
+  internal var resolvedWordSpacing: Float {
+    let state = getUInt8(StyleKeys.WORD_SPACING_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedWordSpacing ?? getFloat(StyleKeys.WORD_SPACING)
+    }
+    if state == StyleState.SET {
+      return getFloat(StyleKeys.WORD_SPACING)
+    }
+    return 0
+  }
+
+  internal var resolvedWritingMode: UInt8 {
+    let state = getUInt8(StyleKeys.WRITING_MODE_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedWritingMode ?? getUInt8(StyleKeys.WRITING_MODE)
+    }
+    return getUInt8(StyleKeys.WRITING_MODE)
+  }
+
+  internal var resolvedUnicodeBidi: UInt8 {
+    let state = getUInt8(StyleKeys.UNICODE_BIDI_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedUnicodeBidi ?? getUInt8(StyleKeys.UNICODE_BIDI)
+    }
+    return getUInt8(StyleKeys.UNICODE_BIDI)
+  }
+
+  internal var resolvedHyphens: UInt8 {
+    let state = getUInt8(StyleKeys.HYPHENS_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedHyphens ?? getUInt8(StyleKeys.HYPHENS)
+    }
+    return getUInt8(StyleKeys.HYPHENS)
+  }
+
+  internal var resolvedFontStretch: Int32 {
+    let state = getUInt8(StyleKeys.FONT_STRETCH_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedFontStretch ?? getInt32(StyleKeys.FONT_STRETCH)
+    }
+    return getInt32(StyleKeys.FONT_STRETCH)
   }
 }

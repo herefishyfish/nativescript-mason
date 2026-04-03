@@ -5,7 +5,7 @@ use crate::{Id, InlineSegment, Tree};
 use taffy::{
     compute_leaf_layout, AvailableSpace, BlockContext, BoxSizing, CoreStyle, Dimension, Display,
     LayoutInput, LayoutOutput, LayoutPartialTree, MaybeMath, MaybeResolve, NodeId, Point,
-    ResolveOrZero, Size, SizingMode,
+    Position, ResolveOrZero, Size, SizingMode,
 };
 
 /// Represents an item in a line during inline layout
@@ -909,6 +909,15 @@ impl InlineFormattingContext {
 }
 
 impl Tree {
+    /// Returns true if the child has `position: absolute`.
+    fn is_absolutely_positioned(&self, child_id: Id) -> bool {
+        if let Some(node) = self.inner().nodes.get(child_id) {
+            node.style().get_position() == Position::Absolute
+        } else {
+            false
+        }
+    }
+
     fn is_inline_level(&self, child_id: Id) -> bool {
         if let Some(node) = self.inner().nodes.get(child_id) {
             let style = node.style();
@@ -2033,6 +2042,143 @@ impl Tree {
         )
     }
 
+    /// Lay out absolutely-positioned children after the IFC pass.
+    ///
+    /// Per CSS 2.1 §10.1 / CSS Position §3, absolutely-positioned elements are
+    /// removed from the normal flow. Their containing block is the nearest
+    /// ancestor that establishes one (here: the inline/inline-* container's
+    /// padding box). Inset properties (top/left/right/bottom) resolve against
+    /// that containing block. If both left and right (or top and bottom) are
+    /// auto the element is placed at the static position (0, 0) of the
+    /// containing block.
+    fn layout_absolute_children(
+        &mut self,
+        abs_children: &[Id],
+        container_size: Size<f32>,
+        pb: taffy::Rect<f32>,
+        parent_size: Size<Option<f32>>,
+        inputs: LayoutInput,
+    ) {
+        let cb_width = (container_size.width - pb.left - pb.right).max(0.0);
+        let cb_height = (container_size.height - pb.top - pb.bottom).max(0.0);
+
+        for &child_id in abs_children {
+            let child_style = self.nodes()[child_id].style().clone();
+            let child_node_id = NodeId::from(child_id);
+
+            // Resolve child's own size constraints
+            let child_size = child_style
+                .size()
+                .maybe_resolve(Size { width: Some(cb_width), height: Some(cb_height) }, |_v, _b| 0.0);
+            let child_min_size = child_style
+                .min_size()
+                .maybe_resolve(Size { width: Some(cb_width), height: Some(cb_height) }, |_v, _b| 0.0);
+            let child_max_size = child_style
+                .max_size()
+                .maybe_resolve(Size { width: Some(cb_width), height: Some(cb_height) }, |_v, _b| 0.0);
+            let child_margin = child_style
+                .get_margin()
+                .resolve_or_zero(Size { width: Some(cb_width), height: Some(cb_height) }, |_v, _b| 0.0);
+
+            let inset = child_style.get_inset();
+            let inset_left = inset.left.maybe_resolve(Some(cb_width), |_v, _b| 0.0);
+            let inset_right = inset.right.maybe_resolve(Some(cb_width), |_v, _b| 0.0);
+            let inset_top = inset.top.maybe_resolve(Some(cb_height), |_v, _b| 0.0);
+            let inset_bottom = inset.bottom.maybe_resolve(Some(cb_height), |_v, _b| 0.0);
+
+            // Determine known width: if left+right are both specified
+            // and width is auto, shrink to fit. Otherwise use explicit width.
+            let known_width = child_size.width.or_else(|| {
+                match (inset_left, inset_right) {
+                    (Some(l), Some(r)) => {
+                        Some((cb_width - l - r - child_margin.left - child_margin.right).max(0.0))
+                    }
+                    _ => None,
+                }
+            });
+
+            let known_height = child_size.height.or_else(|| {
+                match (inset_top, inset_bottom) {
+                    (Some(t), Some(b)) => {
+                        Some((cb_height - t - b - child_margin.top - child_margin.bottom).max(0.0))
+                    }
+                    _ => None,
+                }
+            });
+
+            let child_inputs = LayoutInput {
+                known_dimensions: Size {
+                    width: known_width,
+                    height: known_height,
+                },
+                parent_size: Size {
+                    width: Some(cb_width),
+                    height: Some(cb_height),
+                },
+                available_space: Size {
+                    width: AvailableSpace::Definite(cb_width),
+                    height: AvailableSpace::Definite(cb_height),
+                },
+                ..inputs
+            };
+
+            let child_layout = self.compute_child_layout(child_node_id, child_inputs);
+            let child_w = child_layout.size.width;
+            let child_h = child_layout.size.height;
+
+            // Resolve x position
+            let x = if let Some(l) = inset_left {
+                pb.left + l + child_margin.left
+            } else if let Some(r) = inset_right {
+                (container_size.width - pb.right - r - child_margin.right - child_w).max(0.0)
+            } else {
+                // Static position: place at content-box origin
+                pb.left + child_margin.left
+            };
+
+            // Resolve y position
+            let y = if let Some(t) = inset_top {
+                pb.top + t + child_margin.top
+            } else if let Some(b) = inset_bottom {
+                (container_size.height - pb.bottom - b - child_margin.bottom - child_h).max(0.0)
+            } else {
+                pb.top + child_margin.top
+            };
+
+            if let Some(node) = self.nodes_mut().get_mut(child_id) {
+                node.unrounded_layout.location = Point { x, y };
+                node.unrounded_layout.size = child_layout.size;
+                node.unrounded_layout.content_size = child_layout.content_size;
+                let child_padding = child_style
+                    .get_padding()
+                    .resolve_or_zero(parent_size, |_v, _b| 0.0);
+                let child_border = child_style
+                    .border()
+                    .resolve_or_zero(parent_size, |_v, _b| 0.0);
+                node.unrounded_layout.padding = child_padding;
+                node.unrounded_layout.border = child_border;
+            }
+
+            // Notify platform of computed size
+            #[cfg(target_vendor = "apple")]
+            if let Some(data) = self.node_data_mut().get_mut(child_id) {
+                if let Some(node) = data.apple_data.as_mut() {
+                    node.set_computed_size(child_w as f64, child_h as f64);
+                }
+            }
+
+            #[cfg(test)]
+            crate::test_helpers::call_computed_size(child_id, child_w, child_h);
+
+            #[cfg(target_os = "android")]
+            if let Some(data) = self.node_data_mut().get_mut(child_id) {
+                if let Some(node) = data.android_data.as_mut() {
+                    node.set_computed_size(child_w, child_h);
+                }
+            }
+        }
+    }
+
     pub fn compute_inline_or_mixed_layout(
         &mut self,
         node_id: NodeId,
@@ -2041,6 +2187,18 @@ impl Tree {
     ) -> LayoutOutput {
         let id: Id = node_id.into();
         let child_ids: Vec<Id> = self.inner().children.get(id).cloned().unwrap_or_default();
+
+        // Partition children: absolutely-positioned children are removed from
+        // the normal flow and laid out separately after the IFC pass.
+        let mut flow_child_ids: Vec<Id> = Vec::with_capacity(child_ids.len());
+        let mut abs_child_ids: Vec<Id> = Vec::new();
+        for &cid in &child_ids {
+            if self.is_absolutely_positioned(cid) {
+                abs_child_ids.push(cid);
+            } else {
+                flow_child_ids.push(cid);
+            }
+        }
 
         let (style, is_text_container, has_measure, type_) = {
             let node = &self.nodes()[id];
@@ -2155,7 +2313,7 @@ impl Tree {
             // their computed sizes must NOT be set before the parent measures,
             // otherwise the native measure includes their heights and inflates
             // the parent's total height.
-            for &child_id in &child_ids {
+            for &child_id in &flow_child_ids {
                 if self.is_pure_inline(child_id) {
                     continue;
                 }
@@ -2208,7 +2366,7 @@ impl Tree {
             // Phase 2: Now measure pure inline children (after parent).
             // Their sizes are needed for IFC positioning but must not
             // affect the parent's height.
-            for &child_id in &child_ids {
+            for &child_id in &flow_child_ids {
                 if self.is_pure_inline(child_id) {
                     self.measure_inline_child(child_id, child_inputs);
                 }
@@ -2225,7 +2383,7 @@ impl Tree {
             };
 
             // If there are children, we need to position them using IFC
-            if !child_ids.is_empty() {
+            if !flow_child_ids.is_empty() {
                 let mut prepared_items: Vec<PreparedItem> = Vec::new();
 
                 // Build prepared items from segments (which include text and inline children)
@@ -2285,7 +2443,7 @@ impl Tree {
                 if prepared_items.is_empty() {
                     // Ensure inline descendants are measured before requesting baselines.
                     // Traverse descendants using a stack to avoid recursion.
-                    let mut stack: Vec<Id> = child_ids.clone();
+                    let mut stack: Vec<Id> = flow_child_ids.clone();
                     while let Some(cur) = stack.pop() {
                         if self.is_inline_level(cur) {
                             let sz = self.nodes()[cur].unrounded_layout.size;
@@ -2300,7 +2458,7 @@ impl Tree {
                         }
                     }
 
-                    for &child_id in &child_ids {
+                    for &child_id in &flow_child_ids {
                         let (
                             size,
                             margin,
@@ -2448,6 +2606,11 @@ impl Tree {
                 }
             }
 
+            // Lay out absolutely-positioned children after the IFC pass
+            if !abs_child_ids.is_empty() {
+                self.layout_absolute_children(&abs_child_ids, ret.size, pb, parent_size, inputs);
+            }
+
             return ret;
         }
 
@@ -2460,8 +2623,8 @@ impl Tree {
             vec
         };
 
-        if child_ids.is_empty() && segments.is_empty() {
-            return if has_measure {
+        if flow_child_ids.is_empty() && segments.is_empty() {
+            let leaf_output = if has_measure {
                 let measure = self.node_data().get(id).unwrap().copy_measure();
                 compute_leaf_layout(
                     inputs,
@@ -2474,6 +2637,10 @@ impl Tree {
             } else {
                 compute_leaf_layout(inputs, &style, |_val, _basis| 0.0, |_, _| Size::ZERO)
             };
+            if !abs_child_ids.is_empty() {
+                self.layout_absolute_children(&abs_child_ids, leaf_output.size, pb, parent_size, inputs);
+            }
+            return leaf_output;
         }
 
         let sizing_mode = match inputs.available_space.width {
@@ -2486,7 +2653,7 @@ impl Tree {
             ..content_box_child_base
         };
 
-        for &child_id in &child_ids {
+        for &child_id in &flow_child_ids {
             if self.is_inline_level(child_id) {
                 self.measure_inline_child(child_id, child_inputs);
             } else {
@@ -2496,7 +2663,7 @@ impl Tree {
 
         let mut prepared_items: Vec<PreparedItem> = Vec::new();
 
-        if !segments.is_empty() && child_ids.is_empty() {
+        if !segments.is_empty() && flow_child_ids.is_empty() {
             for segment in &segments {
                 match segment {
                     InlineSegment::Text {
@@ -2545,7 +2712,7 @@ impl Tree {
                 }
             }
         } else {
-            for &child_id in &child_ids {
+            for &child_id in &flow_child_ids {
                 let (
                     size,
                     margin,
@@ -2702,6 +2869,11 @@ impl Tree {
             if let Some(node) = data.android_data.as_mut() {
                 node.set_computed_size(output.size.width, output.size.height);
             }
+        }
+
+        // Lay out absolutely-positioned children after the IFC pass
+        if !abs_child_ids.is_empty() {
+            self.layout_absolute_children(&abs_child_ids, output.size, pb, parent_size, inputs);
         }
 
         output

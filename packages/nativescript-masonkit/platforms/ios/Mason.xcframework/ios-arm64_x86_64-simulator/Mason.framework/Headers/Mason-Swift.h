@@ -1283,6 +1283,9 @@ SWIFT_CLASS_NAMED("MasonStyle")
 @property (nonatomic, copy) NSString * _Nonnull gridRowEnd;
 @property (nonatomic, copy) NSString * _Nonnull gridTemplateRows;
 @property (nonatomic, copy) NSString * _Nonnull gridTemplateColumns;
+@property (nonatomic, copy) NSString * _Nonnull borderImage;
+@property (nonatomic, copy) NSString * _Nonnull backdropFilter;
+@property (nonatomic, copy) NSString * _Nonnull fontFeatureSettings;
 - (void)updateNativeStyle;
 @property (nonatomic, readonly, copy) NSString * _Nonnull description;
 - (nonnull instancetype)init SWIFT_UNAVAILABLE;
@@ -3271,6 +3274,9 @@ SWIFT_CLASS_NAMED("MasonStyle")
 @property (nonatomic, copy) NSString * _Nonnull gridRowEnd;
 @property (nonatomic, copy) NSString * _Nonnull gridTemplateRows;
 @property (nonatomic, copy) NSString * _Nonnull gridTemplateColumns;
+@property (nonatomic, copy) NSString * _Nonnull borderImage;
+@property (nonatomic, copy) NSString * _Nonnull backdropFilter;
+@property (nonatomic, copy) NSString * _Nonnull fontFeatureSettings;
 - (void)updateNativeStyle;
 @property (nonatomic, readonly, copy) NSString * _Nonnull description;
 - (nonnull instancetype)init SWIFT_UNAVAILABLE;

@@ -181,7 +181,9 @@ export class Scroll extends ViewBase {
     return false;
   }
 
-  _setNativeViewFrame(nativeView: any, frame: any): void {}
+  _setNativeViewFrame(nativeView: any, frame: any): void {
+    nativeView.frame = frame;
+  }
 
   // @ts-ignore
   public _removeViewFromNativeVisualTree(view: MasonChild): void {

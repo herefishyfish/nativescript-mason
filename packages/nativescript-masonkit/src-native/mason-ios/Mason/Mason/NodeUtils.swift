@@ -57,10 +57,14 @@ class NodeUtils {
   }
   
   static func syncNode(_ node: MasonNode, _ children: [MasonNode]) {
-    let nativeChildren = children
-      .map{$0.nativePtr}
-      .filter { $0 != nil }
-      .map(\.self)
+    // Avoid intermediate array allocations — filter and collect in a single pass
+    var nativeChildren = [OpaquePointer?]()
+    nativeChildren.reserveCapacity(children.count)
+    for child in children {
+      if let ptr = child.nativePtr {
+        nativeChildren.append(ptr)
+      }
+    }
     mason_node_set_children(node.mason.nativePtr, node.nativePtr, nativeChildren, UInt(nativeChildren.count))
   }
 }

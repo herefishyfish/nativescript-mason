@@ -111,12 +111,20 @@ class MasonShadowLayer: CALayer {
     style.mBorderRender.resolve(for: cachedBounds)
     let hasRadii = style.mBorderRender.hasRadii()
     
-    // Pre-compute the inner clip used to mask every shadow iteration
+    // Pre-compute the inner clip used to mask every shadow iteration.
+    // Expand the inner clip by 1 device pixel so its anti-aliased edge
+    // sits underneath the view's opaque background.  Without this, the
+    // partially-transparent clip-edge pixels are visible through the
+    // view's transparent rounded corners, producing a dark fringe.
+    let scale = UIScreen.main.scale
+    let expand: CGFloat = 1.0 / scale
+    let expandedViewRect = viewRect.insetBy(dx: -expand, dy: -expand)
+
     let innerClipPath: UIBezierPath
     if hasRadii {
-      innerClipPath = style.mBorderRender.getClipPath(rect: viewRect, radius: style.mBorderRender.radius)
+      innerClipPath = style.mBorderRender.getClipPath(rect: expandedViewRect, radius: style.mBorderRender.radius)
     } else {
-      innerClipPath = UIBezierPath(rect: viewRect)
+      innerClipPath = UIBezierPath(rect: expandedViewRect)
     }
     let reversedInner = innerClipPath.reversing()
 
@@ -155,9 +163,20 @@ class MasonShadowLayer: CALayer {
       context.addPath(clipPath.cgPath)
       context.clip()
 
-      // Draw shadow
+      // Draw shadow: fill the shape with an OPAQUE color so that the
+      // shadow projection carries the intended alpha from `shadowColor`
+      // alone.  The fill itself is clipped away (inner rect excluded),
+      // so only the blurred shadow projection is visible.  Using a
+      // translucent fill would double-attenuate the shadow (fill alpha
+      // × shadow-color alpha), producing a nearly invisible result.
+      //
+      // Use the shadow's own color (at full opacity) instead of black
+      // so that anti-alias bleed at the clip edge blends toward the
+      // shadow color rather than producing a visible black fringe —
+      // especially noticeable with small blur radii.
       context.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
-      context.setFillColor(shadow.color.cgColor)
+      let opaqueColor = shadow.color.withAlphaComponent(1.0).cgColor
+      context.setFillColor(opaqueColor)
       context.addPath(shadowPath.cgPath)
       context.fillPath()
 

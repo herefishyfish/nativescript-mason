@@ -154,6 +154,16 @@ public class MasonNode: NSObject {
   
   public internal(set) var computedLayout = MasonLayout.empty
   
+  // Cached default attributes — invalidated when style version changes
+  private var _cachedDefaultAttributes: [NSAttributedString.Key: Any]?
+  private var _defaultAttrsStyleVersion: UInt64 = 0
+  
+  /// Invalidate the cached default attributes (call when style changes that
+  /// affect text rendering).
+  internal func invalidateDefaultAttributes() {
+    _cachedDefaultAttributes = nil
+  }
+  
   /// Set to true by applyToView after Mason has applied layout to this node's view.
   /// NativeScript can read this to skip redundant layout passes for Mason-managed children.
   @objc public var isLayoutValid: Bool = false
@@ -511,6 +521,8 @@ public class MasonNode: NSObject {
   }
   
   deinit {
+    // Clean up event listeners to break strong reference from NSCMason
+    mason.removeAllEventListeners(self)
     guard let nativePtr else { return }
     mason_node_destroy(nativePtr)
   }
@@ -539,6 +551,19 @@ public class MasonNode: NSObject {
   
   /// Helper to get default text attributes for new text nodes
   public func getDefaultAttributes() -> [NSAttributedString.Key: Any] {
+    // Return cached result if style hasn't changed
+    let currentVersion = style.styleVersion
+    if let cached = _cachedDefaultAttributes, _defaultAttrsStyleVersion == currentVersion {
+      return cached
+    }
+    
+    let attrs = _buildDefaultAttributes()
+    _cachedDefaultAttributes = attrs
+    _defaultAttrsStyleVersion = currentVersion
+    return attrs
+  }
+  
+  private func _buildDefaultAttributes() -> [NSAttributedString.Key: Any] {
     var attrs: [NSAttributedString.Key: Any] = [:]
     
     if(style.font.font == nil){
@@ -715,8 +740,54 @@ public class MasonNode: NSObject {
       break
     }
     
+    // Base writing direction from unicode-bidi + direction
+    let bidi = Int(style.resolvedUnicodeBidi)
+    let writingMode = Int(style.resolvedWritingMode)
+    let direction = style.direction
+    
+    switch bidi {
+    case 1, 2, 4: // embed, bidi-override, isolate-override → force direction
+      if direction == .RTL {
+        paragraphStyle.baseWritingDirection = .rightToLeft
+      } else {
+        paragraphStyle.baseWritingDirection = .leftToRight
+      }
+    default: // normal, isolate, plaintext → natural
+      if direction == .RTL {
+        paragraphStyle.baseWritingDirection = .rightToLeft
+      } else if direction == .LTR {
+        paragraphStyle.baseWritingDirection = .leftToRight
+      } else {
+        paragraphStyle.baseWritingDirection = .natural
+      }
+    }
+    
     // Paragraph style
     attrs[.paragraphStyle] = paragraphStyle
+    
+    // Per-run bidi overrides via .writingDirection attribute
+    // Values are NSNumber arrays combining NSWritingDirection and NSWritingDirectionFormatType
+    if bidi > 0 {
+      let baseDir: NSWritingDirection = (direction == .RTL) ? .rightToLeft : .leftToRight
+      var dirValues: [NSNumber] = []
+      
+      switch bidi {
+      case 1: // embed
+        dirValues = [NSNumber(value: baseDir.rawValue | NSWritingDirectionFormatType.embedding.rawValue)]
+      case 2: // bidi-override
+        dirValues = [NSNumber(value: baseDir.rawValue | NSWritingDirectionFormatType.override.rawValue)]
+      case 3: // isolate
+        dirValues = [NSNumber(value: baseDir.rawValue | NSWritingDirectionFormatType.embedding.rawValue)]
+      case 4: // isolate-override
+        dirValues = [NSNumber(value: baseDir.rawValue | NSWritingDirectionFormatType.override.rawValue)]
+      default:
+        break
+      }
+      
+      if !dirValues.isEmpty {
+        attrs[.writingDirection] = dirValues
+      }
+    }
     
     
     return attrs

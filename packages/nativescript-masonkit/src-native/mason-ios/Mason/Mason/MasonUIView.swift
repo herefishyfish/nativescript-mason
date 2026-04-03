@@ -12,24 +12,41 @@ import Foundation
 @objc(MasonUIView)
 public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementObjc, StyleChangeListener {
   func onStyleChange(_ low: UInt64, _ high: UInt64) {
+    invalidateDrawFlags()
     MasonNode.invalidateDescendantTextViews(node, low, high)
   }
   
   internal let maskPath = CGMutablePath()
   
-  public override func draw(_ rect: CGRect) {
-
+  // Cached draw-state flags — updated on style change, not every frame
+  internal var _cachedHasBackground = false
+  internal var _cachedHasBoxShadow = false
+  internal var _cachedHasBorder = false
+  internal var _cachedHasFilter = false
+  internal var _drawFlagsDirty = true
+  
+  internal func invalidateDrawFlags() {
+    _drawFlagsDirty = true
+    setNeedsDisplay()
+  }
+  
+  private func updateDrawFlagsIfNeeded() {
+    guard _drawFlagsDirty else { return }
+    _drawFlagsDirty = false
     let bgString = style.background.trimmingCharacters(in: .whitespacesAndNewlines)
-    let hasBackground: Bool = {
-      if !bgString.isEmpty { return true }
-      if !style.mBackground.layers.isEmpty { return true }
-      if style.mBackground.color != nil { return true }
-      return false
-    }()
-    let hasBoxShadow = !style.boxShadows.isEmpty
-    let hasBorder = !style.mBorderRender.css.isEmpty
-    
-    let hasFilter = !style.resolvedFilterString.isEmpty
+    _cachedHasBackground = !bgString.isEmpty || !style.mBackground.layers.isEmpty || style.mBackground.color != nil
+    _cachedHasBoxShadow = !style.boxShadows.isEmpty
+    _cachedHasBorder = !style.mBorderRender.css.isEmpty
+    _cachedHasFilter = !style.resolvedFilterString.isEmpty
+  }
+  
+  public override func draw(_ rect: CGRect) {
+    updateDrawFlagsIfNeeded()
+
+    let hasBackground = _cachedHasBackground
+    let hasBoxShadow = _cachedHasBoxShadow
+    let hasBorder = _cachedHasBorder
+    let hasFilter = _cachedHasFilter
 
     // Early-out: skip all CoreGraphics work for plain views with no decoration
     guard hasBackground || hasBoxShadow || hasBorder || hasFilter else { return }
@@ -70,19 +87,13 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       style.mBoxShadowRenderer.drawInsetShadows(in: context, rect: bounds, borderRenderer: style.mBorderRender)
     }
 
-    // Border: when rounded radii exist, draw the border inside a rounded clip
-    // so the stroke overlays the background and avoids visible gaps with outset shadows.
+    // Border: CSSBorderRenderer.draw() builds its own rounded stroke paths
+    // internally, so an external clip is unnecessary. Clipping to the exact
+    // outer edge caused anti-aliased pixels to blend against the CGContext's
+    // default opaque-black fill, producing visible black fringing when both
+    // border-radius and box-shadow are present.
     if hasBorder {
-      if hasRadii {
-        context.saveGState()
-        let outerPath = style.mBorderRender.getClipPath(rect: bounds, radius: style.mBorderRender.radius)
-        context.addPath(outerPath.cgPath)
-        context.clip()
-        style.mBorderRender.draw(in: context, rect: bounds)
-        context.restoreGState()
-      } else {
-        style.mBorderRender.draw(in: context, rect: bounds)
-      }
+      style.mBorderRender.draw(in: context, rect: bounds)
     }
 
     style.applyResolvedFilter(in: context, rect: bounds, view: self)
@@ -163,10 +174,13 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     // Expensive per-size work: shadow layer and compositing hints.
     // Skip when only bounds.origin changed (scroll step) — size is unchanged.
     let currentSize = bounds.size
+    // Always update shadow layer position — frame.origin may change without
+    // a size change (re-layout, animation) and the shadow layer lives in the
+    // superview's coordinate space, keyed to our frame.
+    style.updateShadowLayer(for: CGRect(origin: .zero, size: currentSize))
     guard !currentSize.equalTo(_lastBoundsSize) else { return }
     _lastBoundsSize = currentSize
-    // Shadow layer lives at the visual frame — always use zero origin.
-    style.updateShadowLayer(for: CGRect(origin: .zero, size: currentSize))
+    invalidateDrawFlags()
     #if DEBUG
    // if !(superview is MasonElement) {
       node.mason.printTree(node)
@@ -185,9 +199,15 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       isOpaque = false
     }
 
-    // Rasterize complex decorated views (gradient + radii or box shadow)
+    // Rasterize complex decorated views (gradient + radii or box shadow).
+    // IMPORTANT: never rasterize when layer.mask is set — Core Animation
+    // rasterises the layer content first, then applies the mask.  At
+    // anti-aliased mask edges the premultiplied-alpha compositing produces
+    // visible dark/black fringes (especially noticeable on dark backgrounds
+    // with border-radius + box-shadow).
     let hasGradient = !bg.layers.isEmpty
-    if hasGradient && style.mBorderRender.hasRadii() || hasBoxShadow {
+    let wantsRasterize = (hasGradient && style.mBorderRender.hasRadii()) || hasBoxShadow
+    if wantsRasterize && layer.mask == nil {
       layer.shouldRasterize = true
       layer.rasterizationScale = UIScreen.main.scale
     } else {

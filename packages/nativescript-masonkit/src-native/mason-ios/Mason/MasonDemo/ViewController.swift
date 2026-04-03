@@ -875,6 +875,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
 
   // MARK: - Gallery Demo (polished cards)
   func gallerySample() {
+    body.style.background = "#FAFBFC"
     
     let root = mason.createView()
     root.display = .Flex
@@ -902,11 +903,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       card.style.background = "#FFFFFF"
       card.style.borderRadius = "8px"
       card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"
-      card.style.overflow = MasonPoint(uniform: .Clip)
 
       let iv = mason.createImageView()
-      iv.style.setSizeHeight(.Points(minWidth))
-      iv.style.setSizeWidth(.Percent(1))
+      iv.style.size = MasonSize(.Percent(1), .Points(minWidth))
       iv.style.objectFit = .Cover
       loadImage("https://picsum.photos/seed/gallery\(i)/800/500", imageInstance: iv, parent: card.uiView)
       card.addView(iv)
@@ -914,7 +913,12 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       let meta = mason.createView()
       meta.display = .Flex
       meta.flexDirection = .Column
-      meta.style.padding = MasonRect(uniform: .Points(toPx(24)))
+      meta.style.padding = MasonRect(
+        .Points(toPx(16)),
+        .Points(toPx(12)),
+        .Points(toPx(12)),
+        .Points(toPx(12))
+      )
 
       let title = mason.createTextView(type: .Span)
       title.append(text: "Gallery Item #\(i)")
@@ -1029,7 +1033,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     super.viewDidLoad()
     // Add a simple demo picker at the top and the Mason body below it
     let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle","Shadow","Display"])
-    demoPicker.selectedSegmentIndex = 5
+    demoPicker.selectedSegmentIndex = 3
     demoPicker.addTarget(self, action: #selector(demoChanged(_:)), for: .valueChanged)
     demoPicker.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(demoPicker)

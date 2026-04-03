@@ -1,4 +1,4 @@
-import { CoreTypes } from '@nativescript/core';
+import { Color, CoreTypes } from '@nativescript/core';
 
 import { TextBase, ViewBase } from './common';
 import { LengthPercentage } from '@nativescript/core/css/parser';
@@ -102,6 +102,21 @@ declare module '@nativescript/core/ui/styling/style' {
     cornerShapeTopRight: string;
     cornerShapeBottomRight: string;
     cornerShapeBottomLeft: string;
+    objectPosition: string;
+    borderStyle: string;
+    borderLeftStyle: string;
+    borderRightStyle: string;
+    borderTopStyle: string;
+    borderBottomStyle: string;
+    borderImage: string;
+    fontStretch: string;
+    fontFeatureSettings: string;
+    wordSpacing: string;
+    hyphens: 'none' | 'manual' | 'auto';
+    writingMode: 'horizontal-tb' | 'horizontal-lr' | 'vertical-rl' | 'vertical-lr';
+    unicodeBidi: 'normal' | 'embed' | 'bidi-override';
+    backdropFilter: string;
+    caretColor: string | Color;
   }
 }
 
@@ -159,6 +174,21 @@ interface Style {
   cornerShapeTopRight: string;
   cornerShapeBottomRight: string;
   cornerShapeBottomLeft: string;
+  objectPosition: string;
+  borderStyle: string;
+  borderLeftStyle: string;
+  borderRightStyle: string;
+  borderTopStyle: string;
+  borderBottomStyle: string;
+  borderImage: string;
+  fontStretch: string;
+  fontFeatureSettings: string;
+  wordSpacing: string;
+  hyphens: 'none' | 'manual' | 'auto';
+  writingMode: 'horizontal-tb' | 'horizontal-lr' | 'vertical-rl' | 'vertical-lr';
+  unicodeBidi: 'normal' | 'embed' | 'bidi-override';
+  backdropFilter: string;
+  caretColor: string | Color;
 }
 
 interface IViewBase {
@@ -214,6 +244,21 @@ interface IViewBase {
   cornerShapeTopRight: string;
   cornerShapeBottomRight: string;
   cornerShapeBottomLeft: string;
+  objectPosition: string;
+  borderStyle: string;
+  borderLeftStyle: string;
+  borderRightStyle: string;
+  borderTopStyle: string;
+  borderBottomStyle: string;
+  borderImage: string;
+  fontStretch: string;
+  fontFeatureSettings: string;
+  wordSpacing: string;
+  hyphens: 'none' | 'manual' | 'auto';
+  writingMode: 'horizontal-tb' | 'horizontal-lr' | 'vertical-rl' | 'vertical-lr';
+  unicodeBidi: 'normal' | 'embed' | 'bidi-override';
+  backdropFilter: string;
+  caretColor: string | Color;
 }
 
 class VBase extends ViewBase implements IViewBase {

@@ -45,7 +45,7 @@ func parseLengthPercentage(_ value: String, scale: Float = NSCMason.scale) -> Ma
       : nil
   
   switch unit {
-  case "px": return .Points(num)
+  case "px": return .Points(num * scale)
   case "%": return .Percent(num / 100)
   case "dip": return .Points(num * scale)
   default: do {
@@ -76,7 +76,7 @@ func parseLengthPercentageAuto(_ value: String, scale: Float = NSCMason.scale) -
   
   switch unit {
   case "auto": return .Auto
-  case "px": return .Points(num)
+  case "px": return .Points(num * scale)
   case "%": return .Percent(num / 100)
   case "dip": return .Points(num * scale)
   default: do {
@@ -109,9 +109,9 @@ func parseLength(_ style: MasonStyle, _ value: String, scale: Float = NSCMason.s
   switch unit {
   case "px":
     if(resolve){
-      return num / scale
+      return num
     }
-    return num
+    return num * scale
   case "%": return 0
   case "dip": return num * scale
   case "em": return (Float(style.fontSize) * scale) * num

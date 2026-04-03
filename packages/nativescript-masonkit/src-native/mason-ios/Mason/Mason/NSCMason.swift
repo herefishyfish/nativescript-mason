@@ -17,6 +17,7 @@ public class NSCMason: NSObject {
   
   public static var shared = NSCMason()
   
+  // Use NSMapTable with weak keys to avoid retaining nodes that have been removed
   private var nodeEventListeners: [MasonNode: [String: [UUID: (MasonEvent) -> Void]]] = [:]
 
   
@@ -157,6 +158,10 @@ public class NSCMason: NSObject {
               listener(event)
           }
       }
+  }
+
+  internal func removeAllEventListeners(_ node: MasonNode) {
+    nodeEventListeners.removeValue(forKey: node)
   }
 
   

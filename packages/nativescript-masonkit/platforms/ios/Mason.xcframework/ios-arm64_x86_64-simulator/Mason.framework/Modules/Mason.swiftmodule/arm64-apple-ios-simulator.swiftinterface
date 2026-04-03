@@ -1232,6 +1232,7 @@ public struct MasonNodeView {
     public func invalidate()
     public func applyFast(in context: CoreGraphics.CGContext, rect: CoreFoundation.CGRect) -> Swift.Bool
     public func apply(to view: UIKit.UIView)
+    public func applyAsBackdrop(to view: UIKit.UIView)
     @objc deinit
   }
   @objc deinit
@@ -1760,6 +1761,24 @@ public struct StyleKeys {
   public static let MAX_INLINE_TRANSFORM_OPS: Swift.Int
   public static let TRANSFORM_FLAG_HAS_MATRIX: Swift.UInt8
   public static let TRANSFORM_FLAG_IS_3D: Swift.UInt8
+  public static let OBJECT_POSITION_X_TYPE: Swift.Int
+  public static let OBJECT_POSITION_Y_TYPE: Swift.Int
+  public static let OBJECT_POSITION_X_VALUE: Swift.Int
+  public static let OBJECT_POSITION_Y_VALUE: Swift.Int
+  public static let OBJECT_POSITION_STATE: Swift.Int
+  public static let WRITING_MODE: Swift.Int
+  public static let WRITING_MODE_STATE: Swift.Int
+  public static let UNICODE_BIDI: Swift.Int
+  public static let UNICODE_BIDI_STATE: Swift.Int
+  public static let HYPHENS: Swift.Int
+  public static let HYPHENS_STATE: Swift.Int
+  public static let CARET_COLOR: Swift.Int
+  public static let CARET_COLOR_STATE: Swift.Int
+  public static let WORD_SPACING: Swift.Int
+  public static let WORD_SPACING_TYPE: Swift.Int
+  public static let WORD_SPACING_STATE: Swift.Int
+  public static let FONT_STRETCH: Swift.Int
+  public static let FONT_STRETCH_STATE: Swift.Int
 }
 @objc public enum TransformOpType : Swift.UInt8 {
   case none = 0
@@ -1860,6 +1879,13 @@ public struct StateKeys : Swift.Equatable {
   public static let fontFamily: Mason.StateKeys
   public static let letterSpacing: Mason.StateKeys
   public static let fontVariantNumeric: Mason.StateKeys
+  public static let objectPosition: Mason.StateKeys
+  public static let writingMode: Mason.StateKeys
+  public static let unicodeBidi: Mason.StateKeys
+  public static let hyphens: Mason.StateKeys
+  public static let caretColor: Mason.StateKeys
+  public static let wordSpacing: Mason.StateKeys
+  public static let fontStretch: Mason.StateKeys
   public static let pseudoText: Mason.StateKeys
   public static func == (a: Mason.StateKeys, b: Mason.StateKeys) -> Swift.Bool
 }
@@ -2403,6 +2429,18 @@ public struct StateKeys : Swift.Equatable {
     @objc set
   }
   @objc public var gridTemplateColumns: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var borderImage: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var backdropFilter: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var fontFeatureSettings: Swift.String {
     @objc get
     @objc set
   }

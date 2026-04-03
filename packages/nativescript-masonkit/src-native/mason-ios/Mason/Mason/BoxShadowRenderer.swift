@@ -74,9 +74,12 @@ class BoxShadowRenderer {
       context.addPath(clipPath.cgPath)
       context.clip()
 
-      // Draw shadow
+      // Draw shadow: fill with OPAQUE color so the shadow projection
+      // carries the intended alpha from shadowColor alone. Using the
+      // translucent fill would double-attenuate the shadow.
       context.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
-      context.setFillColor(shadow.color.cgColor)
+      let opaqueColor = shadow.color.withAlphaComponent(1.0).cgColor
+      context.setFillColor(opaqueColor)
       context.addPath(shadowPath.cgPath)
       context.fillPath()
 
@@ -141,9 +144,11 @@ class BoxShadowRenderer {
       let shadowOffset = CGSize(width: shadow.offsetX, height: shadow.offsetY)
       context.setShadow(offset: shadowOffset, blur: shadow.blurRadius, color: shadow.color.cgColor)
 
-      // Draw the frame
+      // Draw the frame with opaque fill — the shadow color carries the
+      // intended alpha via setShadow(color:).  Using the translucent
+      // shadow color as fill would double-attenuate the result.
       context.addPath(framePath.cgPath)
-      context.setFillColor(shadow.color.cgColor)
+      context.setFillColor(UIColor.black.cgColor)
       context.fillPath()
 
       context.restoreGState()

@@ -14,6 +14,7 @@ import android.view.View
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
+import kotlin.math.hypot
 
 
 // Reusable objects to avoid per-frame allocations in draw paths
@@ -258,10 +259,10 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
         val (cx, cy) = resolveRadialGradientCenter(gradient.direction, width.toFloat(), height.toFloat())
         // Radius must reach the farthest corner from the resolved centre.
         val radius = maxOf(
-          Math.hypot((cx).toDouble(), (cy).toDouble()),
-          Math.hypot((width - cx).toDouble(), (cy).toDouble()),
-          Math.hypot((cx).toDouble(), (height - cy).toDouble()),
-          Math.hypot((width - cx).toDouble(), (height - cy).toDouble())
+          hypot((cx).toDouble(), (cy).toDouble()),
+          hypot((width - cx).toDouble(), (cy).toDouble()),
+          hypot((cx).toDouble(), (height - cy).toDouble()),
+          hypot((width - cx).toDouble(), (height - cy).toDouble())
         ).toFloat().coerceAtLeast(1f)
         RadialGradient(
           cx, cy, radius, colorsArray, positionsArray, Shader.TileMode.CLAMP

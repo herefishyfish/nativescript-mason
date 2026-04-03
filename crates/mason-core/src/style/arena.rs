@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 use taffy::{Display, TextAlign};
 
 // always keep aligned 4
-pub const STYLE_BUFFER_SIZE: usize = 560;
+pub const STYLE_BUFFER_SIZE: usize = 596;
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -133,6 +133,8 @@ const NUM_DEFAULTS: usize = 8;
 pub struct StyleArena {
     buffers: Vec<StyleBuffer>,
     free_list: Vec<u32>,
+    /// Hash index from buffer content hash → buffer indices for O(1) intern lookup
+    hash_index: std::collections::HashMap<u64, Vec<u32>>,
     /// Pristine copies of each default buffer, used to restore them after COW
     /// when JS writes may have corrupted the shared buffer before prepare_mut.
     default_snapshots: [[u8; STYLE_BUFFER_SIZE]; NUM_DEFAULTS],
@@ -256,6 +258,7 @@ impl StyleArena {
         let mut arena = Self {
             buffers: vec![default_buffer, inline, img, flex, grid, list, list_item, button],
             free_list: Vec::new(),
+            hash_index: std::collections::HashMap::new(),
             default_snapshots,
         };
 
@@ -353,6 +356,14 @@ impl StyleArena {
         set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
 
         if buf.ref_count == 0 {
+            // Remove from hash index before clearing buffer data
+            let hash = Self::hash_buffer(<&[u8; STYLE_BUFFER_SIZE]>::try_from(buf.bytes()).unwrap());
+            if let Some(indices) = self.hash_index.get_mut(&hash) {
+                indices.retain(|&i| i != idx as u32);
+                if indices.is_empty() {
+                    self.hash_index.remove(&hash);
+                }
+            }
             // Clear stale data from the freed buffer
             buf.mut_bytes().fill(0);
             #[cfg(target_os = "android")]
@@ -567,21 +578,22 @@ impl StyleArena {
     pub fn intern(&mut self, data: &[u8; STYLE_BUFFER_SIZE]) -> StyleHandle {
         let hash = Self::hash_buffer(data);
 
-        for (idx, buf) in self.buffers.iter_mut().enumerate() {
-            if buf.ref_count > 0
-                && Self::hash_buffer(<&[u8; STYLE_BUFFER_SIZE]>::try_from(buf.bytes()).unwrap()) == hash
-                && buf.bytes() == data
-            {
-                buf.ref_count += 1;
-                let ref_count = buf.ref_count;
-
-                set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
-
-                return StyleHandle(idx as u32);
+        // O(1) lookup via hash index instead of O(n) linear scan
+        if let Some(indices) = self.hash_index.get(&hash) {
+            for &idx in indices {
+                let buf = &mut self.buffers[idx as usize];
+                if buf.ref_count > 0 && buf.bytes() == data {
+                    buf.ref_count += 1;
+                    let ref_count = buf.ref_count;
+                    set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
+                    return StyleHandle(idx);
+                }
             }
         }
 
-        self.alloc(data)
+        let handle = self.alloc(data);
+        self.hash_index.entry(hash).or_insert_with(Vec::new).push(handle.index() as u32);
+        handle
     }
 
     /// Prepare for mutation - COW if shared, returns (new_handle, ptr)
@@ -682,20 +694,21 @@ impl StyleArena {
     pub fn intern(&mut self, data: &[u8; STYLE_BUFFER_SIZE]) -> StyleHandle {
         let hash = Self::hash_buffer(data);
 
-        for (idx, buf) in self.buffers.iter_mut().enumerate() {
-            if buf.ref_count > 0
-                && Self::hash_buffer(&buf.data) == hash
-                && buf.data.as_ref() == data
-            {
-                buf.ref_count += 1;
-
-                set_style_data_u32(buf.data.as_mut_slice(), StyleKeys::REF_COUNT, buf.ref_count);
-
-                return StyleHandle(idx as u32);
+        // O(1) lookup via hash index instead of O(n) linear scan
+        if let Some(indices) = self.hash_index.get(&hash) {
+            for &idx in indices {
+                let buf = &mut self.buffers[idx as usize];
+                if buf.ref_count > 0 && buf.data.as_ref() == data {
+                    buf.ref_count += 1;
+                    set_style_data_u32(buf.data.as_mut_slice(), StyleKeys::REF_COUNT, buf.ref_count);
+                    return StyleHandle(idx);
+                }
             }
         }
 
-        self.alloc(data)
+        let handle = self.alloc(data);
+        self.hash_index.entry(hash).or_insert_with(Vec::new).push(handle.index() as u32);
+        handle
     }
 
 

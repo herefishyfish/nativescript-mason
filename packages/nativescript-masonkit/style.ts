@@ -118,10 +118,6 @@ enum StyleKeys {
   BORDER_TOP_COLOR = 210, // u32 (4 bytes: 210-213)
   BORDER_BOTTOM_COLOR = 214, // u32 (4 bytes: 214-217)
 
-  // ============================================================
-  // Border Radius (elliptical + squircle exponent)
-  // 8 types (1 byte each), then 8 values (f32), then 4 exponents (f32)
-  // ============================================================
   BORDER_RADIUS_TOP_LEFT_X_TYPE = 218,
   BORDER_RADIUS_TOP_LEFT_Y_TYPE = 219,
   BORDER_RADIUS_TOP_RIGHT_X_TYPE = 220,
@@ -224,6 +220,25 @@ enum StyleKeys {
   // font-variant-numeric bitmask (byte) + state
   FONT_VARIANT_NUMERIC = 419, // byte (bitmask)
   FONT_VARIANT_NUMERIC_STATE = 420, // byte
+
+  OBJECT_POSITION_X_TYPE = 560, // byte (0=px, 1=%, 2=keyword)
+  OBJECT_POSITION_Y_TYPE = 561, // byte
+  OBJECT_POSITION_X_VALUE = 562, // f32 (4 bytes: 562-565)
+  OBJECT_POSITION_Y_VALUE = 566, // f32 (4 bytes: 566-569)
+  OBJECT_POSITION_STATE = 570, // byte
+  WRITING_MODE = 571, // byte
+  WRITING_MODE_STATE = 572, // byte
+  UNICODE_BIDI = 573, // byte
+  UNICODE_BIDI_STATE = 574, // byte
+  HYPHENS = 575, // byte
+  HYPHENS_STATE = 576, // byte
+  CARET_COLOR = 577, // u32 (4 bytes: 577-580)
+  CARET_COLOR_STATE = 581, // byte
+  WORD_SPACING = 582, // f32 (4 bytes: 582-585)
+  WORD_SPACING_TYPE = 586, // byte (0=px, 1=%, 2=normal)
+  WORD_SPACING_STATE = 587, // byte
+  FONT_STRETCH = 588, // i32 (4 bytes: 588-591) percentage * 100
+  FONT_STRETCH_STATE = 592, // byte
 }
 
 export type OverFlow = 'visible' | 'hidden' | 'scroll' | 'clip' | 'auto';
@@ -334,6 +349,13 @@ class StateKeys {
   static readonly FONT_FAMILY = StateKeys.flag(69);
   static readonly LETTER_SPACING = StateKeys.flag(70);
   static readonly FONT_VARIANT_NUMERIC = StateKeys.flag(71);
+  static readonly OBJECT_POSITION = StateKeys.flag(72);
+  static readonly WRITING_MODE = StateKeys.flag(73);
+  static readonly UNICODE_BIDI = StateKeys.flag(74);
+  static readonly HYPHENS = StateKeys.flag(75);
+  static readonly CARET_COLOR = StateKeys.flag(76);
+  static readonly WORD_SPACING = StateKeys.flag(77);
+  static readonly FONT_STRETCH = StateKeys.flag(78);
 
   // compatibility: return low bits when code expects single 64-bit value
   get bitsLow(): bigint {
@@ -452,6 +474,79 @@ function normalizeColorValue(value: number | string | { argb?: number }): number
   }
 }
 
+const BORDER_STYLE_VALUES = ['none', 'hidden', 'dotted', 'dashed', 'solid', 'double', 'groove', 'ridge', 'inset', 'outset'] as const;
+
+function borderStyleToEnum(value: string): number {
+  const idx = BORDER_STYLE_VALUES.indexOf(value as any);
+  return idx === -1 ? -1 : idx;
+}
+
+function borderStyleFromEnum(value: number): string {
+  return BORDER_STYLE_VALUES[value] ?? 'none';
+}
+
+function parseObjectPosition(value: string): { xType: number; xVal: number; yType: number; yVal: number } | null {
+  const keywords: Record<string, { type: number; val: number }> = {
+    left: { type: 1, val: 0 },
+    center: { type: 1, val: 50 },
+    right: { type: 1, val: 100 },
+    top: { type: 1, val: 0 },
+    bottom: { type: 1, val: 100 },
+  };
+
+  const parts = value.trim().split(/\s+/);
+  if (parts.length === 0) return null;
+
+  function parseComponent(s: string): { type: number; val: number } | null {
+    const kw = keywords[s];
+    if (kw) return kw;
+    if (s.endsWith('%')) return { type: 1, val: parseFloat(s) };
+    return { type: 0, val: parseFloat(s) };
+  }
+
+  if (parts.length === 1) {
+    const c = parseComponent(parts[0]);
+    if (!c) return null;
+    return { xType: c.type, xVal: c.val, yType: 1, yVal: 50 };
+  }
+
+  const x = parseComponent(parts[0]);
+  const y = parseComponent(parts[1]);
+  if (!x || !y) return null;
+  return { xType: x.type, xVal: x.val, yType: y.type, yVal: y.val };
+}
+
+const FONT_STRETCH_KEYWORDS: Record<string, number> = {
+  'ultra-condensed': 5000,
+  'extra-condensed': 6250,
+  condensed: 7500,
+  'semi-condensed': 8750,
+  normal: 10000,
+  'semi-expanded': 11250,
+  expanded: 12500,
+  'extra-expanded': 15000,
+  'ultra-expanded': 20000,
+};
+
+function fontStretchToValue(value: string): number {
+  const trimmed = value.trim();
+  const kw = FONT_STRETCH_KEYWORDS[trimmed];
+  if (kw !== undefined) return kw;
+  if (trimmed.endsWith('%')) {
+    const pct = parseFloat(trimmed);
+    if (isNaN(pct) || pct < 0) return -1;
+    return Math.round(pct * 100);
+  }
+  return -1;
+}
+
+function fontStretchFromValue(v: number): string {
+  for (const [kw, val] of Object.entries(FONT_STRETCH_KEYWORDS)) {
+    if (val === v) return kw;
+  }
+  return `${v / 100}%`;
+}
+
 export class Style {
   private view_: View;
   private style_view: DataView;
@@ -459,6 +554,7 @@ export class Style {
   private u8View: Uint8Array;
   private isDirty = -1n;
   private inBatch = false;
+  private _syncScheduled = false;
   private nativeView: any;
   private nativeNode: any;
   private _pseudo: number;
@@ -644,7 +740,19 @@ export class Style {
       this.isDirty = this.isDirty | value.bits;
     }
     if (!this.inBatch) {
-      this.syncStyle();
+      // Coalesce rapid-fire property changes (e.g. CSS batch apply) into a
+      // single syncStyle() call on the next microtask. This avoids N
+      // separate JNI/FFI round-trips when N properties change in the same
+      // JS turn.
+      if (!this._syncScheduled) {
+        this._syncScheduled = true;
+        queueMicrotask(() => {
+          this._syncScheduled = false;
+          if (this.isDirty !== -1n) {
+            this.syncStyle();
+          }
+        });
+      }
     }
   }
 
@@ -4009,6 +4117,473 @@ export class Style {
     );
   }
 
+  get objectPosition(): string {
+    if (!this.style_view) return '50% 50%';
+    const state = getUint8(this.style_view, StyleKeys.OBJECT_POSITION_STATE);
+    if (!state) return '50% 50%';
+    const xType = getUint8(this.style_view, StyleKeys.OBJECT_POSITION_X_TYPE);
+    const yType = getUint8(this.style_view, StyleKeys.OBJECT_POSITION_Y_TYPE);
+    const xVal = getFloat32(this.style_view, StyleKeys.OBJECT_POSITION_X_VALUE);
+    const yVal = getFloat32(this.style_view, StyleKeys.OBJECT_POSITION_Y_VALUE);
+    const x = xType === 1 ? `${xVal}%` : `${xVal}px`;
+    const y = yType === 1 ? `${yVal}%` : `${yVal}px`;
+    return `${x} ${y}`;
+  }
+
+  set objectPosition(value: string) {
+    if (!this.style_view) return;
+    const parsed = parseObjectPosition(value);
+    if (!parsed) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.OBJECT_POSITION_X_TYPE, parsed.xType);
+    setUint8(this.style_view, StyleKeys.OBJECT_POSITION_Y_TYPE, parsed.yType);
+    setFloat32(this.style_view, StyleKeys.OBJECT_POSITION_X_VALUE, parsed.xVal);
+    setFloat32(this.style_view, StyleKeys.OBJECT_POSITION_Y_VALUE, parsed.yVal);
+    setUint8(this.style_view, StyleKeys.OBJECT_POSITION_STATE, 1);
+    this.commitState(StateKeys.OBJECT_POSITION);
+  }
+
+  set 'object-position'(value: string) {
+    this.objectPosition = value;
+  }
+
+  get 'object-position'() {
+    return this.objectPosition;
+  }
+
+  get borderLeftStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_LEFT_STYLE));
+  }
+
+  set borderLeftStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_LEFT_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderRightStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_RIGHT_STYLE));
+  }
+
+  set borderRightStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_RIGHT_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderTopStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_TOP_STYLE));
+  }
+
+  set borderTopStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_TOP_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderBottomStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_BOTTOM_STYLE));
+  }
+
+  set borderBottomStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_BOTTOM_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderStyle(): string {
+    const l = this.borderLeftStyle;
+    const r = this.borderRightStyle;
+    const t = this.borderTopStyle;
+    const b = this.borderBottomStyle;
+    if (l === r && r === t && t === b) return l;
+    if (t === b && l === r) return `${t} ${l}`;
+    return `${t} ${r} ${b} ${l}`;
+  }
+
+  set borderStyle(value: string) {
+    const parts = value.trim().split(/\s+/);
+    let t: string, r: string, b: string, l: string;
+    switch (parts.length) {
+      case 1:
+        t = r = b = l = parts[0];
+        break;
+      case 2:
+        t = b = parts[0];
+        r = l = parts[1];
+        break;
+      case 3:
+        t = parts[0];
+        r = l = parts[1];
+        b = parts[2];
+        break;
+      case 4:
+        t = parts[0];
+        r = parts[1];
+        b = parts[2];
+        l = parts[3];
+        break;
+      default:
+        return;
+    }
+    const te = borderStyleToEnum(t);
+    const re = borderStyleToEnum(r);
+    const be = borderStyleToEnum(b);
+    const le = borderStyleToEnum(l);
+    if (te === -1 || re === -1 || be === -1 || le === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_TOP_STYLE, te);
+    setInt8(this.style_view, StyleKeys.BORDER_RIGHT_STYLE, re);
+    setInt8(this.style_view, StyleKeys.BORDER_BOTTOM_STYLE, be);
+    setInt8(this.style_view, StyleKeys.BORDER_LEFT_STYLE, le);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  set 'border-style'(value: string) {
+    this.borderStyle = value;
+  }
+
+  get 'border-style'() {
+    return this.borderStyle;
+  }
+
+  get borderImage(): string {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getBorderImage(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.borderImage;
+    }
+    return '';
+  }
+
+  set borderImage(value: string) {
+    this.setPseudoCssStringValue(
+      'border-image',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderImage(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderImage = value),
+    );
+  }
+
+  set 'border-image'(value: string) {
+    this.borderImage = value;
+  }
+
+  get 'border-image'() {
+    return this.borderImage;
+  }
+
+  get fontStretch(): string {
+    if (!this.style_view) return 'normal';
+    const state = getUint8(this.style_view, StyleKeys.FONT_STRETCH_STATE);
+    if (!state) return 'normal';
+    const pct = getInt32(this.style_view, StyleKeys.FONT_STRETCH);
+    return fontStretchFromValue(pct);
+  }
+
+  set fontStretch(value: string) {
+    if (!this.style_view) return;
+    const pct = fontStretchToValue(value);
+    if (pct === -1) return;
+    this.prepareMut();
+    setInt32(this.style_view, StyleKeys.FONT_STRETCH, pct);
+    setUint8(this.style_view, StyleKeys.FONT_STRETCH_STATE, 1);
+    this.commitState(StateKeys.FONT_STRETCH);
+  }
+
+  set 'font-stretch'(value: string) {
+    this.fontStretch = value;
+  }
+
+  get 'font-stretch'() {
+    return this.fontStretch;
+  }
+
+  get fontFeatureSettings(): string {
+    if (!this.nativeView) return 'normal';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getFontFeatureSettings(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.fontFeatureSettings;
+    }
+    return 'normal';
+  }
+
+  set fontFeatureSettings(value: string) {
+    this.setPseudoCssStringValue(
+      'font-feature-settings',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setFontFeatureSettings(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.fontFeatureSettings = value),
+    );
+  }
+
+  set 'font-feature-settings'(value: string) {
+    this.fontFeatureSettings = value;
+  }
+
+  get 'font-feature-settings'() {
+    return this.fontFeatureSettings;
+  }
+
+  get wordSpacing(): string {
+    if (!this.style_view) return 'normal';
+    const state = getUint8(this.style_view, StyleKeys.WORD_SPACING_STATE);
+    if (!state) return 'normal';
+    const type = getUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE);
+    if (type === 2) return 'normal';
+    const value = getFloat32(this.style_view, StyleKeys.WORD_SPACING);
+    return type === 1 ? `${value}%` : `${value}px`;
+  }
+
+  set wordSpacing(value: string | number) {
+    if (!this.style_view) return;
+    this.prepareMut();
+    if (value === 'normal') {
+      setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 2);
+      setFloat32(this.style_view, StyleKeys.WORD_SPACING, 0);
+    } else if (typeof value === 'number') {
+      setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 0);
+      setFloat32(this.style_view, StyleKeys.WORD_SPACING, layout.toDevicePixels(value));
+    } else {
+      const trimmed = value.trim();
+      if (trimmed === 'normal') {
+        setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 2);
+        setFloat32(this.style_view, StyleKeys.WORD_SPACING, 0);
+      } else if (trimmed.endsWith('%')) {
+        setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 1);
+        setFloat32(this.style_view, StyleKeys.WORD_SPACING, parseFloat(trimmed));
+      } else {
+        setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 0);
+        setFloat32(this.style_view, StyleKeys.WORD_SPACING, layout.toDevicePixels(parseFloat(trimmed)));
+      }
+    }
+    setUint8(this.style_view, StyleKeys.WORD_SPACING_STATE, 1);
+    this.commitState(StateKeys.WORD_SPACING);
+  }
+
+  set 'word-spacing'(value: string | number) {
+    this.wordSpacing = value;
+  }
+
+  get 'word-spacing'() {
+    return this.wordSpacing;
+  }
+
+  get hyphens(): 'none' | 'manual' | 'auto' {
+    if (!this.style_view) return 'manual';
+    const state = getUint8(this.style_view, StyleKeys.HYPHENS_STATE);
+    if (!state) return 'manual';
+    switch (getUint8(this.style_view, StyleKeys.HYPHENS)) {
+      case 0:
+        return 'manual';
+      case 1:
+        return 'none';
+      case 2:
+        return 'auto';
+      default:
+        return 'manual';
+    }
+  }
+
+  set hyphens(value: 'none' | 'manual' | 'auto') {
+    let v = -1;
+    switch (value) {
+      case 'manual':
+        v = 0;
+        break;
+      case 'none':
+        v = 1;
+        break;
+      case 'auto':
+        v = 2;
+        break;
+    }
+    if (v === -1) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.HYPHENS, v);
+    setUint8(this.style_view, StyleKeys.HYPHENS_STATE, 1);
+    this.commitState(StateKeys.HYPHENS);
+  }
+
+  get backdropFilter(): string {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getBackdropFilter(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.backdropFilter;
+    }
+    return '';
+  }
+
+  set backdropFilter(value: string) {
+    this.setPseudoCssStringValue(
+      'backdrop-filter',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackdropFilter(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backdropFilter = value),
+    );
+  }
+
+  set 'backdrop-filter'(value: string) {
+    this.backdropFilter = value;
+  }
+
+  get 'backdrop-filter'() {
+    return this.backdropFilter;
+  }
+
+  get writingMode(): 'horizontal-tb' | 'vertical-rl' | 'vertical-lr' {
+    if (!this.style_view) return 'horizontal-tb';
+    const state = getUint8(this.style_view, StyleKeys.WRITING_MODE_STATE);
+    if (!state) return 'horizontal-tb';
+    switch (getUint8(this.style_view, StyleKeys.WRITING_MODE)) {
+      case 0:
+        return 'horizontal-tb';
+      case 1:
+        return 'vertical-rl';
+      case 2:
+        return 'vertical-lr';
+      default:
+        return 'horizontal-tb';
+    }
+  }
+
+  set writingMode(value: 'horizontal-tb' | 'vertical-rl' | 'vertical-lr') {
+    let v = -1;
+    switch (value) {
+      case 'horizontal-tb':
+        v = 0;
+        break;
+      case 'vertical-rl':
+        v = 1;
+        break;
+      case 'vertical-lr':
+        v = 2;
+        break;
+    }
+    if (v === -1) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.WRITING_MODE, v);
+    setUint8(this.style_view, StyleKeys.WRITING_MODE_STATE, 1);
+    this.commitState(StateKeys.WRITING_MODE);
+  }
+
+  set 'writing-mode'(value: 'horizontal-tb' | 'vertical-rl' | 'vertical-lr') {
+    this.writingMode = value;
+  }
+
+  get 'writing-mode'() {
+    return this.writingMode;
+  }
+
+  get unicodeBidi(): string {
+    if (!this.style_view) return 'normal';
+    const state = getUint8(this.style_view, StyleKeys.UNICODE_BIDI_STATE);
+    if (!state) return 'normal';
+    switch (getUint8(this.style_view, StyleKeys.UNICODE_BIDI)) {
+      case 0:
+        return 'normal';
+      case 1:
+        return 'embed';
+      case 2:
+        return 'bidi-override';
+      case 3:
+        return 'isolate';
+      case 4:
+        return 'isolate-override';
+      case 5:
+        return 'plaintext';
+      default:
+        return 'normal';
+    }
+  }
+
+  set unicodeBidi(value: string) {
+    let v = -1;
+    switch (value) {
+      case 'normal':
+        v = 0;
+        break;
+      case 'embed':
+        v = 1;
+        break;
+      case 'bidi-override':
+        v = 2;
+        break;
+      case 'isolate':
+        v = 3;
+        break;
+      case 'isolate-override':
+        v = 4;
+        break;
+      case 'plaintext':
+        v = 5;
+        break;
+    }
+    if (v === -1) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.UNICODE_BIDI, v);
+    setUint8(this.style_view, StyleKeys.UNICODE_BIDI_STATE, 1);
+    this.commitState(StateKeys.UNICODE_BIDI);
+  }
+
+  set 'unicode-bidi'(value: string) {
+    this.unicodeBidi = value;
+  }
+
+  get 'unicode-bidi'() {
+    return this.unicodeBidi;
+  }
+
+  get caretColor(): string {
+    if (!this.style_view) return 'auto';
+    const state = getUint8(this.style_view, StyleKeys.CARET_COLOR_STATE);
+    if (!state) return 'auto';
+    const argb = getUint32(this.style_view, StyleKeys.CARET_COLOR);
+    if (argb === 0) return 'auto';
+    const a = (argb >>> 24) & 0xff;
+    const r = (argb >>> 16) & 0xff;
+    const g = (argb >>> 8) & 0xff;
+    const b = argb & 0xff;
+    return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(2)})`;
+  }
+
+  set caretColor(value: string | number) {
+    if (!this.style_view) return;
+    this.prepareMut();
+    if (value === 'auto') {
+      setUint32(this.style_view, StyleKeys.CARET_COLOR, 0);
+      setUint8(this.style_view, StyleKeys.CARET_COLOR_STATE, 1);
+    } else {
+      const normalized = normalizeColorValue(value);
+      if (normalized == null) return;
+      setUint32(this.style_view, StyleKeys.CARET_COLOR, normalized);
+      setUint8(this.style_view, StyleKeys.CARET_COLOR_STATE, 1);
+    }
+    this.commitState(StateKeys.CARET_COLOR);
+  }
+
+  set 'caret-color'(value: string | number) {
+    this.caretColor = value;
+  }
+
+  get 'caret-color'() {
+    return this.caretColor;
+  }
+
   toJSON() {
     return {
       display: this.display,
@@ -4061,6 +4636,14 @@ export class Style {
       filter: this.filter,
       zIndex: this.zIndex,
       backgroundColor: this.backgroundColor,
+      objectPosition: this.objectPosition,
+      borderStyle: this.borderStyle,
+      writingMode: this.writingMode,
+      unicodeBidi: this.unicodeBidi,
+      hyphens: this.hyphens,
+      caretColor: this.caretColor,
+      wordSpacing: this.wordSpacing,
+      fontStretch: this.fontStretch,
     };
   }
 }

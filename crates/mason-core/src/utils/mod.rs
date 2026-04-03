@@ -1,5 +1,5 @@
 mod grid;
-use crate::style::{BorderStyle, DisplayMode, ObjectFit, Overflow};
+use crate::style::{BorderStyle, DisplayMode, Hyphens, ObjectFit, Overflow, UnicodeBidi, WritingMode};
 use crate::Style;
 pub use grid::*;
 use style_atoms::Atom;
@@ -573,5 +573,62 @@ pub const fn object_to_enum(value: ObjectFit) -> i8 {
         ObjectFit::Fill => 2,
         ObjectFit::None => 3,
         ObjectFit::ScaleDown => 4,
+    }
+}
+
+pub const fn writing_mode_to_enum(value: WritingMode) -> i8 {
+    match value {
+        WritingMode::HorizontalTb => 0,
+        WritingMode::VerticalRl => 1,
+        WritingMode::VerticalLr => 2,
+    }
+}
+
+pub const fn writing_mode_from_enum(value: i8) -> Option<WritingMode> {
+    match value {
+        0 => Some(WritingMode::HorizontalTb),
+        1 => Some(WritingMode::VerticalRl),
+        2 => Some(WritingMode::VerticalLr),
+        _ => None,
+    }
+}
+
+pub const fn unicode_bidi_to_enum(value: UnicodeBidi) -> i8 {
+    match value {
+        UnicodeBidi::Normal => 0,
+        UnicodeBidi::Embed => 1,
+        UnicodeBidi::BidiOverride => 2,
+        UnicodeBidi::Isolate => 3,
+        UnicodeBidi::IsolateOverride => 4,
+        UnicodeBidi::Plaintext => 5,
+    }
+}
+
+pub const fn unicode_bidi_from_enum(value: i8) -> Option<UnicodeBidi> {
+    match value {
+        0 => Some(UnicodeBidi::Normal),
+        1 => Some(UnicodeBidi::Embed),
+        2 => Some(UnicodeBidi::BidiOverride),
+        3 => Some(UnicodeBidi::Isolate),
+        4 => Some(UnicodeBidi::IsolateOverride),
+        5 => Some(UnicodeBidi::Plaintext),
+        _ => None,
+    }
+}
+
+pub const fn hyphens_to_enum(value: Hyphens) -> i8 {
+    match value {
+        Hyphens::Manual => 0,
+        Hyphens::None => 1,
+        Hyphens::Auto => 2,
+    }
+}
+
+pub const fn hyphens_from_enum(value: i8) -> Option<Hyphens> {
+    match value {
+        0 => Some(Hyphens::Manual),
+        1 => Some(Hyphens::None),
+        2 => Some(Hyphens::Auto),
+        _ => None,
     }
 }

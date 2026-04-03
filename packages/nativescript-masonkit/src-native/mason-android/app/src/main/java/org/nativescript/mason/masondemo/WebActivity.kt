@@ -191,11 +191,12 @@ class WebActivity : AppCompatActivity() {
     container.addView(demoList)
 
     // contentRoot starts hidden; shown when a demo is selected
-    contentRoot.style.display = Display.None
+    demoList.style.display = Display.None
     body.addView(contentRoot)
 
     // Add a back button area above contentRoot
-    showDemoList()
+  //  showDemoList()
+    galleryDemoSample()
   }
 
   private fun fetchTopStoriesAndLoadInitial(hnContainer: View) {
@@ -442,7 +443,7 @@ class WebActivity : AppCompatActivity() {
       card.flexDirection = FlexDirection.Column
       card.style.setSizeWidth(0f, 1.toByte())
       card.style.flexGrow = 1f
-      card.style.minWidth = org.nativescript.mason.masonkit.Dimension.Points(minWidth)
+      card.style.minWidth = Dimension.Points(minWidth)
       card.style.background = "#FFFFFF"
       card.style.borderRadius = "8px"
       card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"

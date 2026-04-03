@@ -32,6 +32,7 @@ public class NativeHelpers {
     long mason, boolean isAnonymous
   );
 
+  @FastNative
   static native long nativeNodeNewWithChildren(
     long mason,
     long[] children
@@ -51,6 +52,7 @@ public class NativeHelpers {
     boolean isAnonymous
   );
 
+  @CriticalNative
   static native long nativeNodeNewLineBreak(long mason);
 
   @CriticalNative
@@ -141,16 +143,20 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeSetContext(long mason, long node, int measureFunc);
 
+  @FastNative
   static native float[] nativeNodeComputeAndLayout(long mason, long node);
 
+  @FastNative
   static native void nativeNodeSetChildren(
     long mason,
     long node,
     long[] children
   );
 
+  @FastNative
   static native void nativeNodeSetSegments(long masonPtr, long nodePtr, InlineSegment[] segments);
 
+  @FastNative
   static native void nativeNodeSetSegmentsPacked(long masonPtr, long nodePtr, float[] floats, long[] longs, int[] kinds);
 
   @CriticalNative

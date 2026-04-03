@@ -186,7 +186,57 @@ public class MasonImageLayer: CALayer {
   
   public override func layoutSublayers() {
       super.layoutSublayers()
-      contentsLayer.frame = bounds
+      guard let view = view, let cgImage = image?.cgImage else {
+        contentsLayer.frame = bounds
+        return
+      }
+
+      let style = view.style
+      let opXType = style.getUInt8(StyleKeys.OBJECT_POSITION_X_TYPE)
+      let opYType = style.getUInt8(StyleKeys.OBJECT_POSITION_Y_TYPE)
+      let opXPct = opXType != 0 ? CGFloat(style.getFloat(StyleKeys.OBJECT_POSITION_X_VALUE)) / 100.0 : 0.5
+      let opYPct = opYType != 0 ? CGFloat(style.getFloat(StyleKeys.OBJECT_POSITION_Y_VALUE)) / 100.0 : 0.5
+
+      let viewW = bounds.width
+      let viewH = bounds.height
+      let imgW = CGFloat(cgImage.width) / contentsLayer.contentsScale
+      let imgH = CGFloat(cgImage.height) / contentsLayer.contentsScale
+
+      switch fit {
+      case .Cover:
+        let scale = max(viewW / imgW, viewH / imgH)
+        let w = imgW * scale
+        let h = imgH * scale
+        let x = (viewW - w) * opXPct
+        let y = (viewH - h) * opYPct
+        contentsLayer.frame = CGRect(x: x, y: y, width: w, height: h)
+
+      case .Contain:
+        let scale = min(viewW / imgW, viewH / imgH)
+        let w = imgW * scale
+        let h = imgH * scale
+        let x = (viewW - w) * opXPct
+        let y = (viewH - h) * opYPct
+        contentsLayer.frame = CGRect(x: x, y: y, width: w, height: h)
+
+      case .None:
+        let x = (viewW - imgW) * opXPct
+        let y = (viewH - imgH) * opYPct
+        contentsLayer.frame = CGRect(x: x, y: y, width: imgW, height: imgH)
+
+      case .ScaleDown:
+        let containScale = min(viewW / imgW, viewH / imgH)
+        let scale = min(1.0, containScale)
+        let w = imgW * scale
+        let h = imgH * scale
+        let x = (viewW - w) * opXPct
+        let y = (viewH - h) * opYPct
+        contentsLayer.frame = CGRect(x: x, y: y, width: w, height: h)
+
+      default:
+        // Fill — stretch to bounds, object-position doesn't apply
+        contentsLayer.frame = bounds
+      }
   }
 }
 

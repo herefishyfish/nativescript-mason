@@ -410,6 +410,16 @@ interface Element : EventTarget {
     node.dirty()
     val root = node.getRootNode() ?: node
 
+    // Ensure the ROOT node's computeCacheDirty is true so that the
+    // fast-path cache check in computeAndLayout() (which only inspects the
+    // root's flag) doesn't return a stale layout tree.  node.dirty() only
+    // sets the flag on the child whose style changed; Rust propagates dirty
+    // marks internally but the Kotlin-side cache on the root stays clean
+    // unless we explicitly mark it here.
+    if (root !== node) {
+      root.computeCacheDirty = true
+    }
+
     // Debounce/schedule expensive compute work to the next UI loop/frame
     val targetView = when {
       root.type == NodeType.Document -> root.document?.documentElement?.view
@@ -442,93 +452,32 @@ interface Element : EventTarget {
     // off the caller thread, batches rapid calls and avoids re‑entrancy.  Only when
     // there is *no* view available do we compute synchronously as a fallback.
 
-    fun doCompute() {
-      if (root.type == NodeType.Document) {
-        root.document?.documentElement?.compute(
-          if (root.computeCache.width == Float.MIN_VALUE) -2f else root.computeCache.width,
-          if (root.computeCache.height == Float.MIN_VALUE) -2f else root.computeCache.height
-        )
-        root.document?.documentElement?.view?.invalidate()
-        root.document?.documentElement?.view?.requestLayout()
-        return
-      }
-
-      if (root.view is Element && root.computeCacheDirty) {
-        var width = if (root.computeCache.width == Float.MIN_VALUE) -2f else root.computeCache.width
-        var height =
-          if (root.computeCache.height == Float.MIN_VALUE) -2f else root.computeCache.height
-
-        // if the existing cache value was the max-content sentinel and the view
-        // already has a real size, switch to the view dimensions.  also update
-        // the stored cache immediately so callers can observe the change.
-        targetView.let { v ->
-          // Prefer the Mason node's computed layout when available (most authoritative).
-          val nodeW = root.computedWidth
-          val nodeH = root.computedHeight
-
-          if (width == -2f) {
-            if (!nodeW.isNaN() && nodeW > 0f) {
-              width = nodeW
-            } else if (v.measuredWidth > 0) {
-              width = v.measuredWidth.toFloat()
-            }
-          }
-
-          if (height == -2f) {
-            if (!nodeH.isNaN() && nodeH > 0f) {
-              height = nodeH
-            } else if (v.measuredHeight > 0) {
-              height = v.measuredHeight.toFloat()
-            }
-          }
-
-          root.computeCache = SizeF(width, height)
-        }
-
-        // Use cached/computed root dimensions as the size input when available,
-        // but always run compute() so that child style changes (e.g. flex-direction)
-        // are picked up by the layout engine.
-        val cachedW = root.cachedWidth
-        val cachedH = root.cachedHeight
-        val nodeW2 = root.computedWidth
-        val nodeH2 = root.computedHeight
-
-        if (cachedW > 0f && cachedH > 0f) {
-          width = cachedW
-          height = cachedH
-        } else if (!nodeW2.isNaN() && !nodeH2.isNaN() && nodeW2 > 0f && nodeH2 > 0f) {
-          width = nodeW2
-          height = nodeH2
-        }
-
-        (root.view as Element).compute(width, height)
-      }
-    }
-
     if (!root.computeScheduled) {
       root.computeScheduled = true
-      // Always post compute to the view's message queue to coalesce rapid
-      // invalidations and allow JNI write-backs (setComputedSize) to arrive
-      // before we decide whether to run another native compute. Using
-      // postOnAnimation aligns the work with the next frame.
-      val oldComputedW = root.computedWidth
-      val oldComputedH = root.computedHeight
-
+      // Schedule a single requestLayout on the next animation frame to
+      // coalesce rapid invalidations.  The previous approach ran compute()
+      // (without serialization) here, which set computeCacheDirty=false and
+      // poisoned the cache that computeAndLayout() relies on — causing it
+      // to return a stale layout tree.  By only requesting a layout pass we
+      // let computeAndLayout() (called from onMeasure) do the compute AND
+      // serialize the layout in one shot, giving applyLayoutFlat correct data.
       targetView.postOnAnimation {
         root.computeScheduled = false
-        doCompute()
-        // Only requestLayout if the computed size changed; otherwise just invalidate
-        (root.view as? View)?.let { v ->
-          val newW = root.computedWidth
-          val newH = root.computedHeight
-          val sizeChanged =
-            (oldComputedW.isNaN() && !newW.isNaN()) || (oldComputedH.isNaN() && !newH.isNaN()) || (oldComputedW != newW) || (oldComputedH != newH)
-          if (sizeChanged) {
-            v.requestLayout()
-          } else {
-            v.invalidate()
+        if (root.type == NodeType.Document) {
+          root.document?.documentElement?.let { docEl ->
+            docEl.compute(
+              if (root.computeCache.width == Float.MIN_VALUE) -2f else root.computeCache.width,
+              if (root.computeCache.height == Float.MIN_VALUE) -2f else root.computeCache.height
+            )
+            docEl.view?.invalidate()
+            docEl.view?.requestLayout()
           }
+          return@postOnAnimation
         }
+        // For normal Element roots, just request a full layout pass.
+        // computeCacheDirty is still true (set by node.dirty() above),
+        // so computeAndLayout() in onMeasure will recompute + serialize.
+        (root.view as? View)?.requestLayout()
       }
     }
   }

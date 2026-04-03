@@ -1401,4 +1401,82 @@ borderBottomProperty.register(Style);
 
 filterProperty.register(Style);
 
+// New CSS properties
+
+export const objectPositionProperty = new CssProperty<Style, string>({
+  name: 'objectPosition',
+  cssName: 'object-position',
+  defaultValue: '50% 50%',
+});
+
+export const borderStyleProperty = new CssProperty<Style, string>({
+  name: 'borderStyle',
+  cssName: 'border-style',
+  defaultValue: 'none',
+});
+
+export const borderImageProperty = new CssProperty<Style, string>({
+  name: 'borderImage',
+  cssName: 'border-image',
+});
+
+export const fontStretchProperty = new CssProperty<Style, string>({
+  name: 'fontStretch',
+  cssName: 'font-stretch',
+  defaultValue: 'normal',
+});
+
+export const fontFeatureSettingsProperty = new CssProperty<Style, string>({
+  name: 'fontFeatureSettings',
+  cssName: 'font-feature-settings',
+  defaultValue: 'normal',
+});
+
+export const wordSpacingProperty = new CssProperty<Style, string>({
+  name: 'wordSpacing',
+  cssName: 'word-spacing',
+  defaultValue: 'normal',
+});
+
+export const hyphensProperty = new CssProperty<Style, string>({
+  name: 'hyphens',
+  cssName: 'hyphens',
+  defaultValue: 'manual',
+});
+
+export const backdropFilterProperty = new CssProperty<Style, string>({
+  name: 'backdropFilter',
+  cssName: 'backdrop-filter',
+});
+
+export const writingModeProperty = new CssProperty<Style, string>({
+  name: 'writingMode',
+  cssName: 'writing-mode',
+  defaultValue: 'horizontal-tb',
+});
+
+export const unicodeBidiProperty = new CssProperty<Style, string>({
+  name: 'unicodeBidi',
+  cssName: 'unicode-bidi',
+  defaultValue: 'normal',
+});
+
+export const caretColorProperty = new CssProperty<Style, string>({
+  name: 'caretColor',
+  cssName: 'caret-color',
+  defaultValue: 'auto',
+});
+
+objectPositionProperty.register(Style);
+borderStyleProperty.register(Style);
+borderImageProperty.register(Style);
+fontStretchProperty.register(Style);
+fontFeatureSettingsProperty.register(Style);
+wordSpacingProperty.register(Style);
+hyphensProperty.register(Style);
+backdropFilterProperty.register(Style);
+writingModeProperty.register(Style);
+unicodeBidiProperty.register(Style);
+caretColorProperty.register(Style);
+
 displayProperty.register(Style);

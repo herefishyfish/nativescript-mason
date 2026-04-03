@@ -84,30 +84,8 @@ void mason_print_tree(struct CMason *mason, struct CMasonNode *node);
 
 void mason_set_device_scale(struct CMason *mason, float scale);
 
-/**
- * Enable or disable CSS Preflight (normalize/web-like) defaults globally.
- *
- * When `enabled` is `true` the underlying `StyleArena` will use web-normalised
- * defaults for every element type:
- *   • `box-sizing: border-box` on all elements
- *   • `margin: 0`, `padding: 0`, `border-width: 0` on all elements
- *   • `background: transparent` on all elements
- *   • `list-style: none` on `<ul>` / `<ol>`
- *   • `display: block` on `<img>`
- *
- * The flag is stored in a global `AtomicBool` so it must be set **before**
- * creating Mason instances for the cleanest effect.  Calling this on an
- * existing `mason` pointer also re-seeds that instance's arena so that
- * unstyled (default-handle) nodes pick up the new defaults immediately.
- *
- * # Safety
- * `mason` must be a valid, non-null pointer returned by `mason_init`.
- */
 void mason_set_preflight(struct CMason *mason, bool enabled);
 
-/**
- * Returns `true` if CSS Preflight defaults are currently enabled.
- */
 bool mason_get_preflight(void);
 
 void *mason_get_buffer(struct CMason *mason, int handle);
@@ -222,6 +200,36 @@ void mason_node_compute_max_content(struct CMason *mason, struct CMasonNode *nod
 void mason_node_compute_min_content(struct CMason *mason, struct CMasonNode *node);
 
 void mason_node_compute(struct CMason *mason, struct CMasonNode *node);
+
+/**
+ * Combined compute-with-size + layout in a single FFI crossing.
+ */
+void *mason_node_compute_wh_and_layout(struct CMason *mason,
+                                       struct CMasonNode *node,
+                                       float width,
+                                       float height,
+                                       void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute (auto size) + layout in a single FFI crossing.
+ */
+void *mason_node_compute_and_layout(struct CMason *mason,
+                                    struct CMasonNode *node,
+                                    void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute-max-content + layout in a single FFI crossing.
+ */
+void *mason_node_compute_max_content_and_layout(struct CMason *mason,
+                                                struct CMasonNode *node,
+                                                void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute-min-content + layout in a single FFI crossing.
+ */
+void *mason_node_compute_min_content_and_layout(struct CMason *mason,
+                                                struct CMasonNode *node,
+                                                void *(*layout)(const float*, uintptr_t));
 
 struct CMasonNode *mason_node_get_child_at(struct CMason *mason,
                                            struct CMasonNode *node,

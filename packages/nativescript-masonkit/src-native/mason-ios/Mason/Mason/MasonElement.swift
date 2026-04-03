@@ -488,8 +488,13 @@ extension MasonElement {
   }
   
   public func computeWithSize(_ width: Float, _ height: Float){
-    compute(width, height)
-    let layout = self.layout()
+    setComputeCache(CGSize(width: CGFloat(width), height: CGFloat(height)))
+    let points = mason_node_compute_wh_and_layout(node.mason.nativePtr,
+                                                   node.nativePtr, width, height, create_layout)
+    guard let points = points else {
+      return
+    }
+    let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
     MasonElementHelpers.applyToView(node, layout)
   }
   
@@ -498,21 +503,41 @@ extension MasonElement {
   }
   
   public func computeWithViewSize(layout: Bool){
-    compute(Float(uiView.frame.size.width) * NSCMason.scale, Float(uiView.frame.size.height) * NSCMason.scale)
+    let w = Float(uiView.frame.size.width) * NSCMason.scale
+    let h = Float(uiView.frame.size.height) * NSCMason.scale
     if(layout){
-      MasonElementHelpers.applyToView(node, self.layout())
+      setComputeCache(CGSize(width: CGFloat(w), height: CGFloat(h)))
+      let points = mason_node_compute_wh_and_layout(node.mason.nativePtr,
+                                                     node.nativePtr, w, h, create_layout)
+      guard let points = points else {
+        return
+      }
+      let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
+      MasonElementHelpers.applyToView(node, layout)
+    } else {
+      compute(w, h)
     }
   }
   
   public func computeWithMaxContent(){
-    computeMaxContent()
-    let layout = self.layout()
+    let points = mason_node_compute_max_content_and_layout(node.mason.nativePtr,
+                                                            node.nativePtr, create_layout)
+    setComputeCache(CGSize(width: CGFloat(-2), height: CGFloat(-2)))
+    guard let points = points else {
+      return
+    }
+    let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
     MasonElementHelpers.applyToView(node, layout)
   }
   
   public func computeWithMinContent(){
-    computeMinContent()
-    let layout = self.layout()
+    let points = mason_node_compute_min_content_and_layout(node.mason.nativePtr,
+                                                            node.nativePtr, create_layout)
+    setComputeCache(CGSize(width: CGFloat(-1), height: CGFloat(-1)))
+    guard let points = points else {
+      return
+    }
+    let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
     MasonElementHelpers.applyToView(node, layout)
   }
   
@@ -701,6 +726,9 @@ class MasonElementHelpers: NSObject {
       // Hidden, Scroll, Clip → always clip that axis
       // Auto → clip only when content overflows
       // Visible → no clip
+      // Additionally, border-radius always clips children to the rounded
+      // rect (matching CSS/browser behaviour and Android's dispatchDraw
+      // canvas clip) regardless of the overflow value.
       let overflow = node.style.overflow
       let clipX = overflow.x == .Hidden || overflow.x == .Scroll || overflow.x == .Clip
         || (overflow.x == .Auto && realLayout.contentWidth > realLayout.width)
@@ -709,6 +737,7 @@ class MasonElementHelpers: NSObject {
 
       let borderRender = node.style.mBorderRender
       borderRender.resolve(for: view.bounds)
+      let hasRadii = borderRender.hasRadii()
 
       // UIScrollView (Scroll) sets clipsToBounds = true once in init and it must
       // never be changed here. Changing clipsToBounds on UIScrollView during
@@ -719,7 +748,7 @@ class MasonElementHelpers: NSObject {
       } else if clipX && clipY {
         // Both axes clip — use clipsToBounds (+ border-radius mask if needed)
         view.clipsToBounds = true
-        if borderRender.hasRadii() {
+        if hasRadii {
           let clipPath = borderRender.getClipPath(rect: view.bounds, radius: borderRender.radius)
           let newCGPath = clipPath.cgPath
           if let existing = view.layer.mask as? CAShapeLayer {
@@ -749,7 +778,7 @@ class MasonElementHelpers: NSObject {
           clipRect = CGRect(x: -overflowPad, y: 0, width: view.bounds.width + overflowPad * 2, height: view.bounds.height)
         }
 
-        if borderRender.hasRadii() {
+        if hasRadii {
           let clipPath = borderRender.getClipPath(rect: view.bounds, radius: borderRender.radius)
           let newCGPath = clipPath.cgPath
           let maskLayer = (view.layer.mask as? CAShapeLayer) ?? CAShapeLayer()
@@ -758,6 +787,27 @@ class MasonElementHelpers: NSObject {
         } else {
           let maskLayer = (view.layer.mask as? CAShapeLayer) ?? CAShapeLayer()
           maskLayer.path = UIBezierPath(rect: clipRect).cgPath
+          view.layer.mask = maskLayer
+        }
+      } else if hasRadii {
+        // No overflow clipping requested, but border-radius is set.
+        // On iOS, sublayers are NOT clipped by the parent's draw() CG
+        // context (unlike Android's Canvas.clipPath in dispatchDraw).
+        // Apply a layer mask so child content is clipped to the rounded
+        // rect, matching CSS/browser and Android behaviour.
+        // Use layer.mask instead of clipsToBounds to avoid triggering
+        // layout cycles — clipsToBounds changes during layoutSubviews
+        // can cause frame shifts (the same issue Android had).
+        view.clipsToBounds = false
+        let clipPath = borderRender.getClipPath(rect: view.bounds, radius: borderRender.radius)
+        let newCGPath = clipPath.cgPath
+        if let existing = view.layer.mask as? CAShapeLayer {
+          if existing.path == nil || existing.path!.boundingBoxOfPath != newCGPath.boundingBoxOfPath {
+            existing.path = newCGPath
+          }
+        } else {
+          let maskLayer = CAShapeLayer()
+          maskLayer.path = newCGPath
           view.layer.mask = maskLayer
         }
       } else {

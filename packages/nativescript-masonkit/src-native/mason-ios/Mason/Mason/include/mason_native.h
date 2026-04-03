@@ -201,6 +201,36 @@ void mason_node_compute_min_content(struct CMason *mason, struct CMasonNode *nod
 
 void mason_node_compute(struct CMason *mason, struct CMasonNode *node);
 
+/**
+ * Combined compute-with-size + layout in a single FFI crossing.
+ */
+void *mason_node_compute_wh_and_layout(struct CMason *mason,
+                                       struct CMasonNode *node,
+                                       float width,
+                                       float height,
+                                       void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute (auto size) + layout in a single FFI crossing.
+ */
+void *mason_node_compute_and_layout(struct CMason *mason,
+                                    struct CMasonNode *node,
+                                    void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute-max-content + layout in a single FFI crossing.
+ */
+void *mason_node_compute_max_content_and_layout(struct CMason *mason,
+                                                struct CMasonNode *node,
+                                                void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute-min-content + layout in a single FFI crossing.
+ */
+void *mason_node_compute_min_content_and_layout(struct CMason *mason,
+                                                struct CMasonNode *node,
+                                                void *(*layout)(const float*, uintptr_t));
+
 struct CMasonNode *mason_node_get_child_at(struct CMason *mason,
                                            struct CMasonNode *node,
                                            uintptr_t index);

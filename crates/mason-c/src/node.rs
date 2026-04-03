@@ -698,6 +698,86 @@ pub extern "C" fn mason_node_compute(mason: *mut CMason, node: *mut CMasonNode) 
     }
 }
 
+/// Combined compute-with-size + layout in a single FFI crossing.
+#[no_mangle]
+pub extern "C" fn mason_node_compute_wh_and_layout(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    width: c_float,
+    height: c_float,
+    layout: extern "C" fn(*const c_float, usize) -> *mut c_void,
+) -> *mut c_void {
+    if mason.is_null() || node.is_null() {
+        return layout(std::ptr::null_mut(), 0);
+    }
+    unsafe {
+        let mason = &mut (*mason).0;
+        let node = &(*node).0;
+        mason.compute_wh(node.id(), width, height);
+        let output = mason.layout(node.id());
+        layout(output.as_ptr(), output.len())
+    }
+}
+
+/// Combined compute (auto size) + layout in a single FFI crossing.
+#[no_mangle]
+pub extern "C" fn mason_node_compute_and_layout(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    layout: extern "C" fn(*const c_float, usize) -> *mut c_void,
+) -> *mut c_void {
+    if mason.is_null() || node.is_null() {
+        return layout(std::ptr::null_mut(), 0);
+    }
+    unsafe {
+        let mason = &mut (*mason).0;
+        let node = &(*node).0;
+        mason.compute(node.id());
+        let output = mason.layout(node.id());
+        layout(output.as_ptr(), output.len())
+    }
+}
+
+/// Combined compute-max-content + layout in a single FFI crossing.
+#[no_mangle]
+pub extern "C" fn mason_node_compute_max_content_and_layout(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    layout: extern "C" fn(*const c_float, usize) -> *mut c_void,
+) -> *mut c_void {
+    if mason.is_null() || node.is_null() {
+        return layout(std::ptr::null_mut(), 0);
+    }
+    unsafe {
+        let mason = &mut (*mason).0;
+        let node = &(*node).0;
+        let size = Size::max_content();
+        mason.compute_size(node.id(), size);
+        let output = mason.layout(node.id());
+        layout(output.as_ptr(), output.len())
+    }
+}
+
+/// Combined compute-min-content + layout in a single FFI crossing.
+#[no_mangle]
+pub extern "C" fn mason_node_compute_min_content_and_layout(
+    mason: *mut CMason,
+    node: *mut CMasonNode,
+    layout: extern "C" fn(*const c_float, usize) -> *mut c_void,
+) -> *mut c_void {
+    if mason.is_null() || node.is_null() {
+        return layout(std::ptr::null_mut(), 0);
+    }
+    unsafe {
+        let mason = &mut (*mason).0;
+        let node = &(*node).0;
+        let size = Size::min_content();
+        mason.compute_size(node.id(), size);
+        let output = mason.layout(node.id());
+        layout(output.as_ptr(), output.len())
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn mason_node_get_child_at(
     mason: *mut CMason,

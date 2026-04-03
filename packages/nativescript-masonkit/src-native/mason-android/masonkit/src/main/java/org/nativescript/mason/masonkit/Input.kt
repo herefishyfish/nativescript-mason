@@ -1174,6 +1174,7 @@ class Input @JvmOverloads constructor(
   override fun onChange(low: Long, high: Long) {
     val fontColor = StateKeys.hasFlag(low, high, StateKeys.FONT_COLOR)
     val fontSize = StateKeys.hasFlag(low, high, StateKeys.FONT_SIZE)
+    val caretColorChanged = StateKeys.hasFlag(low, high, StateKeys.CARET_COLOR)
 
     val font =
       StateKeys.hasFlag(low, high, StateKeys.FONT_WEIGHT) ||
@@ -1187,8 +1188,11 @@ class Input @JvmOverloads constructor(
       Type.Text, Type.Email, Type.Password, Type.Number, Type.Tel, Type.Url -> {
         if (fontSize || fontColor || font || textAlign) {
           textInput.cursorPaint.textSize = style.resolvedFontSize.toFloat()
-          textInput.cursorPaint.color = style.resolvedColor
+          textInput.cursorPaint.color = style.resolvedCaretColor
           syncTextStyle(textInput.text.toString(), textInput)
+        } else if (caretColorChanged) {
+          textInput.cursorPaint.color = style.resolvedCaretColor
+          textInput.invalidate()
         }
       }
 

@@ -165,6 +165,11 @@ public class TextEngine: NSObject {
       || state.contains(.textAlign)
       || state.contains(.textOverflow)
       || state.contains(.verticalAlign)
+      || state.contains(.wordSpacing)
+      || state.contains(.writingMode)
+      || state.contains(.unicodeBidi)
+      || state.contains(.hyphens)
+      || state.contains(.fontStretch)
 
     // Visual-only flags: span rebuild + redraw, no layout recompute needed.
     let textVisualChanged = !textLayoutChanged && (
@@ -436,9 +441,12 @@ public class TextEngine: NSObject {
     engine.collectAndCacheSegments(from: frame, constraintSize)
     
     
-    if(!isInLine && maxWidth < CGFloat.greatestFiniteMagnitude && maxWidth != .greatestFiniteMagnitude){
-      size.width = (maxWidth * scale).rounded(.up)
-    }else {
+    // Clamp to the available constraint but preserve the intrinsic width
+    // so that flex cross-axis alignment (e.g. align-items: center) can
+    // shrink the element to its content size instead of stretching it.
+    if !isInLine && maxWidth < CGFloat.greatestFiniteMagnitude && maxWidth != .greatestFiniteMagnitude {
+      size.width = (min(size.width, maxWidth) * scale).rounded(.up)
+    } else {
       size.width = (size.width * scale).rounded(.up)
     }
     
@@ -1358,10 +1366,53 @@ public class TextEngine: NSObject {
       }
     }
 
+    // Wrap with Unicode bidi control characters when unicode-bidi requires
+    // character-level overrides beyond what paragraph direction provides.
+    let bidi = Int(style.resolvedUnicodeBidi)
+    let isRTL = style.direction == .RTL
+    
+    let result: NSAttributedString
+    switch bidi {
+    case 1: // embed: LRE (U+202A) or RLE (U+202B) + PDF (U+202C)
+      let wrapped = NSMutableAttributedString()
+      wrapped.append(NSAttributedString(string: isRTL ? "\u{202B}" : "\u{202A}"))
+      wrapped.append(composed)
+      wrapped.append(NSAttributedString(string: "\u{202C}"))
+      result = wrapped
+    case 2: // bidi-override: LRO (U+202D) or RLO (U+202E) + PDF (U+202C)
+      let wrapped = NSMutableAttributedString()
+      wrapped.append(NSAttributedString(string: isRTL ? "\u{202E}" : "\u{202D}"))
+      wrapped.append(composed)
+      wrapped.append(NSAttributedString(string: "\u{202C}"))
+      result = wrapped
+    case 3: // isolate: LRI (U+2066) or RLI (U+2067) + PDI (U+2069)
+      let wrapped = NSMutableAttributedString()
+      wrapped.append(NSAttributedString(string: isRTL ? "\u{2067}" : "\u{2066}"))
+      wrapped.append(composed)
+      wrapped.append(NSAttributedString(string: "\u{2069}"))
+      result = wrapped
+    case 4: // isolate-override: LRI/RLI + LRO/RLO + content + PDF + PDI
+      let wrapped = NSMutableAttributedString()
+      wrapped.append(NSAttributedString(string: isRTL ? "\u{2067}" : "\u{2066}"))
+      wrapped.append(NSAttributedString(string: isRTL ? "\u{202E}" : "\u{202D}"))
+      wrapped.append(composed)
+      wrapped.append(NSAttributedString(string: "\u{202C}"))
+      wrapped.append(NSAttributedString(string: "\u{2069}"))
+      result = wrapped
+    case 5: // plaintext: FSI (U+2068) + PDI (U+2069)
+      let wrapped = NSMutableAttributedString()
+      wrapped.append(NSAttributedString(string: "\u{2068}"))
+      wrapped.append(composed)
+      wrapped.append(NSAttributedString(string: "\u{2069}"))
+      result = wrapped
+    default: // normal (0)
+      result = composed
+    }
+
     // Cache the result
-    cachedAttributedString = composed
+    cachedAttributedString = result
     attributedStringVersion = segmentsInvalidateVersion
-    return composed
+    return result
   }
   
   

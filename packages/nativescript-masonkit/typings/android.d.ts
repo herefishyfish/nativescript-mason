@@ -3779,6 +3779,12 @@ declare module org {
 					public setBoxShadow(this_: globalAndroid.view.View, value: string): void;
 					public getTransform(this_: globalAndroid.view.View): string;
 					public setTransform(this_: globalAndroid.view.View, value: string): void;
+					public getBorderImage(this_: globalAndroid.view.View): string;
+					public setBorderImage(this_: globalAndroid.view.View, value: string): void;
+					public getFontFeatureSettings(this_: globalAndroid.view.View): string;
+					public setFontFeatureSettings(this_: globalAndroid.view.View, value: string): void;
+					public getBackdropFilter(this_: globalAndroid.view.View): string;
+					public setBackdropFilter(this_: globalAndroid.view.View, value: string): void;
 				}
 			}
 		}

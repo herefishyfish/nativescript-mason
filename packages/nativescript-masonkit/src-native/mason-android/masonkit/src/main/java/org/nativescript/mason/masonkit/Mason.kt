@@ -29,7 +29,7 @@ class Mason {
   private val viewNodes = WeakHashMap<android.view.View, WeakReference<Node>>()
 
   private val nodeEventListeners =
-    mutableMapOf<Node, MutableMap<String, MutableMap<UUID, (Event) -> Unit>>>()
+    WeakHashMap<Node, MutableMap<String, MutableMap<UUID, (Event) -> Unit>>>()
 
   // True while Rust holds a lock during compute — prevents re-entrant lock acquisition via prepareMut
   @JvmField

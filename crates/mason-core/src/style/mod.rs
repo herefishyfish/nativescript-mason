@@ -158,6 +158,66 @@ impl std::fmt::Display for ObjectFit {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum WritingMode {
+    #[default]
+    HorizontalTb,
+    VerticalRl,
+    VerticalLr,
+}
+
+impl std::fmt::Display for WritingMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WritingMode::HorizontalTb => write!(f, "horizontal-tb"),
+            WritingMode::VerticalRl => write!(f, "vertical-rl"),
+            WritingMode::VerticalLr => write!(f, "vertical-lr"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum UnicodeBidi {
+    #[default]
+    Normal,
+    Embed,
+    BidiOverride,
+    Isolate,
+    IsolateOverride,
+    Plaintext,
+}
+
+impl std::fmt::Display for UnicodeBidi {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnicodeBidi::Normal => write!(f, "normal"),
+            UnicodeBidi::Embed => write!(f, "embed"),
+            UnicodeBidi::BidiOverride => write!(f, "bidi-override"),
+            UnicodeBidi::Isolate => write!(f, "isolate"),
+            UnicodeBidi::IsolateOverride => write!(f, "isolate-override"),
+            UnicodeBidi::Plaintext => write!(f, "plaintext"),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum Hyphens {
+    #[default]
+    Manual,
+    None,
+    Auto,
+}
+
+impl std::fmt::Display for Hyphens {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Hyphens::Manual => write!(f, "manual"),
+            Hyphens::None => write!(f, "none"),
+            Hyphens::Auto => write!(f, "auto"),
+        }
+    }
+}
+
 // Add to your style module
 
 /// Font metrics for text layout and vertical alignment
@@ -621,6 +681,29 @@ pub enum StyleKeys {
     TRANSFORM_OP_4 = 472,   // 12 bytes
     TRANSFORM_OP_5 = 484,   // 12 bytes
     TRANSFORM_MATRIX = 496, // 64 bytes: 16 x f32 (4x4 column-major matrix)
+
+    // ============================================================
+    // New CSS properties (bytes 560-595)
+    // ============================================================
+    OBJECT_POSITION_X_TYPE = 560,          // u8  (0=px, 1=%, 2=keyword)
+    OBJECT_POSITION_Y_TYPE = 561,          // u8
+    OBJECT_POSITION_X_VALUE = 562,         // f32 (4 bytes: 562-565)
+    OBJECT_POSITION_Y_VALUE = 566,         // f32 (4 bytes: 566-569)
+    OBJECT_POSITION_STATE = 570,           // u8
+    WRITING_MODE = 571,                    // u8
+    WRITING_MODE_STATE = 572,              // u8
+    UNICODE_BIDI = 573,                    // u8
+    UNICODE_BIDI_STATE = 574,              // u8
+    HYPHENS = 575,                         // u8
+    HYPHENS_STATE = 576,                   // u8
+    CARET_COLOR = 577,                     // u32 (4 bytes: 577-580)
+    CARET_COLOR_STATE = 581,               // u8
+    WORD_SPACING = 582,                    // f32 (4 bytes: 582-585)
+    WORD_SPACING_TYPE = 586,               // u8 (0=px, 1=%, 2=normal)
+    WORD_SPACING_STATE = 587,              // u8
+    FONT_STRETCH = 588,                    // i32 (4 bytes: 588-591) percentage * 100
+    FONT_STRETCH_STATE = 592,              // u8
+    // End of buffer at 593, padded to 596
 }
 
 pub const MAX_INLINE_TRANSFORM_OPS: usize = 6;
@@ -737,6 +820,13 @@ bitflags! {
         const TEXT_SHADOWS = 1u128 << 68;
         const FONT_FAMILY = 1u128 << 69;
         const LETTER_SPACING = 1u128 << 70;
+        const OBJECT_POSITION = 1u128 << 72;
+        const WRITING_MODE = 1u128 << 73;
+        const UNICODE_BIDI = 1u128 << 74;
+        const HYPHENS = 1u128 << 75;
+        const CARET_COLOR = 1u128 << 76;
+        const WORD_SPACING = 1u128 << 77;
+        const FONT_STRETCH = 1u128 << 78;
     }
 }
 

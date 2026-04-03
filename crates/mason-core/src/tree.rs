@@ -5,7 +5,6 @@ use crate::style::{DisplayMode, Style};
 use parking_lot::lock_api::{MappedRwLockReadGuard, MappedRwLockWriteGuard};
 use parking_lot::{Mutex, RawRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use slotmap::{new_key_type, Key, KeyData, SecondaryMap, SlotMap};
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
@@ -481,17 +480,14 @@ impl Tree {
                 let mut resolved_width = style_size.width.maybe_resolve(parent_w, |_, _| 0.0);
                 let mut resolved_height = style_size.height.maybe_resolve(parent_h, |_, _| 0.0);
 
-                // clamp against min/max styles
-                let style_min = {
-                    // need a short read lock to get the node again
+                // Read min/max sizes under a single lock instead of two separate acquisitions
+                let (style_min, style_max) = {
                     let lock = self.0.read();
                     let node = lock.nodes.get(child_id).unwrap();
-                    node.style().get_min_size()
-                };
-                let style_max = {
-                    let lock = self.0.read();
-                    let node = lock.nodes.get(child_id).unwrap();
-                    node.style().get_max_size()
+                    (
+                        node.style().get_min_size(),
+                        node.style().get_max_size(),
+                    )
                 };
 
                 if let Some(min_w) = style_min.width.maybe_resolve(parent_w, |_, _| 0.0) {
@@ -578,25 +574,21 @@ impl Tree {
             // container_w is already computed above
             let mut left_offset = 0.0_f32;
             let mut right_offset = 0.0_f32;
-            // Precompute `clear` values for nodes in this container under a read
-            // lock so we don't need an immutable borrow while holding the
-            // mutable `float_context` entry.
-            let mut clear_map: HashMap<Id, Clear> = HashMap::new();
-            // Precompute resolved margins for each float so placement can
-            // include margins in occupancy/clear calculations without taking
-            // locks while mutating `float_context`.
-            let mut margin_map: HashMap<Id, (f32, f32, f32, f32)> = HashMap::new();
+            // Use Vec<(Id, T)> with linear scan instead of HashMap for small
+            // float collections — better cache locality, no hashing overhead.
+            let mut clear_list: Vec<(Id, Clear)> = Vec::new();
+            let mut margin_list: Vec<(Id, (f32, f32, f32, f32))> = Vec::new();
             {
                 let inner = self.inner();
                 if let Some(orig_vec) = inner.float_context.get(container_id) {
                     for fr in orig_vec.iter() {
                         if let Some(node) = inner.nodes.get(fr.node) {
-                            clear_map.insert(fr.node, node.style().get_clear());
+                            clear_list.push((fr.node, node.style().get_clear()));
                             let m = node
                                 .style()
                                 .get_margin()
                                 .resolve_or_zero(Some(container_w), |_v, _b| 0.0);
-                            margin_map.insert(fr.node, (m.left, m.right, m.top, m.bottom));
+                            margin_list.push((fr.node, (m.left, m.right, m.top, m.bottom)));
                         }
                     }
                 }
@@ -610,7 +602,7 @@ impl Tree {
                     let width = fr.right;
                     let height = fr.bottom;
                     let side = fr.side;
-                    let clear = *clear_map.get(&fr.node).unwrap_or(&Clear::None);
+                    let clear = clear_list.iter().find(|(id, _)| *id == fr.node).map(|(_, c)| *c).unwrap_or(Clear::None);
 
                     let mut y = 0.0_f32;
                     // apply clear constraints initially
@@ -619,7 +611,7 @@ impl Tree {
                         for p in &placed {
                             if p.side == Float::Left {
                                 let (_pl, _pr, _pt, pb) =
-                                    *margin_map.get(&p.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+                                    margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                                 max_bot = max_bot.max(p.top + p.bottom + pb);
                             }
                         }
@@ -630,7 +622,7 @@ impl Tree {
                         for p in &placed {
                             if p.side == Float::Right {
                                 let (_pl, _pr, _pt, pb) =
-                                    *margin_map.get(&p.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+                                    margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                                 max_bot = max_bot.max(p.top + p.bottom + pb);
                             }
                         }
@@ -644,7 +636,7 @@ impl Tree {
                     let mut min_after_cleared = 0.0_f32;
                     for p in &placed {
                         if p.side == side {
-                            if let Some(c) = clear_map.get(&p.node) {
+                            if let Some(c) = clear_list.iter().find(|(id, _)| *id == p.node).map(|(_, c)| c) {
                                 if matches!(c, Clear::Left | Clear::Right | Clear::Both) {
                                     min_after_cleared = min_after_cleared.max(p.top);
                                 }
@@ -662,7 +654,7 @@ impl Tree {
                     candidates.push(y);
                     for p in &placed {
                         let (_p_ml, _p_mr, p_mt, p_mb) =
-                            *margin_map.get(&p.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+                            margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                         candidates.push(p.top);
                         candidates.push(p.top + p.bottom + p_mb);
                     }
@@ -671,7 +663,7 @@ impl Tree {
 
                     // Precompute margins for this float
                     let (ml, mr, mt, _mb) =
-                        *margin_map.get(&fr.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+                        margin_list.iter().find(|(id, _)| *id == fr.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
 
                     let mut placed_this = false;
 
@@ -681,7 +673,7 @@ impl Tree {
                         let mut right_occupied = 0.0_f32;
                         for p in &placed {
                             let (p_ml, p_mr, p_mt, p_mb) =
-                                *margin_map.get(&p.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+                                margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                             let p_top = p.top;
                             let p_bot = p.top + p.bottom + p_mb; // include bottom margin for overlap
                             if !(p_bot <= cand || p_top >= cand + height) {
@@ -738,7 +730,7 @@ impl Tree {
                         let mut max_bot = 0.0_f32;
                         for p in &placed {
                             let (_p_ml, _p_mr, _p_mt, p_mb) =
-                                *margin_map.get(&p.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+                                margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                             max_bot = max_bot.max(p.top + p.bottom + p_mb);
                         }
                         y = max_bot;
@@ -748,7 +740,7 @@ impl Tree {
                         let mut right_occupied = 0.0_f32;
                         for p in &placed {
                             let (p_ml, p_mr, p_mt, p_mb) =
-                                *margin_map.get(&p.node).unwrap_or(&(0.0, 0.0, 0.0, 0.0));
+                                margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                             let p_top = p.top;
                             let p_bot = p.top + p.bottom + p_mb;
                             if !(p_bot <= y || p_top >= y + height) {
@@ -790,23 +782,17 @@ impl Tree {
     /// inline layout code.
     pub fn get_float_rects_simple(&self, container_id: Id) -> Option<Vec<taffy::Rect<f32>>> {
         let inner = self.inner();
-        // If the requested container has entries, return them.
-        // NOTE: we used to fall back to flattening float rects from all
-        // containers when the requested container was empty; that was a
-        // temporary debugging aid and caused unexpected rectangles to be
-        // reported for root/ancestor queries.  Do not perform the flattening
-        // anymore.
         if let Some(vec) = inner.float_context.get(container_id) {
-            return Some(
-                vec.iter()
-                    .map(|fr| Rect {
-                        left: fr.left,
-                        top: fr.top,
-                        right: fr.right,
-                        bottom: fr.bottom,
-                    })
-                    .collect(),
-            );
+            let mut result = Vec::with_capacity(vec.len());
+            for fr in vec.iter() {
+                result.push(Rect {
+                    left: fr.left,
+                    top: fr.top,
+                    right: fr.right,
+                    bottom: fr.bottom,
+                });
+            }
+            return Some(result);
         }
 
         None
@@ -821,19 +807,22 @@ impl Tree {
         let mut has_mixed_content = false;
         let mut all_inline = true;
 
-        if let Some(children) = self.inner().children.get(id) {
+        // Hold a single read lock for entire analysis instead of re-acquiring per child
+        let inner = self.inner();
+        if let Some(children) = inner.children.get(id) {
             has_children = !children.is_empty();
 
             let mut has_inline = false;
             let mut has_non_inline = false;
 
             for child_id in children {
-                if let Some(child) = self.inner().nodes.get(*child_id) {
-                    let mode = child.style().display_mode();
+                if let Some(child) = inner.nodes.get(*child_id) {
+                    let style = child.style();
+                    let mode = style.display_mode();
                     let inline_or_box_inline =
                         matches!(mode, DisplayMode::Inline | DisplayMode::Box);
                     // Fix: Check for anonymous inline blocks too
-                    let is_inline = child.style().force_inline() || inline_or_box_inline;
+                    let is_inline = style.force_inline() || inline_or_box_inline;
 
                     if is_inline {
                         has_inline = true;
@@ -894,13 +883,14 @@ impl Tree {
         // later in the layout pass from attempting to index into the slotmap
         // with invalid keys.
         {
-            let mut inner_mut = self.inner_mut();
+            let inner_mut = &mut *self.inner_mut();
             let parents: Vec<Id> = inner_mut.children.keys().collect();
-            // snapshot existing node ids to avoid double-borrowing `inner_mut`
-            let existing: std::collections::HashSet<Id> = inner_mut.nodes.keys().collect();
+            // We need a reference to nodes while mutating children. Access
+            // both fields through a raw pointer to avoid borrow conflicts.
+            let nodes_ptr: *const SlotMap<Id, Node> = &inner_mut.nodes;
             for parent in parents {
                 if let Some(children) = inner_mut.children.get_mut(parent) {
-                    children.retain(|&c| existing.contains(&c));
+                    children.retain(|c| unsafe { (*nodes_ptr).contains_key(*c) });
                 }
             }
         }

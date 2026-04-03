@@ -2047,6 +2047,8 @@ declare class MasonStyle extends NSObject {
 
 	alignSelf: MasonAlignSelf;
 
+	backdropFilter: string;
+
 	background: string;
 
 	backgroundClip: string;
@@ -2064,6 +2066,8 @@ declare class MasonStyle extends NSObject {
 	border: string;
 
 	borderBottom: string;
+
+	borderImage: string;
 
 	borderLeft: string;
 
@@ -2116,6 +2120,8 @@ declare class MasonStyle extends NSObject {
 	readonly font: NSCFontFace;
 
 	fontFamily: string;
+
+	fontFeatureSettings: string;
 
 	fontSize: number;
 
@@ -3784,11 +3790,19 @@ declare function mason_node_clear_segments(mason: interop.Pointer | interop.Refe
 
 declare function mason_node_compute(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>): void;
 
+declare function mason_node_compute_and_layout(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>, layout: interop.FunctionReference<(p1: interop.Pointer | interop.Reference<number>, p2: number) => interop.Pointer | interop.Reference<any>>): interop.Pointer | interop.Reference<any>;
+
 declare function mason_node_compute_max_content(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>): void;
+
+declare function mason_node_compute_max_content_and_layout(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>, layout: interop.FunctionReference<(p1: interop.Pointer | interop.Reference<number>, p2: number) => interop.Pointer | interop.Reference<any>>): interop.Pointer | interop.Reference<any>;
 
 declare function mason_node_compute_min_content(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>): void;
 
+declare function mason_node_compute_min_content_and_layout(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>, layout: interop.FunctionReference<(p1: interop.Pointer | interop.Reference<number>, p2: number) => interop.Pointer | interop.Reference<any>>): interop.Pointer | interop.Reference<any>;
+
 declare function mason_node_compute_wh(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>, width: number, height: number): void;
+
+declare function mason_node_compute_wh_and_layout(mason: interop.Pointer | interop.Reference<any>, node: interop.Pointer | interop.Reference<any>, width: number, height: number, layout: interop.FunctionReference<(p1: interop.Pointer | interop.Reference<number>, p2: number) => interop.Pointer | interop.Reference<any>>): interop.Pointer | interop.Reference<any>;
 
 declare function mason_node_destroy(node: interop.Pointer | interop.Reference<any>): void;
 

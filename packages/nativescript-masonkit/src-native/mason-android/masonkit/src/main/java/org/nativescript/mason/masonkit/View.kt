@@ -145,16 +145,19 @@ open class View @JvmOverloads constructor(
 
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach {
-      it.shader = null
-      it.shaderWidth = -1
-      it.shaderHeight = -1
-    } // force rebuild on next draw
-    style.mBorderRenderer.invalidate()
-    // Reapply transforms now that pivot and size are known
-    try {
-      style.applyTransformToView()
-    } catch (_: Exception) {
+    // Skip expensive work when size hasn't actually changed
+    if (w != oldw || h != oldh) {
+      style.mBackground?.layers?.forEach {
+        it.shader = null
+        it.shaderWidth = -1
+        it.shaderHeight = -1
+      } // force rebuild on next draw
+      style.mBorderRenderer.invalidate()
+      // Reapply transforms now that pivot and size are known
+      try {
+        style.applyTransformToView()
+      } catch (_: Exception) {
+      }
     }
     super.onSizeChanged(w, h, oldw, oldh)
   }

@@ -3,6 +3,10 @@ import { View, Scroll, Img, Text, Button, Br, Input, TextArea } from '@triniwiz/
 import { P, Span, B, H1, H2, H3, H4, Code, Div, Section } from '@triniwiz/nativescript-masonkit/web';
 import Home from './components/Home.vue';
 
+// Enable MasonKit's native web-normalised defaults (border-box, margin:0, etc.)
+// This replaces Tailwind's CSS preflight at the native layout engine level.
+View.preflight = true;
+
 registerElement('view', () => View);
 registerElement('div', () => Div);
 registerElement('img', () => Img);

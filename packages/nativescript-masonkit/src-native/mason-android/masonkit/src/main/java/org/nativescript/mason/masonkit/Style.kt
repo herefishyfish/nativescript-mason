@@ -477,6 +477,25 @@ object StyleKeys {
   const val MAX_INLINE_TRANSFORM_OPS = 6
   const val TRANSFORM_FLAG_HAS_MATRIX = 0x01
   const val TRANSFORM_FLAG_IS_3D = 0x02
+
+  const val OBJECT_POSITION_X_TYPE = 560
+  const val OBJECT_POSITION_Y_TYPE = 561
+  const val OBJECT_POSITION_X_VALUE = 562    // f32
+  const val OBJECT_POSITION_Y_VALUE = 566    // f32
+  const val OBJECT_POSITION_STATE = 570
+  const val WRITING_MODE = 571
+  const val WRITING_MODE_STATE = 572
+  const val UNICODE_BIDI = 573
+  const val UNICODE_BIDI_STATE = 574
+  const val HYPHENS = 575
+  const val HYPHENS_STATE = 576
+  const val CARET_COLOR = 577                // u32
+  const val CARET_COLOR_STATE = 581
+  const val WORD_SPACING = 582               // f32
+  const val WORD_SPACING_TYPE = 586
+  const val WORD_SPACING_STATE = 587
+  const val FONT_STRETCH = 588               // i32 (pct * 100)
+  const val FONT_STRETCH_STATE = 592
 }
 
 object TransformOpType {
@@ -572,6 +591,13 @@ class StateKeys internal constructor(val low: Long, val high: Long) {
     val FONT_FAMILY = flag(69)
     val LETTER_SPACING = flag(70)
     val FONT_VARIANT_NUMERIC = flag(71)
+    val OBJECT_POSITION = flag(72)
+    val WRITING_MODE = flag(73)
+    val UNICODE_BIDI = flag(74)
+    val HYPHENS = flag(75)
+    val CARET_COLOR = flag(76)
+    val WORD_SPACING = flag(77)
+    val FONT_STRETCH = flag(78)
 
     /** Pre-computed union of all text-related flags. Computed once at class-init. */
     val ALL_TEXT: StateKeys = FONT_COLOR or FONT_SIZE or FONT_WEIGHT or FONT_STYLE or
@@ -1031,7 +1057,9 @@ class Style internal constructor(@Transient internal var node: Node) {
           StateKeys.DECORATION_THICKNESS
         ) || value.hasFlag(
           StateKeys.TEXT_SHADOWS
-        )
+        ) || value.hasFlag(StateKeys.HYPHENS) || value.hasFlag(StateKeys.WORD_SPACING)
+        || value.hasFlag(StateKeys.WRITING_MODE) || value.hasFlag(StateKeys.UNICODE_BIDI)
+        || value.hasFlag(StateKeys.FONT_STRETCH)
       ) {
         invalidate = true
       }
@@ -1063,6 +1091,26 @@ class Style internal constructor(@Transient internal var node: Node) {
           mBackground = Background(this)
         }
         state = state or StateKeys.BACKGROUND_COLOR
+      }
+
+      if (value.hasFlag(StateKeys.HYPHENS)) {
+        state = state or StateKeys.HYPHENS
+      }
+
+      if (value.hasFlag(StateKeys.WORD_SPACING)) {
+        state = state or StateKeys.WORD_SPACING
+      }
+
+      if (value.hasFlag(StateKeys.WRITING_MODE)) {
+        state = state or StateKeys.WRITING_MODE
+      }
+
+      if (value.hasFlag(StateKeys.UNICODE_BIDI)) {
+        state = state or StateKeys.UNICODE_BIDI
+      }
+
+      if (value.hasFlag(StateKeys.FONT_STRETCH)) {
+        state = state or StateKeys.FONT_STRETCH
       }
 
       if (state != StateKeys.NONE) {
@@ -3008,6 +3056,52 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
+  // ============================================================
+  // border-image (string-based)
+  // ============================================================
+  var borderImage: String = ""
+    set(value) {
+      field = value
+      (node.view as? View)?.invalidate()
+    }
+
+  // ============================================================
+  // backdrop-filter (string-based)
+  // ============================================================
+  internal var mBackdropFilter: CSSFilters.CSSFilter? = null
+
+  var backdropFilter: String = ""
+    set(value) {
+      field = value
+      mBackdropFilter = if (value.isNotEmpty() && value != "none") {
+        CSSFilters.parse(value)
+      } else {
+        null
+      }
+      applyBackdropFilter()
+    }
+
+  @android.annotation.SuppressLint("NewApi")
+  private fun applyBackdropFilter() {
+    val view = node.view as? android.view.View ?: return
+    val filter = mBackdropFilter
+    if (filter == null || filter.filters.isEmpty()) {
+      if (android.os.Build.VERSION.SDK_INT >= 31) {
+        view.setRenderEffect(null)
+      }
+      view.invalidate()
+      return
+    }
+
+    if (android.os.Build.VERSION.SDK_INT >= 31) {
+      // Build a chained RenderEffect from ALL parsed filter functions,
+      // matching the same pipeline as FilterHelperV3 for regular `filter`.
+      view.setRenderEffect(filter.buildBackdropRenderEffect())
+    }
+    view.invalidate()
+  }
+
+
   internal fun getRadiusPoint(keys: IKeyCorner): Point<LengthPercentage> {
     val x = LengthPercentage.fromTypeValue(
       values.get(keys.xType), values.getFloat(keys.xValue)
@@ -4065,6 +4159,18 @@ class Style internal constructor(@Transient internal var node: Node) {
       mBorderRenderer.invalidate()
     }
 
+    // Dispatch caret-color to input views
+    val caretColorDirty = StateKeys(isDirty, isDirtyHigh).hasFlag(StateKeys.CARET_COLOR)
+    if (caretColorDirty) {
+      notifyTextStyleChanged(StateKeys.CARET_COLOR)
+    }
+
+    // Dispatch object-position to image views
+    val objectPositionDirty = StateKeys(isDirty, isDirtyHigh).hasFlag(StateKeys.OBJECT_POSITION)
+    if (objectPositionDirty) {
+      (node.view as? android.widget.ImageView)?.invalidate()
+    }
+
     if (isSlowDirty) {
       if (isDirtyEmpty()) {
         nativeNonBufferData(
@@ -4944,6 +5050,76 @@ class Style internal constructor(@Transient internal var node: Node) {
       return parentStyleWithTextValues?.resolvedListStylePosition ?: ListStylePosition.from(
         values.get(StyleKeys.LIST_STYLE_POSITION)
       )
+    }
+
+  internal val resolvedCaretColor: Int
+    get() {
+      val state = values.get(StyleKeys.CARET_COLOR_STATE)
+      return if (state == StyleState.SET) {
+        values.getInt(StyleKeys.CARET_COLOR)
+      } else if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedCaretColor ?: resolvedColor
+      } else {
+        // auto / unset → fall back to currentColor (text color)
+        resolvedColor
+      }
+    }
+
+  internal val resolvedWordSpacing: Float
+    get() {
+      val state = values.get(StyleKeys.WORD_SPACING_STATE)
+      return if (state == StyleState.SET || state == StyleState.INHERIT) {
+        if (state == StyleState.INHERIT) {
+          parentStyleWithTextValues?.resolvedWordSpacing ?: values.getFloat(StyleKeys.WORD_SPACING)
+        } else {
+          values.getFloat(StyleKeys.WORD_SPACING)
+        }
+      } else {
+        0f
+      }
+    }
+
+  internal val resolvedWordSpacingType: Byte
+    get() = values.get(StyleKeys.WORD_SPACING_TYPE)
+
+  internal val resolvedWritingMode: Byte
+    get() {
+      val state = values.get(StyleKeys.WRITING_MODE_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedWritingMode ?: values.get(StyleKeys.WRITING_MODE)
+      } else {
+        values.get(StyleKeys.WRITING_MODE)
+      }
+    }
+
+  internal val resolvedUnicodeBidi: Byte
+    get() {
+      val state = values.get(StyleKeys.UNICODE_BIDI_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedUnicodeBidi ?: values.get(StyleKeys.UNICODE_BIDI)
+      } else {
+        values.get(StyleKeys.UNICODE_BIDI)
+      }
+    }
+
+  internal val resolvedHyphens: Byte
+    get() {
+      val state = values.get(StyleKeys.HYPHENS_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedHyphens ?: values.get(StyleKeys.HYPHENS)
+      } else {
+        values.get(StyleKeys.HYPHENS)
+      }
+    }
+
+  internal val resolvedFontStretch: Int
+    get() {
+      val state = values.get(StyleKeys.FONT_STRETCH_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedFontStretch ?: values.getInt(StyleKeys.FONT_STRETCH)
+      } else {
+        values.getInt(StyleKeys.FONT_STRETCH)
+      }
     }
 
 

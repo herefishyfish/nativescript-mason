@@ -48,14 +48,11 @@ pub struct AndroidNode(pub(crate) jni::sys::jint);
 impl AndroidNode {
     pub fn set_computed_size(&self, width: f32, height: f32) {
         if let Some(jvm) = crate::JVM.get() {
-            let vm = jvm.attach_current_thread();
-            let mut env = vm.unwrap();
+            let mut env = match jvm.get_env() {
+                Ok(env) => env,
+                Err(_) => return,
+            };
             if let Some(cache) = crate::JVM_CACHE.get() {
-                // Capture raw bit-patterns and subnormal status for diagnostics.
-                let width_bits = width.to_bits();
-                let height_bits = height.to_bits();
-                let is_subnormal = height.is_subnormal();
-
                 let node = unsafe { jni::objects::JClass::from_raw(cache.node_clazz.as_raw()) };
                 let _ = unsafe {
                     env.call_static_method_unchecked(
@@ -114,8 +111,9 @@ impl NodeMeasure {
 
         match crate::JVM.get() {
             Some(jvm) => {
-                let vm = jvm.attach_current_thread();
-                let mut env = vm.unwrap();
+                let Ok(mut env) = jvm.get_env() else {
+                    return known_dimensions.map(|v| v.unwrap_or(0.0));
+                };
 
                 if let Some(cache) = crate::JVM_CACHE.get() {
                     let node = unsafe { jni::objects::JClass::from_raw(cache.node_clazz.as_raw()) };
@@ -292,8 +290,9 @@ impl NodeData {
     ) -> taffy::geometry::Size<f32> {
         match crate::JVM.get() {
             Some(jvm) => {
-                let vm = jvm.attach_current_thread();
-                let mut env = vm.unwrap();
+                let Ok(mut env) = jvm.get_env() else {
+                    return known_dimensions.map(|v| v.unwrap_or(0.0));
+                };
 
                 if let Some(cache) = crate::JVM_CACHE.get() {
                     unsafe {
@@ -425,6 +424,53 @@ pub struct PseudoStyles {
     pub focus: Option<crate::style::Style>,
     pub disabled: Option<crate::style::Style>,
     pub checked: Option<crate::style::Style>,
+}
+
+impl PseudoStyles {
+    /// Return immutable reference to the first matching pseudo style by priority.
+    pub fn resolve(&self, flags: u16) -> Option<&crate::style::Style> {
+        let bits = PseudoStates::from_bits_truncate(flags);
+        if bits.contains(PseudoStates::HOVER) { if let Some(s) = &self.hover { return Some(s); } }
+        if bits.contains(PseudoStates::ACTIVE) { if let Some(s) = &self.active { return Some(s); } }
+        if bits.contains(PseudoStates::FOCUS) { if let Some(s) = &self.focus { return Some(s); } }
+        if bits.contains(PseudoStates::DISABLED) { if let Some(s) = &self.disabled { return Some(s); } }
+        if bits.contains(PseudoStates::CHECKED) { if let Some(s) = &self.checked { return Some(s); } }
+        None
+    }
+
+    /// Return mutable reference to the first matching pseudo style by priority,
+    /// creating/cloning from `base` if missing.
+    pub fn resolve_or_create_mut(
+        &mut self,
+        flags: u16,
+        base: &crate::style::Style,
+        init: fn(&mut crate::style::Style),
+    ) -> Option<&mut crate::style::Style> {
+        let bits = PseudoStates::from_bits_truncate(flags);
+        let slot = if bits.contains(PseudoStates::HOVER) {
+            Some(&mut self.hover)
+        } else if bits.contains(PseudoStates::ACTIVE) {
+            Some(&mut self.active)
+        } else if bits.contains(PseudoStates::FOCUS) {
+            Some(&mut self.focus)
+        } else if bits.contains(PseudoStates::DISABLED) {
+            Some(&mut self.disabled)
+        } else if bits.contains(PseudoStates::CHECKED) {
+            Some(&mut self.checked)
+        } else {
+            None
+        };
+        slot.map(|opt| {
+            if opt.is_none() {
+                let mut s = base.clone();
+                init(&mut s);
+                *opt = Some(s);
+            } else {
+                opt.as_mut().unwrap().prepare_mut();
+            }
+            opt.as_mut().unwrap()
+        })
+    }
 }
 
 /*

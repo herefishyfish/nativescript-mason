@@ -1589,6 +1589,45 @@ class NodeHelper(val mason: Mason) {
       node.style.transform = value
     }
 
+    fun getBorderImage(view: android.view.View): String {
+      val node = mason.nodeForView(view)
+      return node.style.borderImage
+    }
+
+    fun setBorderImage(
+      view: android.view.View,
+      value: String
+    ) {
+      val node = mason.nodeForView(view)
+      node.style.borderImage = value
+    }
+
+    fun getBackdropFilter(view: android.view.View): String {
+      val node = mason.nodeForView(view)
+      return node.style.backdropFilter
+    }
+
+    fun setBackdropFilter(
+      view: android.view.View,
+      value: String
+    ) {
+      val node = mason.nodeForView(view)
+      node.style.backdropFilter = value
+    }
+
+    fun getFontFeatureSettings(view: android.view.View): String {
+      val node = mason.nodeForView(view)
+      return node.style.fontFeatureSettings
+    }
+
+    fun setFontFeatureSettings(
+      view: android.view.View,
+      value: String
+    ) {
+      val node = mason.nodeForView(view)
+      node.style.fontFeatureSettings = value
+    }
+
     fun compute(node: Node) {
       NativeHelpers.nativeNodeCompute(
         node.mason.nativePtr, node.nativePtr
