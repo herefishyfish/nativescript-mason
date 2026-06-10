@@ -506,16 +506,6 @@ pub fn update_from_ffi(
 }
 
 #[inline(always)]
-pub(crate) fn set_style_data_i16(style: &mut [u8], position: StyleKeys, value: i16) {
-    let offset = position as usize;
-
-    unsafe {
-        let ptr = style.as_mut_ptr().add(offset) as *mut i16;
-        ptr.write_unaligned(value.to_le());
-    }
-}
-
-#[inline(always)]
 pub(crate) fn set_style_data_i32(style: &mut [u8], position: StyleKeys, value: i32) {
     let offset = position as usize;
     unsafe {
@@ -544,15 +534,6 @@ pub(crate) fn set_style_data_f32(style: &mut [u8], position: StyleKeys, value: f
 }
 
 #[inline(always)]
-pub(crate) fn get_style_data_i16(style: &[u8], position: StyleKeys) -> i16 {
-    let offset = position as usize;
-    unsafe {
-        let ptr = style.as_ptr().add(offset) as *const i16;
-        i16::from_le(ptr.read_unaligned())
-    }
-}
-
-#[inline(always)]
 pub(crate) fn get_style_data_i32(style: &[u8], position: StyleKeys) -> i32 {
     let offset = position as usize;
     let ptr: [u8; 4] = <[u8; 4]>::try_from(&style[offset..offset + 4]).unwrap();
@@ -564,14 +545,6 @@ pub(crate) fn get_style_data_i32(style: &[u8], position: StyleKeys) -> i32 {
     }
 }
 
-#[inline(always)]
-pub(crate) fn get_style_data_u32(style: &[u8], position: StyleKeys) -> u32 {
-    let offset = position as usize;
-    unsafe {
-        let ptr = style.as_ptr().add(offset) as *const u32;
-        u32::from_le(ptr.read_unaligned())
-    }
-}
 
 #[inline(always)]
 pub(crate) fn get_style_data_f32(style: &[u8], position: StyleKeys) -> f32 {

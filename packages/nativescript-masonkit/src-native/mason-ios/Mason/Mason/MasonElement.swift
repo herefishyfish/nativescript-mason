@@ -381,6 +381,10 @@ extension MasonElement {
   public func autoComputeIfRoot() {
     guard !(uiView.superview is MasonElement) else { return }
     guard let parentSize = uiView.superview?.bounds.size else { return }
+    // When the parent has zero bounds (e.g. during view controller transitions
+    // or before Auto Layout has run), skip layout BUT do NOT clear dirty flags.
+    // This ensures the next call with a real size will actually recompute
+    // instead of hitting a stale cache.
     guard parentSize.width > 0 || parentSize.height > 0 else { return }
     if _lastAutoComputeSize != parentSize || computeCacheDirty || node.isDirty {
       _lastAutoComputeSize = parentSize

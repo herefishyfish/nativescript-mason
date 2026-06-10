@@ -9,8 +9,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.toColorInt
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.Dimension
-import org.nativescript.mason.masonkit.FontFace
 import org.nativescript.mason.masonkit.LengthPercentage
 import org.nativescript.mason.masonkit.LengthPercentageAuto
 import org.nativescript.mason.masonkit.Mason
@@ -141,8 +143,8 @@ class TextActivity : AppCompatActivity() {
 
     body.append(root)
     outer2.style.color = Color.RED
-    outer2.style.fontStyle = FontFace.NSCFontStyle.Italic
-    outer1.style.fontWeight = FontFace.NSCFontWeight.Bold
+    outer2.style.fontStyle = FontStyle.Italic
+    outer1.style.fontWeight = FontWeight.Bold
 
     val text = Mason.shared.createTextView(this, TextType.P)
     text.fontSize = 16
@@ -330,8 +332,8 @@ Nullam tempor enim in tortor vestibulum, id dapibus lectus volutpat. Interdum et
         root.style.inBatch = true
         root.style.color = Color.RED
         root.style.fontSize = 20
-        root.style.fontStyle = FontFace.NSCFontStyle.Italic
-        root.style.fontWeight = FontFace.NSCFontWeight.Bold
+        root.style.fontStyle = FontStyle.Italic
+        root.style.fontWeight = FontWeight.Bold
         root.style.inBatch = false
       }
     }

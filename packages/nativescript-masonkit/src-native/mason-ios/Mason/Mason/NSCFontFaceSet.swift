@@ -37,7 +37,7 @@ public enum NSCFontFaceSetStatus: Int, RawRepresentable {
   }
 }
 
-let familyNamePattern = #"(?:\d+px\s+)(['"]?[\w\s]+['"]?)$"#
+let familyNamePattern = #"^['"]?(?:\d+px\s+)(['"]?[\w\s-]+['"]?)['"]?$"#
 @objcMembers
 @objc(NSCFontFaceSet)
 public class NSCFontFaceSet: NSObject {

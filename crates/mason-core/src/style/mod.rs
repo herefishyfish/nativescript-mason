@@ -19,8 +19,6 @@ use crate::utils::{
 use crate::JVM;
 use bitflags::bitflags;
 #[cfg(target_vendor = "apple")]
-use objc2::AnyThread;
-#[cfg(target_vendor = "apple")]
 use objc2::__framework_prelude::Retained;
 #[cfg(target_vendor = "apple")]
 use objc2_foundation::NSMutableData;
@@ -31,7 +29,6 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use style_atoms::Atom;
-use taffy::prelude::TaffyGridLine;
 use taffy::{
     AbsoluteAxis, AbstractAxis, AlignContent, AlignItems, AlignSelf, BlockContainerStyle,
     BlockItemStyle, BoxGenerationMode, BoxSizing, Clear, CoreStyle, Dimension, Display,
@@ -919,13 +916,6 @@ impl Style {
             .map(|scale| f32::from_bits(scale.load(Ordering::Acquire)))
             .unwrap_or(1f32)
     }
-    fn default_data() -> Vec<u8> {
-        // last item + 4 bytes
-        let mut buffer = vec![0_u8; STYLE_BUFFER_SIZE];
-        Self::init_default_data(buffer.as_mut_slice());
-        buffer
-    }
-
     pub(crate) fn init_default_data(buffer: &mut [u8]) {
         set_style_data_u8(
             buffer,
@@ -1519,33 +1509,6 @@ impl Style {
     pub fn set_max_content_height(&mut self, value: f32) {
         self.prepare_mut();
         set_style_data_f32(self.data_mut(), StyleKeys::MAX_CONTENT_HEIGHT, value)
-    }
-
-    pub(crate) fn content_sizes(&self) -> (Size<f32>, Size<f32>) {
-        (
-            Size {
-                width: get_style_data_f32(self.data(), StyleKeys::MIN_CONTENT_WIDTH),
-                height: get_style_data_f32(self.data(), StyleKeys::MIN_CONTENT_HEIGHT),
-            },
-            Size {
-                width: get_style_data_f32(self.data(), StyleKeys::MAX_CONTENT_WIDTH),
-                height: get_style_data_f32(self.data(), StyleKeys::MAX_CONTENT_HEIGHT),
-            },
-        )
-    }
-
-    pub(crate) fn content_width_sizes(&self) -> (f32, f32) {
-        (
-            get_style_data_f32(self.data(), StyleKeys::MIN_CONTENT_WIDTH),
-            get_style_data_f32(self.data(), StyleKeys::MAX_CONTENT_WIDTH),
-        )
-    }
-
-    pub(crate) fn content_height_sizes(&self) -> (f32, f32) {
-        (
-            get_style_data_f32(self.data(), StyleKeys::MIN_CONTENT_HEIGHT),
-            get_style_data_f32(self.data(), StyleKeys::MAX_CONTENT_HEIGHT),
-        )
     }
 
     // used to force inline when text-view doesn't set a tag
@@ -2449,23 +2412,6 @@ impl Style {
         )
     }
 
-    pub(crate) fn resolve_grid_area_from_template_areas(
-        &mut self,
-        template_areas: &[GridTemplateArea<Atom>],
-    ) {
-        if let Some(name) = &self.grid_area {
-            if let Some(area) = template_areas.iter().find(|a| &a.name == name) {
-                // The parser already stores 1-based CSS grid line indices,
-                // so use them directly.
-                self.grid_row_start = GridPlacement::from_line_index(area.row_start as i16);
-                self.grid_row_end = GridPlacement::from_line_index(area.row_end as i16);
-                self.grid_column_start =
-                    GridPlacement::from_line_index(area.column_start as i16);
-                self.grid_column_end = GridPlacement::from_line_index(area.column_end as i16);
-            }
-        }
-    }
-
     pub fn get_grid_name(&self) -> Option<&str> {
         self.grid_area.as_deref()
     }
@@ -2516,15 +2462,6 @@ impl Style {
             )
             .map(Atom::from);
         }
-    }
-
-    pub(crate) fn reset_grid_area(&mut self) {
-        self.grid_row_start = GridPlacement::Auto;
-        self.grid_row_end = GridPlacement::Auto;
-        self.grid_column_start = GridPlacement::Auto;
-        self.grid_column_end = GridPlacement::Auto;
-
-        self.grid_area = None;
     }
 
     pub fn get_grid_row(&self) -> Line<GridPlacement<Atom>> {

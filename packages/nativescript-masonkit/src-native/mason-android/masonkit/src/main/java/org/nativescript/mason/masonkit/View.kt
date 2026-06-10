@@ -13,6 +13,7 @@ import androidx.core.util.size
 import com.google.gson.ExclusionStrategy
 import com.google.gson.FieldAttributes
 import com.google.gson.GsonBuilder
+import org.nativescript.fontmanager.FontFace
 import org.nativescript.mason.masonkit.enums.AlignContent
 import org.nativescript.mason.masonkit.enums.AlignItems
 import org.nativescript.mason.masonkit.enums.AlignSelf

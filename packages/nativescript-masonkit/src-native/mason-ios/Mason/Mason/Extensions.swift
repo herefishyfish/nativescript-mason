@@ -678,4 +678,19 @@ func setInnerHTML<T: MasonElement>(_ element: T,_ value: String) {
     guard let parent = self as? MasonElement else { return }
     replaceChildAt(parent, node: node, index: index)
   }
+
+  /// Remove the child node (view or text node) at `index` from the mason tree.
+  /// Counterpart to `mason_addChildAt`; `MasonNode.removeChildAt` already
+  /// handles both `MasonTextNode` and element children.
+  @objc public func mason_removeChildAt(_ index: Int){
+    guard let parent = self as? MasonElement else { return }
+    _ = parent.node.removeChildAt(index: index)
+  }
+
+  /// Remove a specific child node (e.g. the `MasonTextNode` a framework stamped
+  /// onto its JS text node) without needing its index.
+  @objc public func mason_removeChildNode(_ node: MasonNode){
+    guard let parent = self as? MasonElement else { return }
+    _ = parent.node.removeChild(node)
+  }
 }

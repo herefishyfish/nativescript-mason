@@ -4,9 +4,11 @@ use crate::Style;
 pub use grid::*;
 use style_atoms::Atom;
 use taffy::{
-    AlignContent, AlignItems, AlignSelf, AvailableSpace, BoxSizing, Clear, Display, FlexDirection,
+    AlignContent, AlignItems, AlignSelf, BoxSizing, Clear, Display, FlexDirection,
     FlexWrap, Float, GridAutoFlow, GridPlacement, GridTemplateArea, JustifyContent, Line, Position,
     TextAlign,
+    AlignContentKeyword,
+    AlignItemsKeyword
 };
 
 pub const fn border_style_from_enum(value: i8) -> Option<BorderStyle> {
@@ -88,16 +90,16 @@ pub const fn align_content_from_enum(value: i8) -> Option<AlignContent> {
 }
 
 pub const fn align_content_to_enum(value: AlignContent) -> i8 {
-    match value {
-        AlignContent::Start => 0,
-        AlignContent::End => 1,
-        AlignContent::Center => 2,
-        AlignContent::Stretch => 3,
-        AlignContent::SpaceBetween => 4,
-        AlignContent::SpaceEvenly => 5,
-        AlignContent::SpaceAround => 6,
-        AlignContent::FlexStart => 7,
-        AlignContent::FlexEnd => 8,
+    match value.keyword {
+        AlignContentKeyword::Start => 0,
+        AlignContentKeyword::End => 1,
+        AlignContentKeyword::Center => 2,
+        AlignContentKeyword::Stretch => 3,
+        AlignContentKeyword::SpaceBetween => 4,
+        AlignContentKeyword::SpaceEvenly => 5,
+        AlignContentKeyword::SpaceAround => 6,
+        AlignContentKeyword::FlexStart => 7,
+        AlignContentKeyword::FlexEnd => 8,
     }
 }
 
@@ -136,14 +138,14 @@ pub const fn overflow_to_enum(value: Overflow) -> i8 {
 }
 
 pub const fn align_items_to_enum(value: AlignItems) -> i8 {
-    match value {
-        AlignItems::Start => 0,
-        AlignItems::End => 1,
-        AlignItems::Center => 2,
-        AlignItems::Baseline => 3,
-        AlignItems::Stretch => 4,
-        AlignItems::FlexStart => 5,
-        AlignItems::FlexEnd => 6,
+    match value.keyword {
+        AlignItemsKeyword::Start => 0,
+        AlignItemsKeyword::End => 1,
+        AlignItemsKeyword::Center => 2,
+        AlignItemsKeyword::Baseline => 3,
+        AlignItemsKeyword::Stretch => 4,
+        AlignItemsKeyword::FlexStart => 5,
+        AlignItemsKeyword::FlexEnd => 6,
     }
 }
 
@@ -161,28 +163,28 @@ pub const fn align_self_from_enum(value: i8) -> Option<AlignSelf> {
 }
 
 pub const fn align_self_to_enum(value: AlignSelf) -> i8 {
-    match value {
-        AlignSelf::Start => 0,
-        AlignSelf::End => 1,
-        AlignSelf::Center => 2,
-        AlignSelf::Baseline => 3,
-        AlignSelf::Stretch => 4,
-        AlignSelf::FlexStart => 5,
-        AlignSelf::FlexEnd => 6,
+    match value .keyword{
+        AlignItemsKeyword::Start => 0,
+        AlignItemsKeyword::End => 1,
+        AlignItemsKeyword::Center => 2,
+        AlignItemsKeyword::Baseline => 3,
+        AlignItemsKeyword::Stretch => 4,
+        AlignItemsKeyword::FlexStart => 5,
+        AlignItemsKeyword::FlexEnd => 6,
     }
 }
 
 pub const fn align_self_op_to_enum(value: Option<AlignSelf>) -> Option<i8> {
     match value {
         None => None,
-        Some(value) => Some(match value {
-            AlignSelf::Start => 0,
-            AlignSelf::End => 1,
-            AlignSelf::Center => 2,
-            AlignSelf::Baseline => 3,
-            AlignSelf::Stretch => 4,
-            AlignSelf::FlexStart => 5,
-            AlignSelf::FlexEnd => 6,
+        Some(value) => Some(match value.keyword {
+            AlignItemsKeyword::Start => 0,
+            AlignItemsKeyword::End => 1,
+            AlignItemsKeyword::Center => 2,
+            AlignItemsKeyword::Baseline => 3,
+            AlignItemsKeyword::Stretch => 4,
+            AlignItemsKeyword::FlexStart => 5,
+            AlignItemsKeyword::FlexEnd => 6,
         }),
     }
 }
@@ -258,16 +260,16 @@ pub const fn justify_content_from_enum(value: i8) -> Option<JustifyContent> {
 }
 
 pub const fn justify_content_to_enum(value: JustifyContent) -> i8 {
-    match value {
-        JustifyContent::Start => 0,
-        JustifyContent::End => 1,
-        JustifyContent::Center => 2,
-        JustifyContent::Stretch => 3,
-        JustifyContent::SpaceBetween => 4,
-        JustifyContent::SpaceAround => 5,
-        JustifyContent::SpaceEvenly => 6,
-        JustifyContent::FlexStart => 7,
-        JustifyContent::FlexEnd => 8,
+    match value.keyword {
+        AlignContentKeyword::Start => 0,
+        AlignContentKeyword::End => 1,
+        AlignContentKeyword::Center => 2,
+        AlignContentKeyword::Stretch => 3,
+        AlignContentKeyword::SpaceBetween => 4,
+        AlignContentKeyword::SpaceAround => 5,
+        AlignContentKeyword::SpaceEvenly => 6,
+        AlignContentKeyword::FlexStart => 7,
+        AlignContentKeyword::FlexEnd => 8,
     }
 }
 
@@ -337,53 +339,6 @@ pub const fn display_mode_to_enum(value: DisplayMode) -> i8 {
         DisplayMode::Box => 2,
         DisplayMode::ListItem => 3
     }
-}
-
-pub(crate) fn resolve_fallback_size(
-    known: Option<f32>,
-    available: AvailableSpace,
-    size: Option<f32>,
-    style_min: Option<f32>,
-    style_max: Option<f32>,
-    content_min: f32,
-    content_max: f32,
-    padding_border: f32,
-) -> f32 {
-    // known.unwrap_or_else(|| {
-    //     let size = size.or(known).unwrap_or_else(|| match available {
-    //         AvailableSpace::MinContent => style_min.unwrap_or(content_min),
-    //         AvailableSpace::MaxContent => style_max.unwrap_or(content_max.max(f32::INFINITY)),
-    //         AvailableSpace::Definite(w) => w,
-    //     });
-    //
-    //     println!("content_min {} ... content_max {}", content_min, content_max);
-    //
-    //     let min = style_min.unwrap_or(content_min);
-    //     let max = style_max.unwrap_or(content_max).max(f32::INFINITY);
-    //
-    //     size.clamp(min, max) - padding_border
-    // })
-
-    if let Some(known) = known {
-        return known;
-    }
-
-    let size = size
-        .or_else(|| match available {
-            AvailableSpace::MinContent => style_min.or(Some(content_min)),
-            AvailableSpace::MaxContent => style_max.or(Some(content_max)),
-            AvailableSpace::Definite(w) => Some(w),
-        })
-        .unwrap_or(0.);
-
-    if size == 0. {
-        return 0.;
-    }
-
-    let min = style_min.unwrap_or(content_min);
-    let max = style_max.unwrap_or(content_max);
-
-    (size.clamp(min, max) - padding_border).max(0.)
 }
 
 #[derive(Clone, Debug)]

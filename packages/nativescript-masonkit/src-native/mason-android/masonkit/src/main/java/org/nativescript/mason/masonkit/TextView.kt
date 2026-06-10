@@ -10,6 +10,9 @@ import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import androidx.core.widget.TextViewCompat
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.Styles.TextJustify
 import org.nativescript.mason.masonkit.Styles.TextWrap
 import org.nativescript.mason.masonkit.enums.Display
@@ -244,42 +247,42 @@ class TextView @JvmOverloads constructor(
 
         TextType.H1 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           fontSize = 32
           node.style.margin = margin(16f, 16f)
         }
 
         TextType.H2 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           fontSize = 24
           node.style.margin = margin(14f, 14f)
         }
 
         TextType.H3 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           fontSize = 20
           node.style.margin = margin(12f, 8f)
         }
 
         TextType.H4 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           fontSize = Constants.DEFAULT_FONT_SIZE
           node.style.margin = margin(10f, 10f)
         }
 
         TextType.H5 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           fontSize = 13
           node.style.margin = margin(8f, 8f)
         }
 
         TextType.H6 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           fontSize = 10
           node.style.margin = margin(6f, 6f)
         }
@@ -298,7 +301,7 @@ class TextView @JvmOverloads constructor(
         }
 
         TextType.B, TextType.Strong -> {
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           style.display = Display.Inline
         }
 
@@ -311,7 +314,7 @@ class TextView @JvmOverloads constructor(
         }
 
         TextType.I, TextType.Em -> {
-          style.fontStyle = FontFace.NSCFontStyle.Italic
+          style.fontStyle = FontStyle.Italic
           style.display = Display.Inline
         }
 
@@ -469,7 +472,7 @@ class TextView @JvmOverloads constructor(
       style.fontSize = value
     }
 
-  var fontWeight: FontFace.NSCFontWeight
+  var fontWeight: FontWeight
     get() {
       return style.fontWeight
     }
@@ -477,7 +480,7 @@ class TextView @JvmOverloads constructor(
       style.fontWeight = value
     }
 
-  var fontStyle: FontFace.NSCFontStyle
+  var fontStyle: FontStyle
     set(value) {
       style.fontStyle = value
     }

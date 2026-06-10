@@ -221,9 +221,9 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       // Apply typeface
       attributes.font?.let { fontFace ->
         fontFace.font?.let { typeface ->
-          val isBold = fontFace.fontDescriptors.weight.isBold
+          val isBold = fontFace.weight.weight >= 600
           val isItalic =
-            fontFace.fontDescriptors.style.fontStyle == android.graphics.Typeface.ITALIC
+            fontFace.style.fontStyle == android.graphics.Typeface.ITALIC
           spannable.setSpan(Spans.TypefaceSpan(typeface, isBold, isItalic), start, end, flags)
         }
       }

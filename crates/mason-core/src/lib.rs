@@ -81,6 +81,18 @@ fn initialize_pseudo_style_from_base(style: &mut Style) {
         .fill(0);
 }
 
+/// Returns a mutable reference to `slot`, initialising it by cloning `base` if absent.
+fn get_or_init_pseudo<'a>(slot: &'a mut Option<Style>, base: &Style) -> &'a mut Style {
+    if slot.is_none() {
+        let mut s = base.clone();
+        initialize_pseudo_style_from_base(&mut s);
+        *slot = Some(s);
+    } else {
+        slot.as_mut().unwrap().prepare_mut();
+    }
+    slot.as_mut().unwrap()
+}
+
 pub struct MeasureOutput;
 impl MeasureOutput {
     /// Tagged quiet-NaN payloads for MinContent / MaxContent signaling.
@@ -126,96 +138,62 @@ fn copy_output_inner(inner: &crate::tree::TreeInner, node: Id, output: &mut Vec<
     let n = &inner.nodes[node];
     let layout = if use_rounding { n.final_layout } else { n.unrounded_layout };
 
-    if let Some(children) = inner.children.get(node) {
-        let len = children.len();
-        output.reserve(len * 22);
+    let children = inner.children.get(node);
+    let len = children.map(|c| c.len()).unwrap_or(0);
 
-        output.push(layout.order as f32);
-        output.push(layout.location.x);
-        output.push(layout.location.y);
-        output.push(layout.size.width);
-        let mut export_h = layout.size.height;
-        if export_h.abs() <= 1e-6 && layout.content_size.height > export_h {
-            export_h = layout.content_size.height;
+    output.reserve(len * 22 + 22);
+
+    let export_h = {
+        let h = layout.size.height;
+        // Promote a near-zero (degenerate) height to content_size.height when
+        // the content itself is larger — avoids invisible collapsed containers.
+        if h.abs() <= 1e-6 && layout.content_size.height > h {
+            layout.content_size.height
+        } else {
+            h
         }
-        output.push(export_h);
+    };
 
-        output.push(layout.border.top);
-        output.push(layout.border.right);
-        output.push(layout.border.bottom);
-        output.push(layout.border.left);
+    output.extend_from_slice(&[
+        layout.order as f32,
+        layout.location.x,
+        layout.location.y,
+        layout.size.width,
+        export_h,
+        layout.border.top,
+        layout.border.right,
+        layout.border.bottom,
+        layout.border.left,
+        layout.margin.top,
+        layout.margin.right,
+        layout.margin.bottom,
+        layout.margin.left,
+        layout.padding.top,
+        layout.padding.right,
+        layout.padding.bottom,
+        layout.padding.left,
+        layout.content_size.width,
+        layout.content_size.height,
+        layout.scrollbar_size.width,
+        layout.scrollbar_size.height,
+        len as f32,
+    ]);
 
-        output.push(layout.margin.top);
-        output.push(layout.margin.right);
-        output.push(layout.margin.bottom);
-        output.push(layout.margin.left);
-
-        output.push(layout.padding.top);
-        output.push(layout.padding.right);
-        output.push(layout.padding.bottom);
-        output.push(layout.padding.left);
-
-        output.push(layout.content_size.width);
-        output.push(layout.content_size.height);
-
-        output.push(layout.scrollbar_size.width);
-        output.push(layout.scrollbar_size.height);
-
-        output.push(len as f32);
-
+    if let Some(children) = children {
         for child in children {
             copy_output_inner(inner, *child, output, use_rounding);
         }
     }
 }
 
-fn copy_output_count(taffy: &Tree, node: Id, output: &mut Vec<f32>, count: &mut usize) {
-    let inner = taffy.inner();
-    let use_rounding = inner.use_rounding;
-    copy_output_count_inner(&inner, node, output, count, use_rounding);
-}
-
-fn copy_output_count_inner(inner: &crate::tree::TreeInner, node: Id, output: &mut Vec<f32>, count: &mut usize, use_rounding: bool) {
-    let n = &inner.nodes[node];
-    let layout = if use_rounding { n.final_layout } else { n.unrounded_layout };
-
-    if let Some(children) = inner.children.get(node) {
-        let len = children.len();
-        *count += 1;
-        output.reserve(len * 22);
-
-        output.push(layout.order as f32);
-        output.push(layout.location.x);
-        output.push(layout.location.y);
-        output.push(layout.size.width);
-        output.push(layout.size.height);
-
-        output.push(layout.border.top);
-        output.push(layout.border.right);
-        output.push(layout.border.bottom);
-        output.push(layout.border.left);
-
-        output.push(layout.margin.top);
-        output.push(layout.margin.right);
-        output.push(layout.margin.bottom);
-        output.push(layout.margin.left);
-
-        output.push(layout.padding.top);
-        output.push(layout.padding.right);
-        output.push(layout.padding.bottom);
-        output.push(layout.padding.left);
-
-        output.push(layout.content_size.width);
-        output.push(layout.content_size.height);
-
-        output.push(layout.scrollbar_size.width);
-        output.push(layout.scrollbar_size.height);
-
-        output.push(len as f32);
-
-        for child in children {
-            copy_output_count_inner(inner, *child, output, count, use_rounding);
-        }
+/// Maps the float sentinel encoding used at FFI boundaries to `AvailableSpace`.
+/// `-1.0` → `MinContent`, `-2.0` → `MaxContent`, any other value → `Definite`.
+#[inline]
+fn f32_to_available_space(v: f32) -> AvailableSpace {
+    match v {
+        x if x == -1.0 => AvailableSpace::MinContent,
+        x if x == -2.0 => AvailableSpace::MaxContent,
+        x => AvailableSpace::Definite(x),
     }
 }
 
@@ -330,7 +308,6 @@ impl Mason {
     #[cfg(target_vendor = "apple")]
     #[track_caller]
     pub fn node_state_data(&mut self, node: Id) -> *mut c_void {
-        use objc2::Message;
         self.0
             .nodes_mut()
             .get_mut(node)
@@ -502,7 +479,6 @@ impl Mason {
     #[cfg(target_vendor = "apple")]
     #[track_caller]
     pub fn style_data(&mut self, node: Id) -> *mut c_void {
-        use objc2::Message;
         self.0
             .nodes_mut()
             .get_mut(node)
@@ -548,28 +524,22 @@ impl Mason {
 
     #[cfg(target_os = "android")]
     #[track_caller]
-    pub fn setup(&mut self, node: Id, measure: jni::sys::jint) {
-        let has_measure = measure != -1;
-        if let Some(nd) = self.0.node_data_mut().get_mut(node) {
-            nd.measure = measure;
-        }
-
-        if let Some(node) = self.0.nodes_mut().get_mut(node) {
-            node.has_measure = has_measure;
-        }
-    }
-
-    #[cfg(target_os = "android")]
-    #[track_caller]
     pub fn set_measure(&mut self, node: Id, measure: jni::sys::jint) {
         let has_measure = measure != -1;
         if let Some(nd) = self.0.node_data_mut().get_mut(node) {
             nd.measure = measure;
         }
-
-        if let Some(node) = self.0.nodes_mut().get_mut(node) {
-            node.has_measure = has_measure;
+        if let Some(n) = self.0.nodes_mut().get_mut(node) {
+            n.has_measure = has_measure;
         }
+    }
+
+    /// Alias for [`set_measure`]; kept for ABI compatibility.
+    #[cfg(target_os = "android")]
+    #[track_caller]
+    #[deprecated(since = "0.0.0", note = "use set_measure instead")]
+    pub fn setup(&mut self, node: Id, measure: jni::sys::jint) {
+        self.set_measure(node, measure);
     }
 
     #[cfg(not(target_os = "android"))]
@@ -641,21 +611,6 @@ impl Mason {
     pub fn layout(&self, node_id: Id) -> Vec<f32> {
         let mut output = vec![];
         copy_output(&self.0, node_id, &mut output);
-        // Debug: emit the first node's frame (order,x,y,w,h) so we can
-        // verify whether degenerate heights are produced on the native side
-        // before the Vec<f32> is returned to Java. Use the crate logging
-        // macros so messages appear in logcat with the existing Rust tag.
-        if output.len() >= 5 {
-            // Clamp tiny positive heights in the exported Vec so Java parsing
-            // doesn't see tiny non-zero values that should be
-            // treated as zero.
-            let mut export_h = output[4];
-            if export_h > 0.0 && export_h.abs() < 1e-6_f32 {
-                export_h = 0.0;
-                output[4] = export_h;
-            }
-        }
-
         output
     }
 
@@ -663,20 +618,18 @@ impl Mason {
         *self.0.layout(node_id.into())
     }
 
-    /// Return transient float rects for a container as a flat Vec<[left,top,right,bottom,...]>
+    /// Return transient float rects for a container as a flat `[left, top, right, bottom, …]` vec.
     pub fn get_float_rects(&self, container_id: Id) -> Vec<f32> {
-        if let Some(rects) = self.0.get_float_rects_simple(container_id) {
-            let mut out = Vec::with_capacity(rects.len() * 4);
-            for r in rects {
-                out.push(r.left);
-                out.push(r.top);
-                out.push(r.right);
-                out.push(r.bottom);
-            }
-            out
-        } else {
-            Vec::new()
-        }
+        self.0
+            .get_float_rects_simple(container_id)
+            .map(|rects| {
+                let mut out = Vec::with_capacity(rects.len() * 4);
+                for r in rects {
+                    out.extend_from_slice(&[r.left, r.top, r.right, r.bottom]);
+                }
+                out
+            })
+            .unwrap_or_default()
     }
 
     /// Return float rects including the `node` id for each rect so callers
@@ -725,38 +678,9 @@ impl Mason {
     }
 
     pub fn compute_wh(&mut self, node_id: Id, width: f32, height: f32) {
-        // debug log for callers to verify the incoming floats and the
-        // corresponding AvailableSpace conversions.  this helps track down
-        // any mis‑mapping between the Android layer and the engine.
-        #[cfg(debug_assertions)]
-        {
-            let width_space = if width == -1.0 {
-                AvailableSpace::MinContent
-            } else if width == -2.0 {
-                AvailableSpace::MaxContent
-            } else {
-                AvailableSpace::Definite(width)
-            };
-            let height_space = if height == -1.0 {
-                AvailableSpace::MinContent
-            } else if height == -2.0 {
-                AvailableSpace::MaxContent
-            } else {
-                AvailableSpace::Definite(height)
-            };
-        }
-
         let size = Size {
-            width: match width {
-                x if x == -1.0 => AvailableSpace::MinContent,
-                x if x == -2.0 => AvailableSpace::MaxContent,
-                _ => AvailableSpace::Definite(width),
-            },
-            height: match height {
-                x if x == -1.0 => AvailableSpace::MinContent,
-                x if x == -2.0 => AvailableSpace::MaxContent,
-                _ => AvailableSpace::Definite(height),
-            },
+            width: f32_to_available_space(width),
+            height: f32_to_available_space(height),
         };
         self.compute_layout(node_id, size);
     }
@@ -805,7 +729,7 @@ impl Mason {
     }
 
     pub fn set_children(&mut self, parent: Id, children: &[Id]) {
-        let mut tree = &mut self.0 .0.write();
+        let mut tree = self.0.inner_mut();
         let mut has_children = false;
         {
             if let Some(current_children) = tree.children.get_mut(parent) {
@@ -1016,91 +940,46 @@ impl Mason {
     }
 
     /// Prepare and invoke `func` on a mutable pseudo `Style` for `node` matching `flags`.
-    /// This will create the pseudo Style slot (cloned from base style) if missing
-    /// and call `prepare_mut()` on it before invoking `func` so callers can safely
-    /// mutate complex non-buffer data (strings/arrays) for pseudos.
+    /// Creates the pseudo slot (cloned from base style) if absent.
     #[track_caller]
     pub fn with_pseudo_style_mut<F>(&mut self, node: Id, flags: u16, func: F)
     where
         F: FnOnce(&mut Style),
     {
-        self.0
-            .nodes_mut()
-            .get_mut(node)
-            .map(|node| {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
+        use crate::node::PseudoStates;
+        let mut nodes = self.0.nodes_mut();
+        let Some(node) = nodes.get_mut(node) else {
+            return;
+        };
 
-                // When no pseudo state bits are set, apply to the base style
-                if bits.is_empty() {
-                    node.style.prepare_mut();
-                    func(&mut node.style);
-                    return;
-                }
+        let bits = PseudoStates::from_bits_truncate(flags);
+        if bits.is_empty() {
+            node.style.prepare_mut();
+            func(&mut node.style);
+            return;
+        }
 
-                if node.pseudo_styles.is_none() {
-                    node.pseudo_styles = Some(crate::node::PseudoStyles::default());
-                }
+        if node.pseudo_styles.is_none() {
+            node.pseudo_styles = Some(crate::node::PseudoStyles::default());
+        }
+        let base = node.style.clone();
+        let p = node.pseudo_styles.as_mut().unwrap();
 
-                if let Some(p) = &mut node.pseudo_styles {
-                    if bits.contains(PseudoStates::HOVER) {
-                        if p.hover.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.hover = Some(s);
-                        } else {
-                            p.hover.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.hover.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if p.active.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.active = Some(s);
-                        } else {
-                            p.active.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.active.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if p.focus.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.focus = Some(s);
-                        } else {
-                            p.focus.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.focus.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if p.disabled.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.disabled = Some(s);
-                        } else {
-                            p.disabled.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.disabled.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if p.checked.is_none() {
-                            let mut s = node.style.clone();
-                            initialize_pseudo_style_from_base(&mut s);
-                            p.checked = Some(s);
-                        } else {
-                            p.checked.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.checked.as_mut().unwrap());
-                        return;
-                    }
-                }
-            })
-            .unwrap_or(());
+        let slot = if bits.contains(PseudoStates::HOVER) {
+            &mut p.hover
+        } else if bits.contains(PseudoStates::ACTIVE) {
+            &mut p.active
+        } else if bits.contains(PseudoStates::FOCUS) {
+            &mut p.focus
+        } else if bits.contains(PseudoStates::DISABLED) {
+            &mut p.disabled
+        } else if bits.contains(PseudoStates::CHECKED) {
+            &mut p.checked
+        } else {
+            return;
+        };
+
+        func(get_or_init_pseudo(slot, &base));
     }
     pub fn get_root(&self, node: Id) -> Option<NodeRef> {
         self.0.root(node)
@@ -1319,15 +1198,15 @@ mod tests {
         mason.compute_wh(pid, -1.0, -2.0);
         let pout = mason.layout(pid);
         let parent_h = pout[4];
-        let parent_w = pout[3];
+        let _parent_w = pout[3];
 
         let cout = mason.layout(cid);
-        let child_h = cout[4];
-        let child_w = cout[3];
+        let _child_h = cout[4];
+        let _child_w = cout[3];
 
         // Print all computed sizes
         let computed = sizes.lock().unwrap();
-        for &(id, w, h) in computed.iter() {}
+        for &(_id, _w, _h) in computed.iter() {}
         drop(computed);
 
         assert!(

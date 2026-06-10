@@ -3,6 +3,8 @@ package org.nativescript.mason.masonkit
 import android.content.Context
 import android.os.Build
 import android.view.ViewGroup
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.enums.AlignItems
 import org.nativescript.mason.masonkit.enums.AlignSelf
 import org.nativescript.mason.masonkit.enums.Display
@@ -410,15 +412,15 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
       "font-size" -> parseFloatValue(value)?.let { style.fontSize = it.toInt() }
 
       "font-weight" -> when (value) {
-        "bold", "700" -> style.fontWeight = FontFace.NSCFontWeight.Bold
-        "normal", "400" -> style.fontWeight = FontFace.NSCFontWeight.Normal
-        "100", "thin" -> style.fontWeight = FontFace.NSCFontWeight.Thin
-        "200" -> style.fontWeight = FontFace.NSCFontWeight.ExtraLight
-        "300", "light" -> style.fontWeight = FontFace.NSCFontWeight.Light
-        "500", "medium" -> style.fontWeight = FontFace.NSCFontWeight.Medium
-        "600", "semibold" -> style.fontWeight = FontFace.NSCFontWeight.SemiBold
-        "800" -> style.fontWeight = FontFace.NSCFontWeight.ExtraBold
-        "900", "black" -> style.fontWeight = FontFace.NSCFontWeight.Black
+        "bold", "700" -> style.fontWeight = FontWeight.Bold
+        "normal", "400" -> style.fontWeight = FontWeight.Normal
+        "100", "thin" -> style.fontWeight = FontWeight.Thin
+        "200" -> style.fontWeight = FontWeight.ExtraLight
+        "300", "light" -> style.fontWeight = FontWeight.Light
+        "500", "medium" -> style.fontWeight = FontWeight.Medium
+        "600", "semibold" -> style.fontWeight = FontWeight.SemiBold
+        "800" -> style.fontWeight = FontWeight.ExtraBold
+        "900", "black" -> style.fontWeight = FontWeight.Black
       }
 
       "width" -> parseDimension(value)?.let { d ->

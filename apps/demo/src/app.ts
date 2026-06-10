@@ -63,7 +63,7 @@ function benchmark(root: any, Container: any, containerProps: any, Child: any, c
   return new Promise((resolve, reject) => {
     const MARKER = `Rendering 1000 ${Child.name} in ${Container.name} took`;
     const container = new Container();
-    root.content = container;
+    root.addChild(container);
     //@ts-ignore
     for (const prop in containerProps) {
       container[prop] = containerProps[prop];
@@ -86,7 +86,8 @@ function benchmark(root: any, Container: any, containerProps: any, Child: any, c
 function benchmarkProp(root: any, Container: any, containerProps: any, Child: any, childProps: any, benchmarkProp: { [name: string]: any }) {
   return new Promise((resolve, reject) => {
     const container = new Container();
-    root.content = container;
+    root.addChild(container);
+
     //@ts-ignore
     for (const prop in containerProps) {
       container[prop] = containerProps[prop];
@@ -96,7 +97,6 @@ function benchmarkProp(root: any, Container: any, containerProps: any, Child: an
       for (let i = 0; i < 1000; i++) {
         const view = new Child();
         for (const prop in childProps) {
-          console.log(`Setting ${prop} on ${Child.name}`);
           view[prop] = childProps[prop];
         }
         container.addChild(view);
@@ -160,7 +160,7 @@ Application.run({
           backgroundColor: 'red',
         },
       );
-    });
+    }, 5000);
 
     return root as never;
   },

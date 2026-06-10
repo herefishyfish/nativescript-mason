@@ -5,6 +5,9 @@ import android.graphics.Paint
 import android.text.TextPaint
 import android.view.View
 import dalvik.annotation.optimization.FastNative
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.Border.IKeyCorner
 import org.nativescript.mason.masonkit.Styles.TextJustify
 import org.nativescript.mason.masonkit.Styles.TextWrap
@@ -41,7 +44,6 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
-
 
 internal fun Int.argbToCssHex(): String {
   // Android color ints are ARGB (0xAARRGGBB). Convert to CSS-style #RRGGBB or #RRGGBBAA.
@@ -718,14 +720,19 @@ class Style internal constructor(@Transient internal var node: Node) {
   internal var inMeasure = false
   private var pendingMetricsSync = false
 
+  private var reloadListener: (FontFace, String?) -> Unit = { font, error ->
+    syncFontMetrics()
+  }
+
   var font: FontFace = FontFace("sans-serif").apply {
-    owner = this@Style
+    addOnReloadListener(reloadListener)
   }
     set(value) {
       val old = field
       if (old !== value) {
         field = value
-        value.owner = this
+        old.removeOnReloadListener(reloadListener)
+        value.addOnReloadListener(reloadListener)
         invalidateResolvedFontFace()
       }
     }
@@ -885,7 +892,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   private val mPlaceholder by lazy {
     isValueInitialized = true
     // use the same capacity set in rust
-    ByteBuffer.allocateDirect(560).apply {
+    ByteBuffer.allocateDirect(596).apply {
       order(ByteOrder.nativeOrder())
 
       // default ratio to NAN
@@ -1768,12 +1775,14 @@ class Style internal constructor(@Transient internal var node: Node) {
       if (oldFamily != value) {
         val oldFont = font
         // Create new font with updated family
+        font.removeOnReloadListener(reloadListener)
         font = FontFace(value).apply {
           weight = oldFont.weight
           style = oldFont.style
-          fontDescriptors.display = oldFont.fontDescriptors.display
-          owner = this@Style
+          display = oldFont.display
+          addOnReloadListener(reloadListener)
         }
+
         values.put(StyleKeys.FONT_FAMILY_STATE, StyleState.SET)
         if (inBatch) {
           setOrAppendState(StateKeys.FONT_FAMILY)
@@ -1783,80 +1792,48 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
-  private fun ensureWritableFontFace() {
-    val current = font
-    if (current.owner != this) {
-      val old = current
-      val od = old.fontDescriptors
-      val nd = FontFace.NSCFontDescriptors(old.fontFamily)
-      nd.weight = od.weight
-      nd.ascentOverride = od.ascentOverride
-      nd.descentOverride = od.descentOverride
-      nd.display = od.display
-      nd.style = od.style
-      nd.stretch = od.stretch
-      nd.unicodeRange = od.unicodeRange
-      nd.featureSettings = od.featureSettings
-      nd.lineGapOverride = od.lineGapOverride
-      nd.variationSettings = od.variationSettings
-      nd.kerning = od.kerning
-      nd.variantLigatures = od.variantLigatures
-
-      font = FontFace(old.fontFamily, descriptors = nd).apply {
-        font = old.font
-        status = old.status
-        owner = this@Style
-      }
-    }
-  }
-
   var fontVariant: String
     get() {
-      return font.fontDescriptors.variationSettings
+      return font.variationSettings
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.variationSettings = value
+      font.variationSettings = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontStretch: String
     get() {
-      return font.fontDescriptors.stretch
+      return font.stretch
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.stretch = value
+      font.stretch = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontFeatureSettings: String
     get() {
-      return font.fontDescriptors.featureSettings
+      return font.featureSettings
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.featureSettings = value
+      font.featureSettings = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontKerning: String
     get() {
-      return font.fontDescriptors.kerning
+      return font.kerning
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.kerning = value
+      font.kerning = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontVariantLigatures: String
     get() {
-      return font.fontDescriptors.variantLigatures
+      return font.variantLigatures
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.variantLigatures = value
+      font.variantLigatures = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
@@ -1875,10 +1852,10 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
-  var fontWeight: FontFace.NSCFontWeight
+  var fontWeight: FontWeight
     get() {
       val weight = values.getInt(StyleKeys.FONT_WEIGHT)
-      return FontFace.NSCFontWeight.from(weight)
+      return FontWeight.from(weight)
     }
     set(value) {
       val old = fontWeight
@@ -1895,11 +1872,11 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
-  var fontStyle: FontFace.NSCFontStyle
+  var fontStyle: FontStyle
     set(value) {
       val previous = fontStyle
       if (previous != value) {
-        values.put(StyleKeys.FONT_STYLE_TYPE, value.style.value.toByte())
+        values.put(StyleKeys.FONT_STYLE_TYPE, value.fontStyle.toByte())
         values.put(StyleKeys.FONT_STYLE_STATE, StyleState.SET)
         font.style = value
         invalidateResolvedFontFace()
@@ -1914,19 +1891,19 @@ class Style internal constructor(@Transient internal var node: Node) {
       val style = values.get(StyleKeys.FONT_STYLE_TYPE)
       when (style) {
         0.toByte() -> {
-          return FontFace.NSCFontStyle.Normal
+          return FontStyle.Normal
         }
 
         1.toByte() -> {
-          return FontFace.NSCFontStyle.Italic
+          return FontStyle.Italic
         }
 
         2.toByte() -> {
-          return FontFace.NSCFontStyle.Oblique()
+          return FontStyle.Oblique()
         }
 
         else -> {
-          return FontFace.NSCFontStyle.Normal
+          return FontStyle.Normal
         }
       }
     }
@@ -4488,9 +4465,9 @@ class Style internal constructor(@Transient internal var node: Node) {
 
       val resolvedWeight = if (weightState == StyleState.INHERIT) {
         parentStyleWithTextValues?.resolvedFontWeight
-          ?: FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+          ?: FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       } else {
-        FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+        FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       }
 
       val resolvedStyle = if (styleState == StyleState.INHERIT) {
@@ -4510,7 +4487,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       val resolvedFont = FontFace(baseFamily).apply {
         weight = resolvedWeight
         style = resolvedStyle
-        owner = this@Style
+        addOnReloadListener(reloadListener)
       }
 
       // Eagerly load so resolvedFont.font is non-null (cheap with Typeface cache)
@@ -4673,14 +4650,14 @@ class Style internal constructor(@Transient internal var node: Node) {
     return ceil((parentFontSize * percent).coerceAtLeast(0f)).toInt()
   }
 
-  internal val resolvedFontWeight: FontFace.NSCFontWeight
+  internal val resolvedFontWeight: FontWeight
     get() {
       val state = values.get(StyleKeys.FONT_WEIGHT_STATE)
       val base = if (state == StyleState.INHERIT) {
         parentStyleWithTextValues?.resolvedFontWeight
-          ?: FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+          ?: FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       } else {
-        FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+        FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       }
       val pseudoRaw = resolvePseudoInt(
         StyleKeys.FONT_WEIGHT,
@@ -4689,13 +4666,13 @@ class Style internal constructor(@Transient internal var node: Node) {
         StateKeys.FONT_WEIGHT
       )
       return if (node.pseudoMask != 0 && pseudoRaw != values.getInt(StyleKeys.FONT_WEIGHT)) {
-        FontFace.NSCFontWeight.from(pseudoRaw)
+        FontWeight.from(pseudoRaw)
       } else {
         base
       }
     }
 
-  internal val resolvedFontStyle: FontFace.NSCFontStyle
+  internal val resolvedFontStyle: FontStyle
     get() {
       val state = values.get(StyleKeys.FONT_STYLE_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4710,7 +4687,11 @@ class Style internal constructor(@Transient internal var node: Node) {
         StateKeys.FONT_STYLE
       )
       return if (node.pseudoMask != 0 && pseudoRaw != values.get(StyleKeys.FONT_STYLE_TYPE)) {
-        FontFace.NSCFontStyle.from(pseudoRaw)!!
+        when (pseudoRaw) {
+          2.toByte() -> FontStyle.Oblique()
+          1.toByte() -> FontStyle.Italic
+          else -> FontStyle.Normal
+        }
       } else {
         base
       }

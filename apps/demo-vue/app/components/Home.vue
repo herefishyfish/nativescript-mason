@@ -1,7 +1,7 @@
 <template>
   <Frame>
     <Page>
-      <ActionBar>
+      <ActionBar actionBarHidden="true">
         <span text="Mason Demos" class="text-white" style="font-size: 20; font-weight: bold;" />
       </ActionBar>
       <div class="page" style="overflow-y: scroll;">

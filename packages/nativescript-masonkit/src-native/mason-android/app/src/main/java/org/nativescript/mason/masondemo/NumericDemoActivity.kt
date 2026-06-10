@@ -7,7 +7,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import org.nativescript.mason.masonkit.FontFace
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.LengthPercentage
 import org.nativescript.mason.masonkit.LengthPercentageAuto
 import org.nativescript.mason.masonkit.Mason
@@ -56,7 +57,7 @@ class NumericDemoActivity : AppCompatActivity() {
     title.configure { style ->
       style.display = Display.Block
       style.fontSize = 22
-      style.fontWeight = FontFace.NSCFontWeight.Bold
+      style.fontWeight = FontWeight.Bold
       style.color = Color.parseColor("#1E293B")
       style.margin = Rect(
         LengthPercentageAuto.Zero,
@@ -104,7 +105,7 @@ class NumericDemoActivity : AppCompatActivity() {
       timeText.configure { style ->
         style.display = Display.Block
         style.fontSize = 32
-        style.fontWeight = FontFace.NSCFontWeight.Bold
+        style.fontWeight = FontWeight.Bold
         style.color = Color.parseColor("#1E293B")
         style.textAlign = TextAlign.Center
         if (tabular) {
@@ -192,7 +193,7 @@ class NumericDemoActivity : AppCompatActivity() {
       variantLabel.configure { style ->
         style.display = Display.Block
         style.fontSize = 12
-        style.fontWeight = FontFace.NSCFontWeight.SemiBold
+        style.fontWeight = FontWeight.SemiBold
         style.color = Color.parseColor("#6366F1")
         style.margin = Rect(
           LengthPercentageAuto.Zero,

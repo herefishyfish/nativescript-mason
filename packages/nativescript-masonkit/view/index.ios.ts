@@ -86,10 +86,13 @@ export class View extends ViewBase {
         // layout cascade and just sync NativeScript's internal bounds tracking.
         const childNode = (child as any).ios?.node;
         if (childNode?.isLayoutValid) {
-          childNode.isLayoutValid = false;
           // Still call layout() to keep NativeScript's bounds state in sync,
           // but with setFrame=false so we don't redundantly set the native frame.
           (child as any).layout(x, y, x + w, y + h, false);
+          // Clear isLayoutValid AFTER layout() completes so a re-entrant
+          // layoutSubviews during layout() can't see a stale false value
+          // and fall through to the non-Mason path.
+          childNode.isLayoutValid = false;
           i++;
           continue;
         }

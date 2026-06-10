@@ -554,6 +554,7 @@ export const maxWidthProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CoreLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthParse,
   valueChanged: (target, oldValue, newValue) => {
     const view = getViewStyle(target.viewRef);
@@ -571,6 +572,7 @@ export const maxHeightProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CoreLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -658,10 +660,10 @@ function convertToInsets(value: string | CoreTypes.LengthType): [CssProperty<Sty
     const thickness = parseShorthandPositioning(value);
 
     return [
-      [topProperty, masonLengthPercentParse(thickness.top)],
-      [rightProperty, masonLengthPercentParse(thickness.right)],
-      [bottomProperty, masonLengthPercentParse(thickness.bottom)],
-      [leftProperty, masonLengthPercentParse(thickness.left)],
+      [topProperty, masonLengthPercentParse(thickness.top) as LengthAuto],
+      [rightProperty, masonLengthPercentParse(thickness.right) as LengthAuto],
+      [bottomProperty, masonLengthPercentParse(thickness.bottom) as LengthAuto],
+      [leftProperty, masonLengthPercentParse(thickness.left) as LengthAuto],
     ];
   } else {
     return [
@@ -679,6 +681,7 @@ export const leftProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -694,6 +697,7 @@ export const rightProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -709,6 +713,7 @@ export const topProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -724,6 +729,7 @@ export const bottomProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -903,7 +909,9 @@ export const flexBasisProperty = new CssProperty<Style, LengthAuto>({
   name: 'flexBasis',
   cssName: 'flex-basis',
   defaultValue: 'auto',
+  // @ts-ignore
   equalityComparer: CoreLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);

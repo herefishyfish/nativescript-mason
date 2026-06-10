@@ -3,6 +3,17 @@ use crate::tree::{Id, TreeInner};
 use crate::MeasureOutput;
 use std::fmt::Debug;
 
+/// Maps `AvailableSpace` to the float sentinel encoding used at FFI boundaries.
+/// `MinContent` → `-1.0`, `MaxContent` → `-2.0`, `Definite(v)` → `v`.
+#[inline]
+fn available_space_to_f32(space: AvailableSpace) -> f32 {
+    match space {
+        AvailableSpace::MinContent => -1.0,
+        AvailableSpace::MaxContent => -2.0,
+        AvailableSpace::Definite(v) => v,
+    }
+}
+
 #[cfg(target_vendor = "apple")]
 use objc2::runtime::NSObject;
 
@@ -13,7 +24,7 @@ use taffy::{AvailableSpace, Cache, ClearState, Layout, Size};
 
 use crate::style::arena::{StyleArena, StyleHandle};
 use crate::style::utils::{
-    get_style_data_i8_raw, set_style_data_i8_raw, get_style_data_u32, set_style_data_u32,
+    get_style_data_i8_raw, set_style_data_i8_raw,
     get_style_data_i32, set_style_data_i32, get_style_data_u8, set_style_data_u8,
 };
 #[cfg(target_os = "android")]
@@ -156,7 +167,8 @@ impl NodeMeasure {
 
                             Size { width, height }
                         }
-                        Err(e) => {
+                        Err(_) => {
+                            let _ = env.exception_clear();
                             known_dimensions.map(|v| v.unwrap_or(0.0))
                         }
                     };
@@ -174,38 +186,23 @@ impl NodeMeasure {
         known_dimensions: Size<Option<f32>>,
         available_space: Size<AvailableSpace>,
     ) -> Size<f32> {
-        match self.measure.as_ref() {
-            None => Size {
+        let Some(measure) = self.measure.as_ref() else {
+            return Size {
                 width: known_dimensions.width.unwrap_or_default(),
                 height: known_dimensions.height.unwrap_or_default(),
-            },
-            Some(measure) => {
-                let measure_data = self.data;
-                let available_space_width = match available_space.width {
-                    AvailableSpace::MinContent => -1.,
-                    AvailableSpace::MaxContent => -2.,
-                    AvailableSpace::Definite(value) => value,
-                };
+            };
+        };
 
-                let available_space_height = match available_space.height {
-                    AvailableSpace::MinContent => -1.,
-                    AvailableSpace::MaxContent => -2.,
-                    AvailableSpace::Definite(value) => value,
-                };
-
-                let size = measure(
-                    measure_data,
-                    known_dimensions.width.unwrap_or(f32::NAN),
-                    known_dimensions.height.unwrap_or(f32::NAN),
-                    available_space_width,
-                    available_space_height,
-                );
-
-                let width = MeasureOutput::get_width(size);
-                let height = MeasureOutput::get_height(size);
-
-                Size { width, height }
-            }
+        let result = measure(
+            self.data,
+            known_dimensions.width.unwrap_or(f32::NAN),
+            known_dimensions.height.unwrap_or(f32::NAN),
+            available_space_to_f32(available_space.width),
+            available_space_to_f32(available_space.height),
+        );
+        Size {
+            width: MeasureOutput::get_width(result),
+            height: MeasureOutput::get_height(result),
         }
     }
 }
@@ -271,14 +268,12 @@ impl NodeData {
 
     #[cfg(not(target_os = "android"))]
     pub(crate) fn new() -> Self {
-        unsafe {
-            Self {
-                data: 0 as _,
-                #[cfg(target_vendor = "apple")]
-                apple_data: None,
-                measure: None,
-                inline_segments: Mutex::new(vec![]),
-            }
+        Self {
+            data: std::ptr::null_mut(),
+            #[cfg(target_vendor = "apple")]
+            apple_data: None,
+            measure: None,
+            inline_segments: Mutex::new(vec![]),
         }
     }
 
@@ -332,7 +327,10 @@ impl NodeData {
 
                                 Size { width, height }
                             }
-                            Err(_) => known_dimensions.map(|v| v.unwrap_or(0.0)),
+                            Err(_) => {
+                                let _ = env.exception_clear();
+                                known_dimensions.map(|v| v.unwrap_or(0.0))
+                            }
                         };
                     }
                 }
@@ -720,7 +718,7 @@ impl Node {
 
         // Merge helper: for each property with a STATE byte, if SET in src, copy to dst.
         // Also checks the pseudo set bitmask for layout properties without STATE bytes.
-        let mut merge_from = |src: &crate::style::Style, dst: &mut crate::style::Style| {
+        let merge_from = |src: &crate::style::Style, dst: &mut crate::style::Style| {
             dst.prepare_mut();
             use crate::style::StyleKeys;
 

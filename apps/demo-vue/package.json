@@ -2,7 +2,7 @@
   "main": "./app/app.ts",
   "description": "NativeScript Application",
   "dependencies": {
-    "@nativescript/core": "file:nativescript-core-9.0.18-next.6.tgz",
+    "@nativescript/core": "~9.0.20",
     "@triniwiz/nativescript-masonkit": "file:../../packages/nativescript-masonkit",
     "nativescript-vue": "~3.0.2"
   },

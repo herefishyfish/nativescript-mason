@@ -12,8 +12,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONArray
 import org.json.JSONObject
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.Dimension
-import org.nativescript.mason.masonkit.FontFace
 import org.nativescript.mason.masonkit.LengthPercentage
 import org.nativescript.mason.masonkit.LengthPercentageAuto
 import org.nativescript.mason.masonkit.Li
@@ -81,7 +81,7 @@ class WebActivity : AppCompatActivity() {
     val backBtn = mason.createButton(this)
     backBtn.append("< Back")
     backBtn.style.fontSize = 16
-    backBtn.style.fontWeight = FontFace.NSCFontWeight.Medium
+    backBtn.style.fontWeight = FontWeight.Medium
     backBtn.style.color = "#2196F3".toCSSColorInt()
     backBtn.addEventListener("click") {
       contentRoot.post {
@@ -159,7 +159,7 @@ class WebActivity : AppCompatActivity() {
 
         val label = mason.createTextView(this@WebActivity)
         label.fontSize = 18
-        label.fontWeight = FontFace.NSCFontWeight.Medium
+        label.fontWeight = FontWeight.Medium
         label.color = "#0F172A".toCSSColorInt()
         label.style.flexGrow = 1f
         row.addView(label)
@@ -287,7 +287,7 @@ class WebActivity : AppCompatActivity() {
     val rankView = mason.createTextView(this, TextType.Span)
     rankView.append(rank.toString())
     rankView.fontSize = 14
-    rankView.fontWeight = FontFace.NSCFontWeight.SemiBold
+    rankView.fontWeight = FontWeight.SemiBold
     rankView.color = "#64748B".toCSSColorInt()
     rankView.style.setSizeWidth(toPx(28f), 1.toByte())
     rankView.style.textAlign = TextAlign.Right
@@ -303,7 +303,7 @@ class WebActivity : AppCompatActivity() {
     val t = item.optString("title", "(no title)")
     title.append(t)
     title.fontSize = 16
-    title.fontWeight = FontFace.NSCFontWeight.SemiBold
+    title.fontWeight = FontWeight.SemiBold
     title.color = "#0F172A".toCSSColorInt()
     title.style.marginBottom = LengthPercentageAuto.Points(toPx(6f))
     // underline title to match Hacker News style
@@ -463,7 +463,7 @@ class WebActivity : AppCompatActivity() {
       val title = mason.createTextView(this, TextType.Span)
       title.append("Gallery Item #$i")
       title.fontSize = 16
-      title.fontWeight = FontFace.NSCFontWeight.Medium
+      title.fontWeight = FontWeight.Medium
       title.color = "#0F172A".toCSSColorInt()
       meta.addView(title)
 
@@ -496,7 +496,7 @@ class WebActivity : AppCompatActivity() {
     val logo = mason.createTextView(this, TextType.Span)
     logo.append("Y")
     logo.fontSize = 18
-    logo.fontWeight = FontFace.NSCFontWeight.SemiBold
+    logo.fontWeight = FontWeight.SemiBold
     logo.color = "#FFFFFF".toCSSColorInt()
     logo.style.marginRight = LengthPercentageAuto.Points(toPx(8f))
     logo.setOnClickListener {
@@ -512,7 +512,7 @@ class WebActivity : AppCompatActivity() {
     val hdrText = mason.createTextView(this, TextType.Span)
     hdrText.append("Hacker News — Top Stories")
     hdrText.fontSize = 18
-    hdrText.fontWeight = FontFace.NSCFontWeight.Bold
+    hdrText.fontWeight = FontWeight.Bold
     hdrText.color = "#FFFFFF".toCSSColorInt()
     header.addView(hdrText)
 
@@ -640,7 +640,7 @@ class WebActivity : AppCompatActivity() {
     heroTag.append("FEATURED DESTINATION")
     heroTag.color = "#FFFFFF".toCSSColorInt()
     heroTag.fontSize = 11
-    heroTag.fontWeight = FontFace.NSCFontWeight.SemiBold
+    heroTag.fontWeight = FontWeight.SemiBold
     heroTag.style.marginBottom = LengthPercentageAuto.Points(toPx(8f))
     heroContent.addView(heroTag)
 
@@ -648,7 +648,7 @@ class WebActivity : AppCompatActivity() {
     heroTitle.append("Discover the World")
     heroTitle.color = "#FFFFFF".toCSSColorInt()
     heroTitle.fontSize = 32
-    heroTitle.fontWeight = FontFace.NSCFontWeight.Bold
+    heroTitle.fontWeight = FontWeight.Bold
     heroTitle.style.marginBottom = LengthPercentageAuto.Points(toPx(8f))
     heroContent.addView(heroTitle)
 
@@ -685,7 +685,7 @@ class WebActivity : AppCompatActivity() {
       val statValue = mason.createTextView(this, TextType.Span)
       statValue.append(value)
       statValue.fontSize = 22
-      statValue.fontWeight = FontFace.NSCFontWeight.Bold
+      statValue.fontWeight = FontWeight.Bold
       statValue.color = "#1E293B".toCSSColorInt()
       statItem.addView(statValue)
 
@@ -710,7 +710,7 @@ class WebActivity : AppCompatActivity() {
     val title = mason.createTextView(this, TextType.H2)
     title.append("Pricing Plans")
     title.fontSize = 22
-    title.fontWeight = FontFace.NSCFontWeight.Bold
+    title.fontWeight = FontWeight.Bold
     pricingSection.addView(title)
 
     val plans = listOf(
@@ -736,13 +736,13 @@ class WebActivity : AppCompatActivity() {
       val n = mason.createTextView(this, TextType.H3)
       n.append(name)
       n.fontSize = 18
-      n.fontWeight = FontFace.NSCFontWeight.SemiBold
+      n.fontWeight = FontWeight.SemiBold
       card.addView(n)
 
       val p = mason.createTextView(this, TextType.Span)
       p.append(price)
       p.fontSize = 20
-      p.fontWeight = FontFace.NSCFontWeight.Bold
+      p.fontWeight = FontWeight.Bold
       p.style.marginBottom = LengthPercentageAuto.Points(toPx(8f))
       card.addView(p)
 
@@ -792,7 +792,7 @@ class WebActivity : AppCompatActivity() {
     val title = mason.createTextView(this, TextType.H2)
     title.append("Frequently Asked Questions")
     title.fontSize = 22
-    title.fontWeight = FontFace.NSCFontWeight.Bold
+    title.fontWeight = FontWeight.Bold
     faqSection.addView(title)
 
     val faqs = listOf(
@@ -808,7 +808,7 @@ class WebActivity : AppCompatActivity() {
       val qv = mason.createTextView(this, TextType.H3)
       qv.append(q)
       qv.fontSize = 16
-      qv.fontWeight = FontFace.NSCFontWeight.SemiBold
+      qv.fontWeight = FontWeight.SemiBold
       qv.style.marginBottom = LengthPercentageAuto.Points(toPx(6f))
       faqSection.addView(qv)
 

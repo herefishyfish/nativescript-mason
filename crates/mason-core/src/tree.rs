@@ -66,14 +66,6 @@ pub(crate) struct TreeInner {
 }
 
 impl TreeInner {
-    pub fn density(&self) -> &Arc<AtomicU32> {
-        &self.density
-    }
-
-    pub fn density_mut(&mut self) -> &mut Arc<AtomicU32> {
-        &mut self.density
-    }
-
     pub fn new() -> Self {
         Self {
             nodes: Default::default(),
@@ -100,11 +92,6 @@ impl TreeInner {
             density: Arc::new(AtomicU32::new(1f32.to_bits())),
             style_arena: Box::default(),
         }
-    }
-
-    #[inline(always)]
-    pub fn node_from_id(&self, node_id: NodeId) -> &Node {
-        self.nodes.get(node_id.into()).unwrap()
     }
 
     #[inline(always)]
@@ -275,16 +262,6 @@ impl Tree {
         })
     }
 
-    #[inline(always)]
-    fn style_from_id_mut(
-        &mut self,
-        node_id: NodeId,
-    ) -> MappedRwLockWriteGuard<'_, RawRwLock, Style> {
-        RwLockWriteGuard::map(self.0.write(), |v| {
-            v.nodes.get_mut(node_id.into()).unwrap().style_mut()
-        })
-    }
-
     pub fn get_node_data(&self, node_id: NodeId) -> MappedRwLockReadGuard<'_, RawRwLock, NodeData> {
         RwLockReadGuard::map(self.2.read(), |v| v.get(node_id.into()).unwrap())
     }
@@ -321,13 +298,17 @@ impl Tree {
 
     /// Clear transient float context before a layout pass.
     pub fn clear_float_context(&mut self) {
-        self.inner_mut().float_context.clear();
+        // Clear each inner Vec without dropping it so the allocated capacity is
+        // reused on the next layout pass, avoiding per-pass heap allocations.
+        for (_, rects) in self.inner_mut().float_context.iter_mut() {
+            rects.clear();
+        }
     }
 
     /// Collect floated children (by container) into `float_context`.
     /// This pass only records which children are floated and their side; sizing
     /// and precise rects are computed in a later step.
-    pub fn collect_floats(&mut self, root: Id) {
+    pub fn collect_floats(&mut self, _root: Id) {
         let mut to_insert: Vec<(Id, Vec<FloatRect>)> = Vec::new();
         {
             let inner = self.inner();
@@ -571,9 +552,6 @@ impl Tree {
             // After measuring all floats for this container, assign x/y positions
             // using a simple left/right stacking algorithm. Margins and clears are
             // not yet applied here.
-            // container_w is already computed above
-            let mut left_offset = 0.0_f32;
-            let mut right_offset = 0.0_f32;
             // Use Vec<(Id, T)> with linear scan instead of HashMap for small
             // float collections — better cache locality, no hashing overhead.
             let mut clear_list: Vec<(Id, Clear)> = Vec::new();
@@ -653,13 +631,13 @@ impl Tree {
                     let mut candidates: Vec<f32> = Vec::new();
                     candidates.push(y);
                     for p in &placed {
-                        let (_p_ml, _p_mr, p_mt, p_mb) =
+                        let (_, _, _p_mt, p_mb) =
                             margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                         candidates.push(p.top);
                         candidates.push(p.top + p.bottom + p_mb);
                     }
                     candidates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-                    candidates.dedup_by(|a, b| ((*a - *b).abs() < 1e-6));
+                    candidates.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
 
                     // Precompute margins for this float
                     let (ml, mr, mt, _mb) =
@@ -672,7 +650,7 @@ impl Tree {
                         let mut left_occupied = 0.0_f32;
                         let mut right_occupied = 0.0_f32;
                         for p in &placed {
-                            let (p_ml, p_mr, p_mt, p_mb) =
+                            let (p_ml, p_mr, _p_mt, p_mb) =
                                 margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                             let p_top = p.top;
                             let p_bot = p.top + p.bottom + p_mb; // include bottom margin for overlap
@@ -739,7 +717,7 @@ impl Tree {
                         let mut left_occupied = 0.0_f32;
                         let mut right_occupied = 0.0_f32;
                         for p in &placed {
-                            let (p_ml, p_mr, p_mt, p_mb) =
+                            let (p_ml, p_mr, _p_mt, p_mb) =
                                 margin_list.iter().find(|(id, _)| *id == p.node).map(|(_, m)| *m).unwrap_or((0.0, 0.0, 0.0, 0.0));
                             let p_top = p.top;
                             let p_bot = p.top + p.bottom + p_mb;
@@ -773,7 +751,7 @@ impl Tree {
     }
 
     /// Return cloned float rectangles for a container, if any.
-    pub fn get_float_rects(&self, container_id: Id) -> Option<Vec<FloatRect>> {
+    pub(crate) fn get_float_rects(&self, container_id: Id) -> Option<Vec<FloatRect>> {
         let inner = self.inner();
         inner.float_context.get(container_id).cloned()
     }
@@ -884,14 +862,13 @@ impl Tree {
         // with invalid keys.
         {
             let inner_mut = &mut *self.inner_mut();
-            let parents: Vec<Id> = inner_mut.children.keys().collect();
-            // We need a reference to nodes while mutating children. Access
-            // both fields through a raw pointer to avoid borrow conflicts.
+            // Hold a raw pointer to `nodes` so we can read it while mutating
+            // `children` through a disjoint mutable borrow. This eliminates
+            // the intermediate `parents: Vec<Id>` allocation that was needed
+            // when iterating over keys() and calling get_mut() separately.
             let nodes_ptr: *const SlotMap<Id, Node> = &inner_mut.nodes;
-            for parent in parents {
-                if let Some(children) = inner_mut.children.get_mut(parent) {
-                    children.retain(|c| unsafe { (*nodes_ptr).contains_key(*c) });
-                }
+            for children in inner_mut.children.values_mut() {
+                children.retain(|c| unsafe { (*nodes_ptr).contains_key(*c) });
             }
         }
 
@@ -1241,11 +1218,6 @@ impl Tree {
         }
     }
 
-    fn set_parent(&mut self, child: Id, parent: Option<Id>) -> bool {
-        let mut tree = self.0.write();
-        Tree::set_parent_inner(&mut tree, child, parent)
-    }
-
     fn set_parent_inner(tree: &mut TreeInner, child: Id, parent: Option<Id>) -> bool {
         let res = match tree.parents.insert(child, parent) {
             Some(old_parent) => old_parent != parent,
@@ -1367,37 +1339,6 @@ impl Tree {
             .unwrap_or(false)
     }
 
-    fn reparent_then_append(&mut self, parent: Id, child: Id) {
-        let mut tree = self.0.write();
-        if let Some(Some(parent)) = tree.parents.remove(child) {
-            if let Some(children) = tree.children.get_mut(parent) {
-                children.retain(|&id| id != child);
-            }
-            if let Some(node) = tree.nodes.get_mut(parent) {
-                node.mark_dirty();
-            }
-        } else {
-            let same = Tree::set_parent_inner(&mut tree, child, Some(parent));
-            if same {
-                let children = tree.children.get_mut(parent).unwrap();
-                children.push(child);
-                Tree::mark_dirty_inner(&mut tree, parent);
-            }
-        }
-    }
-
-    fn remove_from_parent(&mut self, parent: Id, node: Id) {
-        let mut tree = self.0.write();
-        if let Some(children) = tree.children.get_mut(parent) {
-            if let Some(position) = children.iter().position(|&id| id == node) {
-                let _ = position;
-                children.remove(position);
-                if let Some(node) = tree.nodes.get_mut(parent) {
-                    node.mark_dirty();
-                }
-            }
-        }
-    }
 
     pub fn insert_after(&mut self, parent: Id, node: Id, reference: Id) {
         let mut tree = self.0.write();
@@ -1886,8 +1827,6 @@ impl LayoutBlockContainer for Tree {
                 has_children,
                 display_mode,
                 display,
-                padding,
-                border,
                 size,
                 is_text_container,
                 overflow,
@@ -1906,8 +1845,6 @@ impl LayoutBlockContainer for Tree {
                     has_children,
                     style.display_mode(),
                     style.get_display(),
-                    style.get_padding(),
-                    style.get_border(),
                     style.size(),
                     node.is_text_container(),
                     style.get_overflow(),
@@ -2303,16 +2240,14 @@ impl LayoutBlockContainer for Tree {
                     // marker.
 
                     // Extract measure data under short locks (measure is FFI).
-                    let (has_measure, measure) = {
+                    let measure = {
                         let lock = tree.0.read();
                         let node = lock.nodes.get(id).unwrap();
-                        let has_measure = node.has_measure;
-                        let measure = if has_measure {
+                        if node.has_measure {
                             Some(tree.node_data().get(id).unwrap().copy_measure())
                         } else {
                             None
-                        };
-                        (has_measure, measure)
+                        }
                     };
 
                     let marker_size = if let Some(m) = measure {

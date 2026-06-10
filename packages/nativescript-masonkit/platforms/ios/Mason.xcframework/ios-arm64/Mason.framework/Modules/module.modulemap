@@ -7,5 +7,4 @@ framework module Mason {
 
 module Mason.Swift {
   header "Mason-Swift.h"
-  requires objc
 }

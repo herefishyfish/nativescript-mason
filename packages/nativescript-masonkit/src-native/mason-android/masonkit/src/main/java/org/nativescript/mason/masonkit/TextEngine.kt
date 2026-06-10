@@ -190,7 +190,9 @@ class TextEngine(val container: TextContainer) {
     }
 
     if (StateKeys.hasFlag(low, high, StateKeys.WORD_SPACING)) {
-      paint.wordSpacing = style.resolvedWordSpacing
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        paint.wordSpacing = style.resolvedWordSpacing
+      }
       dirty = true
     }
 
@@ -852,32 +854,41 @@ class TextEngine(val container: TextContainer) {
     // Use a TextPaint matching the current TextView properties for consistent measurement
     val textPaint = TextPaint(paint)
 
-    // By default follow web semantics: report measured child and run heights
-    // to native without imposing aggressive caps here. The layout engine on
-    // native side will compute line-box metrics similarly to browser rules.
+    // Pre-collect all ViewSpan and BrSpan boundaries sorted by start position.
+    // This replaces the per-iteration findNextViewSpan() call — which re-scanned the
+    // full span array from currentPos to attributed.length on every text run — with a
+    // single upfront O(spans) pass.  Subsequent lookups are O(1) via index cursor.
+    data class SpanBoundary(val start: Int, val end: Int, val viewSpan: ViewSpan?, val isBr: Boolean)
+    val spBoundaries = ArrayList<SpanBoundary>(8)
+    for (sp in attributed.getSpans(0, attributed.length, ViewSpan::class.java)) {
+      spBoundaries.add(SpanBoundary(attributed.getSpanStart(sp), attributed.getSpanEnd(sp), sp, false))
+    }
+    for (sp in attributed.getSpans(0, attributed.length, BrSpan::class.java)) {
+      spBoundaries.add(SpanBoundary(attributed.getSpanStart(sp), attributed.getSpanEnd(sp), null, true))
+    }
+    spBoundaries.sortBy { it.start }
 
     // Walk through the spannable to find text runs and view placeholders
     var currentPos = 0
+    var bIdx = 0  // cursor into spBoundaries
+
     while (currentPos < attributed.length) {
 
-      val brSpans = attributed.getSpans(currentPos, currentPos + 1, BrSpan::class.java)
-      if (brSpans.isNotEmpty()) {
-        // Inline child placeholder
-        val brSpan = brSpans[0]
-        segments.add(
-          InlineSegment.Br()
-        )
+      // Advance boundary cursor past any spans that end before currentPos
+      while (bIdx < spBoundaries.size && spBoundaries[bIdx].start < currentPos) bIdx++
 
-        currentPos = attributed.getSpanEnd(brSpan)
+      val boundary = if (bIdx < spBoundaries.size && spBoundaries[bIdx].start == currentPos)
+        spBoundaries[bIdx] else null
+
+      if (boundary != null && boundary.isBr) {
+        segments.add(InlineSegment.Br())
+        currentPos = boundary.end
+        bIdx++
         continue
       }
 
-
-      val viewSpans = attributed.getSpans(currentPos, currentPos + 1, ViewSpan::class.java)
-
-      if (viewSpans.isNotEmpty()) {
-        // Inline child placeholder
-        val viewSpan = viewSpans[0]
+      if (boundary != null && boundary.viewSpan != null) {
+        val viewSpan = boundary.viewSpan
         val rawHeight = viewSpan.childNode.cachedHeight.takeIf { it > 0 }
           ?: viewSpan.childNode.computedHeight
 
@@ -959,31 +970,28 @@ class TextEngine(val container: TextContainer) {
           )
         )
 
-        currentPos = attributed.getSpanEnd(viewSpan)
+        currentPos = boundary.end
+        bIdx++
       } else {
-        // Text segment - measure this run with proper paint
-        val nextViewStart = findNextViewSpan(attributed, currentPos)
-        val end = if (nextViewStart >= 0) nextViewStart else attributed.length
+        // Text run: extends from currentPos to the next ViewSpan/BrSpan boundary (or end).
+        // Use the pre-collected boundary cursor — no per-iteration getSpans() scan needed.
+        val end = if (bIdx < spBoundaries.size) spBoundaries[bIdx].start else attributed.length
 
         if (end > currentPos) {
-          val textRun = attributed.subSequence(currentPos, end)
-
-          // Measure with the attributed text's spans applied
-          // val width = Layout.getDesiredWidth(textRun, 0, textRun.length, textPaint)
-
+          // Width via StaticLayout horizontal positions.  Avoids creating a
+          // subSequence CharSequence copy; the attributed string is used directly
+          // in the fallback path instead.
           val width = try {
             val startX = layout.getPrimaryHorizontal(currentPos)
-            val endX = layout.getPrimaryHorizontal(end) // runEnd is the index after the last char
+            val endX = layout.getPrimaryHorizontal(end)
             kotlin.math.abs(endX - startX)
           } catch (_: Throwable) {
-            // fallback to desired width if layout doesn't support primaryHorizontal for some reason
-            Layout.getDesiredWidth(textRun, 0, textRun.length, textPaint)
+            Layout.getDesiredWidth(attributed, currentPos, end, textPaint)
           }
 
-          // Get font metrics for this specific run by applying spans to a temporary paint
+          // Apply character style spans to a single reused TextPaint (avoids a
+          // TextPaint allocation per run). Paint.set() copies all fields cheaply.
           val runPaint = TextPaint(textPaint)
-
-          // Apply all character style spans to the paint
           val spans =
             attributed.getSpans(currentPos, end, android.text.style.CharacterStyle::class.java)
           for (span in spans) {
@@ -991,20 +999,12 @@ class TextEngine(val container: TextContainer) {
           }
 
           val fontMetrics = runPaint.fontMetrics
-
-          // Use the run's measured font metrics directly to represent ascent
-          // and descent, matching browser behavior where intrinsic font
-          // metrics determine line-box contributions.
-          var ascentPx = -fontMetrics.ascent
-          var descentPx = fontMetrics.descent
-
           segments.add(
             InlineSegment.Text(
-              // Encode resolved whitespace as a compact flags byte
               style.resolvedWhiteSpace.value,
-              ceil(width),  // Already in px
-              ascentPx,  // positive ascent value in px
-              descentPx  // descent in px
+              ceil(width),
+              -fontMetrics.ascent,
+              fontMetrics.descent
             )
           )
 
@@ -1564,8 +1564,8 @@ class TextEngine(val container: TextContainer) {
     val fontFace = container.style.resolvedFontFace
     // Apply typeface with bold/italic hints so we can synthesize when needed
     fontFace.font?.let { typeface ->
-      val isBold = fontFace.fontDescriptors.weight.isBold
-      val isItalic = fontFace.fontDescriptors.style.fontStyle == android.graphics.Typeface.ITALIC
+      val isBold = fontFace.weight.weight >= 600
+      val isItalic = fontFace.style.fontStyle == android.graphics.Typeface.ITALIC
       spannable.setSpan(
         Spans.TypefaceSpan(typeface, isBold, isItalic), start, end, flags
       )
@@ -1769,60 +1769,66 @@ class TextEngine(val container: TextContainer) {
 
     val composed = SpannableStringBuilder()
 
-    for (child in node.children) {
-      when {
-        child.view is Br.FakeView -> {
-          composed.append(createBRholder())
-        }
+    // Use try/finally so isBuilding is always cleared even when a child
+    // span operation throws (e.g. a bad ViewSpan measurement).  Without
+    // this guard the engine permanently returns empty strings after the
+    // first exception, breaking all subsequent renders.
+    try {
+      for (child in node.children) {
+        when {
+          child.view is Br.FakeView -> {
+            composed.append(createBRholder())
+          }
 
-        child is TextNode -> {
-          composed.append(child.attributed(true))
-        }
+          child is TextNode -> {
+            composed.append(child.attributed(true))
+          }
 
-        child.view is TextContainer -> {
-          val childTextContainer = child.view as TextContainer
-          if (shouldFlattenTextContainer(childTextContainer)) {
-            val nested = childTextContainer.engine.buildAttributedString()
-            val start = composed.length
-            composed.append(nested)
-            val end = composed.length
-            applyTextViewStylesToSpan(composed, start, end, childTextContainer)
-          } else {
+          child.view is TextContainer -> {
+            val childTextContainer = child.view as TextContainer
+            if (shouldFlattenTextContainer(childTextContainer)) {
+              val nested = childTextContainer.engine.buildAttributedString()
+              val start = composed.length
+              composed.append(nested)
+              val end = composed.length
+              applyTextViewStylesToSpan(composed, start, end, childTextContainer)
+            } else {
+              val placeholder = createPlaceholder(child)
+              // If the child is a block-level element, ensure it sits on its
+              // own line by surrounding the placeholder with newlines. This
+              // ensures StaticLayout places the block vertically as a separate
+              // block instead of inline with surrounding text.
+              val isBlock = child.style.display == Display.Block
+              if (isBlock) {
+                if (composed.isNotEmpty() && composed.last() != '\n') {
+                  composed.append('\n')
+                }
+                composed.append(placeholder)
+                if (composed.isEmpty() || composed.last() != '\n') {
+                  composed.append('\n')
+                }
+              } else {
+                composed.append(placeholder)
+              }
+            }
+          }
+
+          child.nativePtr != 0L && child.style.display != Display.None -> {
             val placeholder = createPlaceholder(child)
-            // If the child is a block-level element, ensure it sits on its
-            // own line by surrounding the placeholder with newlines. This
-            // ensures StaticLayout places the block vertically as a separate
-            // block instead of inline with surrounding text.
             val isBlock = child.style.display == Display.Block
             if (isBlock) {
-              if (composed.isNotEmpty() && composed.last() != '\n') {
-                composed.append('\n')
-              }
+              if (composed.isNotEmpty() && composed.last() != '\n') composed.append('\n')
               composed.append(placeholder)
-              if (composed.isEmpty() || composed.last() != '\n') {
-                composed.append('\n')
-              }
+              if (composed.isEmpty() || composed.last() != '\n') composed.append('\n')
             } else {
               composed.append(placeholder)
             }
           }
         }
-
-        child.nativePtr != 0L && child.style.display != Display.None -> {
-          val placeholder = createPlaceholder(child)
-          val isBlock = child.style.display == Display.Block
-          if (isBlock) {
-            if (composed.isNotEmpty() && composed.last() != '\n') composed.append('\n')
-            composed.append(placeholder)
-            if (composed.isEmpty() || composed.last() != '\n') composed.append('\n')
-          } else {
-            composed.append(placeholder)
-          }
-        }
       }
+    } finally {
+      isBuilding = false
     }
-
-    isBuilding = false
 
     // Wrap with Unicode bidi control characters when unicode-bidi requires
     // character-level overrides beyond what StaticLayout's text direction

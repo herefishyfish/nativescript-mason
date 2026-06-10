@@ -3575,12 +3575,13 @@ export class Style {
     return '';
   }
 
-  set paddingCss(value: string) {
+  set paddingCss(value: string | number) {
+    const strValue = typeof value === 'number' ? `${value}px` : value;
     this.setPseudoCssStringValue(
       'padding',
-      value,
-      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setPaddingCss(this.nativeView, value),
-      () => ((this.nativeView as MasonElementObjc).style.paddingCss = value),
+      strValue,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setPaddingCss(this.nativeView, strValue),
+      () => ((this.nativeView as MasonElementObjc).style.paddingCss = strValue),
     );
   }
 
@@ -3595,12 +3596,13 @@ export class Style {
     return '';
   }
 
-  set marginCss(value: string) {
+  set marginCss(value: string | number) {
+    const strValue = typeof value === 'number' ? `${value}px` : value;
     this.setPseudoCssStringValue(
       'margin',
-      value,
-      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setMarginCss(this.nativeView, value),
-      () => ((this.nativeView as MasonElementObjc).style.marginCss = value),
+      strValue,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setMarginCss(this.nativeView, strValue),
+      () => ((this.nativeView as MasonElementObjc).style.marginCss = strValue),
     );
   }
 
@@ -3615,12 +3617,13 @@ export class Style {
     return '';
   }
 
-  set insetCss(value: string) {
+  set insetCss(value: string | number) {
+    const strValue = typeof value === 'number' ? `${value}px` : value;
     this.setPseudoCssStringValue(
       'inset',
-      value,
-      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setInsetCss(this.nativeView, value),
-      () => ((this.nativeView as MasonElementObjc).style.insetCss = value),
+      strValue,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setInsetCss(this.nativeView, strValue),
+      () => ((this.nativeView as MasonElementObjc).style.insetCss = strValue),
     );
   }
 

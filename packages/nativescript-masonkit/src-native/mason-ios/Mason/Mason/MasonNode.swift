@@ -16,14 +16,23 @@ private func measure(_ node: UnsafeRawPointer?, _ knownDimensionsWidth: Float, _
   node.style.inMeasure = true
   defer {
     node.style.inMeasure = false
-    // Schedule flush for after Rust releases the read lock.
-    // DispatchQueue.main.async runs on the next run-loop iteration when the lock is no longer held.
+    // If style writes were deferred (pendingMetricsSync), schedule a
+    // re-layout after Rust releases the read lock. Since everything runs
+    // on the main thread, DispatchQueue.main.async defers to the next
+    // run-loop iteration — after the current compute finishes.
     if node.style.pendingMetricsSync {
       DispatchQueue.main.async { [weak node] in
         guard let node = node else { return }
         if node.style.flushPendingMetricsSync() {
           node.markDirty()
-          node.view?.setNeedsLayout()
+          // Trigger a full re-layout so the corrected metrics are picked
+          // up before the next frame commits, rather than waiting for an
+          // unrelated setNeedsLayout that may never come.
+          if let element = node.view as? MasonElement {
+            element.computeWithViewSize(layout: true)
+          } else {
+            node.view?.setNeedsLayout()
+          }
         }
       }
     }

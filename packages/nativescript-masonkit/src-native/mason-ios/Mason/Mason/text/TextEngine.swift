@@ -364,9 +364,18 @@ public class TextEngine: NSObject {
       }
     }
     
-    // Create framesetter
-    let framesetter = CTFramesetterCreateWithAttributedString(text)
-  
+    // Reuse cached CTFramesetter when the attributed string hasn't changed.
+    // Creating a framesetter is expensive: it triggers glyph lookup, font
+    // fallback resolution, bidi analysis, and line-breaking table setup.
+    let framesetter: CTFramesetter
+    if let cached = engine.cachedFramesetter,
+       engine.framesetterStringVersion == engine.segmentsInvalidateVersion {
+      framesetter = cached
+    } else {
+      framesetter = CTFramesetterCreateWithAttributedString(text)
+      engine.cachedFramesetter = framesetter
+      engine.framesetterStringVersion = engine.segmentsInvalidateVersion
+    }
 
     var constraintSize = CGSize(width: maxWidth, height: maxHeight)
     // Avoid passing infinite height to CoreText framesetter — use a large finite fallback.
@@ -378,62 +387,100 @@ public class TextEngine: NSObject {
       }
     }
 
-    // First get the suggested size from CoreText using our constraints so we can build
-    // the exclusion path with the same height CT will actually use. This prevents
-    // mismatch where measurement used a huge outer rect while draw used a tight height.
-    var suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-      framesetter,
-      CFRangeMake(0, text.length),
-      nil,
-      constraintSize,
-      nil
-    )
-    if !suggested.height.isFinite || suggested.height <= 0 {
-      // Fallback to provided constraint or a reasonable default
-      suggested.height = min(constraintSize.height, 10000.0)
-    }
-
     let scale = CGFloat(NSCMason.scale)
-    // Build exclusion path including floated native views returned by the engine
-    // Use a frame-local outer rect (origin at zero) so rects from the engine (top-based)
-    // can be appended directly without an extra flip.
-    let outerRect = CGRect(origin: .zero, size: CGSize(width: constraintSize.width, height: suggested.height))
-    let bezier = UIBezierPath(rect: outerRect)
-    bezier.usesEvenOddFillRule = true
+
+    // Fetch floats now so we know whether we need the suggested-size pre-pass.
     let containerNode = engine.node.parent ?? engine.node
     let floatEntries = NativeHelpers.nativeNodeGetFloatRectsWithNodes(engine.node.mason, containerNode)
-    // Compute this text view's origin in container coordinates (points)
     let textViewOffset = CGPoint(x: CGFloat(engine.node.computedLayout.x) / scale, y: CGFloat(engine.node.computedLayout.y) / scale)
-    if floatEntries.count > 0 {
+
+    // When there are floats we need to size the exclusion path correctly, which
+    // requires knowing the actual text height first — so we call SuggestFrameSize.
+    // When there are no floats the simple outer rect is sufficient and we can skip
+    // the suggest call entirely, computing height from the frame afterwards instead.
+    //
+    // `suggestedSize` is set only for the float path; for the no-float path it
+    // stays nil and the size is derived from the frame's line origins instead.
+    var suggestedSize: CGSize? = nil
+    let pathHeight: CGFloat
+    if floatEntries.isEmpty {
+      pathHeight = constraintSize.height  // tall rect; real height computed from frame
+    } else {
+      var s = CTFramesetterSuggestFrameSizeWithConstraints(
+        framesetter,
+        CFRangeMake(0, text.length),
+        nil,
+        constraintSize,
+        nil
+      )
+      if !s.height.isFinite || s.height <= 0 {
+        s.height = min(constraintSize.height, 10000.0)
+      }
+      suggestedSize = s
+      pathHeight = s.height
+    }
+
+    // Build exclusion path (outer rect ± float cutouts)
+    let outerRect = CGRect(origin: .zero, size: CGSize(width: constraintSize.width, height: pathHeight))
+    let bezier = UIBezierPath(rect: outerRect)
+    bezier.usesEvenOddFillRule = true
+    if !floatEntries.isEmpty {
       for (_, rectLogical) in floatEntries {
-        // Convert engine px -> points. Engine Y is top-based; use it directly in
-        // the frame-local coordinates so the exclusion rect aligns with the native view.
         let rectW = rectLogical.width / scale
         let rectH = rectLogical.height / scale
         let rectX = rectLogical.origin.x / scale
         let rectY = rectLogical.origin.y / scale
-        // Convert from container-local points to this text-view-local coordinates
         let rectForPath = CGRect(x: rectX - textViewOffset.x, y: rectY - textViewOffset.y, width: rectW, height: rectH)
         bezier.append(UIBezierPath(rect: rectForPath))
       }
     }
     let path = bezier.cgPath
 
-    // Create final frame using the path built with the CT-suggested height
     let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, text.length), path, nil)
 
-    // Now calculate the size (use suggested which matches the path height)
-    var size = suggested
-    
+    // Compute the measured size.
+    //
+    // No-float path: derive size from the frame's line origins — one CT pass total.
+    // In CoreText's Y-up coordinate space, lineOrigin.y is the baseline distance
+    // from the BOTTOM of the frame rect:
+    //   textTop    = firstLineOrigin.y + firstAscent
+    //   textBottom = lastLineOrigin.y  - lastDescent
+    //   height     = textTop - textBottom
+    //
+    // Float path: SuggestFrameSize already ran above, reuse its result.
+    var size: CGSize
+    if let s = suggestedSize {
+      size = s  // float path: already have the correct size
+    } else {
+      let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
+      if lines.isEmpty {
+        size = .zero
+      } else {
+        let count = lines.count
+        var lineOrigins = [CGPoint](repeating: .zero, count: count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, 0), &lineOrigins)
+
+        var firstAscent: CGFloat = 0
+        CTLineGetTypographicBounds(lines[0], &firstAscent, nil, nil)
+        var lastDescent: CGFloat = 0
+        CTLineGetTypographicBounds(lines[count - 1], nil, &lastDescent, nil)
+        let measuredHeight = (lineOrigins[0].y + firstAscent) - (lineOrigins[count - 1].y - lastDescent)
+
+        var measuredWidth: CGFloat = 0
+        for line in lines {
+          let lw = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+          if lw > measuredWidth { measuredWidth = lw }
+        }
+        size = CGSize(width: measuredWidth, height: max(measuredHeight, 0))
+      }
+    }
+
     if text.length > 0 && size.width <= 0 {
       let line = CTLineCreateWithAttributedString(text)
       var ascent: CGFloat = 0
       var descent: CGFloat = 0
       let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
-      
-      if lineWidth > 0 {
-        size.width = lineWidth
-      }
+      if lineWidth > 0 { size.width = lineWidth }
     }
     
     
@@ -472,7 +519,13 @@ public class TextEngine: NSObject {
   
   private var isBuilding = false
   internal var cachedAttributedString: NSAttributedString?
-  
+
+  // Cached CTFramesetter — expensive to create (glyph shaping, font fallback, bidi
+  // analysis). Valid while the attributed string hasn't changed. Keyed by
+  // segmentsInvalidateVersion so it is automatically stale after any invalidation.
+  private var cachedFramesetter: CTFramesetter?
+  private var framesetterStringVersion: UInt64 = UInt64.max
+
   // monotonically increasing version for invalidation; cachedAttributedString is valid when
   // attributedStringVersion == segmentsInvalidateVersion
   private var segmentsInvalidateVersion: UInt64 = 0
@@ -504,12 +557,21 @@ public class TextEngine: NSObject {
   
   
   
-  /// Mark segments as needing rebuild
+  /// Mark segments as needing rebuild.
+  /// Propagates upward to any parent TextContainer so flattened ancestors also
+  /// discard their cached attributed strings and don't return stale content.
   func invalidateInlineSegments(_ markDirty: Bool = true) {
     segmentsInvalidateVersion &+= 1
     cachedAttributedString = nil
-    if(markDirty){
+    cachedFramesetter = nil  // framesetter derives from the attributed string
+    if markDirty {
       node.markDirty()
+    }
+    // Propagate to parent TextContainer: when this node is flattened into its
+    // parent's attributed string the parent's cache embeds our old content.
+    // Bump the parent version so its next buildAttributedString() rebuilds.
+    if let parentNode = node.parent, let parentContainer = parentNode.view as? TextContainer {
+      parentContainer.engine.invalidateInlineSegments(markDirty)
     }
   }
   
@@ -1157,6 +1219,13 @@ public class TextEngine: NSObject {
   
   
   func drawText(context: CGContext, rect: CGRect){
+    // When this TextContainer is flattened into a parent TextContainer, the parent's
+    // text layer renders our content. Drawing here would produce duplicate text.
+    if let parentNode = node.parent, let parentContainer = parentNode.view as? TextContainer,
+       parentContainer.engine.shouldFlattenTextContainer(container) {
+      drawState = .idle
+      return
+    }
     drawState = .drawing
     // Build attributed string for drawing (uses cache if valid)
     let text = buildAttributedString(forMeasurement: false)
