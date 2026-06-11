@@ -658,8 +658,6 @@ class MasonElementHelpers: NSObject {
     if let view = node.view, !(view is MasonBr.FakeView) {
       var isTextView = false
       var realLayout = layout
-      // Diagnostic: log raw layout values coming from the engine
-      print("[Mason.applyToView] node:", Unmanaged.passUnretained(node).toOpaque(), "layout:", "x=\(layout.x)", "y=\(layout.y)", "w=\(layout.width)", "h=\(layout.height)", "contentWidth=\(layout.contentWidth)", "contentHeight=\(layout.contentHeight)")
       var hasWidthConstraint: Bool = false
       var hasHeightConstraint: Bool = false
       if let view = view as? MasonText {

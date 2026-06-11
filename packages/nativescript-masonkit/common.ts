@@ -593,11 +593,9 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
         atIndex = (this._children as any[]).findIndex((c: any) => c && c[textNode_] === nativeTextNode);
       }
       if (atIndex === -1) {
-        console.error('[mason:insertBefore] NotFoundError for', child?.constructor?.name, '| ref textNode_=', !!reference[textNode_], '| _children.length=', this._children.length, '| _children types=', JSON.stringify((this._children as any[]).map((c) => (c?.[textNode_] ? 'text' : (c?.constructor?.name ?? typeof c)))));
         throw new Error('NotFoundError');
       }
     }
-    console.log('[mason:insertBefore] child=', child?.constructor?.name ?? child?.nodeName, '| atIndex=', atIndex, '| _children.length=', this._children.length);
 
     if (child && child.nodeType === 3) {
       this._updateTextNode(child, { type: 'insert', index: atIndex, isBreak: child.nodeName === 'br' });
@@ -607,8 +605,29 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     this.insertChild(child, atIndex);
   }
 
+  // Native child index for an insertion at `atIndex`: counts only the
+  // preceding siblings that already exist in the native tree. Text nodes and
+  // placeholders attach natively right away, but NativeScript views attach
+  // lazily (on `loaded`), so a raw `_children` index can run ahead of the
+  // native children list and push the insert past the end.
+  private _nativeIndexFor(atIndex: number) {
+    let index = 0;
+    const max = Math.min(atIndex, this._children.length);
+    for (let i = 0; i < max; i++) {
+      const c: any = this._children[i];
+      if (!c) {
+        continue;
+      }
+      if (c[textNode_] || c instanceof TextNode || text_ in c || (c[isPlaceholder_] && c[native_]) || c._isMasonChild) {
+        index++;
+      }
+    }
+    return index;
+  }
+
   insertChild(child: any, atIndex: number) {
     if (child && child[isPlaceholder_] && child._view) {
+      const nativeIndex = this._nativeIndexFor(atIndex);
       this._children.splice(atIndex, 0, child);
       if (this[isText_]) {
         child[isTextChild_] = true;
@@ -616,22 +635,12 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
       if (__ANDROID__) {
         //@ts-ignore
-        this._view.addChildAt(child._view, atIndex);
-        // Br.FakeView is not a TextContainer, so invalidateDescendantTextViews is a
-        // no-op for it. Explicitly invalidate the parent's TextEngine cache so the
-        // attributed string rebuilds to include this Br.
-        if (this[isText_]) {
-          //@ts-ignore
-          (this._view as any).engine?.invalidateInlineSegments?.();
-        }
-        //@ts-ignore
-        const nodeChildCount = (this as any)._view?.node?.getChildCount?.();
-        console.log('[mason:insertChild] isPlaceholder after addChildAt', child?.constructor?.name, 'atIndex=', atIndex, 'node.childCount=', nodeChildCount, '_children.length=', this._children.length);
+        this._view.addChildAt(child._view, nativeIndex);
       }
 
       if (__APPLE__) {
         //@ts-ignore
-        this._view.mason_addChildAtNode(child._view, atIndex);
+        this._view.mason_addChildAtElement(child._view, nativeIndex);
       }
     } else if (child instanceof NSView) {
       this._children.splice(atIndex, 0, child);
@@ -656,7 +665,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
       if (__APPLE__) {
         //@ts-ignore
-        this._view.mason_replaceChildAtNode(child._view, atIndex);
+        this._view.mason_replaceChildAtElement(child._view, atIndex);
       }
     } else if (child instanceof NSView) {
       this._children[atIndex] = child;
@@ -688,6 +697,26 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
   }
 
   removeChild(child: any) {
+    // Placeholder (e.g. Br): it was attached straight to the mason tree via the
+    // native element APIs (never `_addView`-ed), so `_removeView` would throw.
+    // Remove the native node directly instead.
+    if (child && child[isPlaceholder_] && child._view) {
+      const index = this._children.indexOf(child);
+      if (index > -1) {
+        this._children.splice(index, 1);
+        if (__ANDROID__) {
+          //@ts-ignore
+          this._view.removeChild(child._view.node);
+        }
+        if (__APPLE__) {
+          //@ts-ignore
+          this._view.mason_removeChildNode(child._view.node);
+        }
+        child[isTextChild_] = false;
+        (this as any).requestLayout?.();
+      }
+      return;
+    }
     // Framework text node: it isn't stored in `_children` directly — its native
     // `MasonTextNode` is stamped on it as `child[textNode_]`. Use that to locate
     // and remove the matching native node from the mason tree. NativeScript has

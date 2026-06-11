@@ -1041,6 +1041,10 @@ open class Node internal constructor(
       NodeUtils.removeView(this, reference.view as? View)
       NodeUtils.addView(this, child.view as? View)
 
+      // Swapping a non-text child changes the parent's composed text —
+      // rebuild the inline segment cache when the parent renders text.
+      (view as? TextContainer)?.engine?.invalidateInlineSegments()
+
       // Single invalidation pass for the newly inserted child
       invalidateDescendantTextViews(child, StateKeys.INVALIDATE_TEXT)
 
@@ -1255,6 +1259,10 @@ open class Node internal constructor(
       }
     }
 
+    // A non-text child (e.g. a Br) changes the parent's composed text —
+    // rebuild the inline segment cache when the parent renders text.
+    (view as? TextContainer)?.engine?.invalidateInlineSegments()
+
     // Single invalidation pass
     invalidateDescendantTextViews(child, StateKeys.INVALIDATE_TEXT)
 
@@ -1301,6 +1309,9 @@ open class Node internal constructor(
         NativeHelpers.nativeNodeRemoveChild(mason.nativePtr, nativePtr, removed.nativePtr)
       }
       removed.parent = null
+      // Removing a non-text child (e.g. a Br) changes the parent's composed
+      // text — rebuild the inline segment cache when the parent renders text.
+      (view as? TextContainer)?.engine?.invalidateInlineSegments()
       NodeUtils.invalidateLayout(this, true)
     }
     return removed

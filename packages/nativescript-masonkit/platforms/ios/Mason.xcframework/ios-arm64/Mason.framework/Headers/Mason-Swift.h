@@ -1875,6 +1875,13 @@ SWIFT_CLASS_PROPERTY(@property (nonatomic, class, readonly) float scale;)
 - (void)mason_replaceChildAtText:(NSString * _Nonnull)text :(NSInteger)index;
 - (void)mason_replaceChildAtElement:(id <MasonElementObjc> _Nonnull)element :(NSInteger)index;
 - (void)mason_replaceChildAtNode:(MasonNode * _Nonnull)node :(NSInteger)index;
+/// Remove the child node (view or text node) at <code>index</code> from the mason tree.
+/// Counterpart to <code>mason_addChildAt</code>; <code>MasonNode.removeChildAt</code> already
+/// handles both <code>MasonTextNode</code> and element children.
+- (void)mason_removeChildAt:(NSInteger)index;
+/// Remove a specific child node (e.g. the <code>MasonTextNode</code> a framework stamped
+/// onto its JS text node) without needing its index.
+- (void)mason_removeChildNode:(MasonNode * _Nonnull)node;
 @end
 
 typedef SWIFT_ENUM_NAMED(NSInteger, MasonObjectFit, "ObjectFit", open) {

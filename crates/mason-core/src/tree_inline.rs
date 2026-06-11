@@ -2445,6 +2445,11 @@ impl Tree {
                     }
 
                     for &child_id in &flow_child_ids {
+                        // A line-break node (<br>) forces a new line.
+                        if self.nodes()[child_id].is_line_container() {
+                            prepared_items.push(PreparedItem::LineBreak);
+                            continue;
+                        }
                         let (
                             size,
                             margin,
@@ -2699,6 +2704,11 @@ impl Tree {
             }
         } else {
             for &child_id in &flow_child_ids {
+                // A line-break node (<br>) forces a new line.
+                if self.nodes()[child_id].is_line_container() {
+                    prepared_items.push(PreparedItem::LineBreak);
+                    continue;
+                }
                 let (
                     size,
                     margin,

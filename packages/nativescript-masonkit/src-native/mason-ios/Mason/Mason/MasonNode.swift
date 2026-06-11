@@ -861,6 +861,11 @@ extension MasonNode {
       child.parent = self
       NativeHelpers.nativeNodeAddChild(mason, self, child)
       NodeUtils.addView(self, child.view)
+      // A non-text child (e.g. a Br) changes the parent's composed text —
+      // rebuild the inline segment cache when the parent renders text.
+      if let tc = view as? TextContainer {
+        tc.engine.invalidateInlineSegments()
+      }
       // Single pass invalidation of descendants with text styles
       MasonNode.invalidateDescendantTextViews(child, .invalidateText)
       onNodeAttached?()
@@ -880,25 +885,31 @@ extension MasonNode {
     // Create new anonymous container
     let textView = MasonText(mason: mason, isAnonymous: true)
     textView.style.display = .Inline
-    
+
+    // MasonNode.view is WEAK: the view hierarchy is what keeps the anonymous
+    // MasonText alive. Attach it here even when `append` is false — otherwise
+    // the view deallocates the moment this function returns and the caller's
+    // `node.view` is already nil. Callers that position the node themselves
+    // (append=false) only manage the `children`/native bookkeeping below.
+    if !(view is TextContainer) {
+      suppressChildOperations {
+        view?.addSubview(textView)
+      }
+    }
+
     if(append){
       // Add container to this node
       children.append(textView.node)
-      
+
       textView.node.parent = self
-      
-      
-      if(append && !(view is TextContainer)){
-        view?.addSubview(textView)
-      }
-      
+
       // Add to native layout tree
       if let containerPtr = textView.node.nativePtr {
         mason_node_add_child(mason.nativePtr, nativePtr, containerPtr)
       }
-      
+
     }
-    
+
     return textView.node
   }
   
@@ -1142,7 +1153,13 @@ extension MasonNode {
     reference.parent = nil
     NodeUtils.removeView(self, reference.view)
     NodeUtils.addView(self, child.view)
-    
+
+    // Swapping a non-text child changes the parent's composed text —
+    // rebuild the inline segment cache when the parent renders text.
+    if let tc = view as? TextContainer {
+      tc.engine.invalidateInlineSegments()
+    }
+
     // Single pass invalidation of descendants with text styles
     MasonNode.invalidateDescendantTextViews(child, .invalidateText)
     
@@ -1163,9 +1180,9 @@ extension MasonNode {
       appendChild(child)
       return
     }
-    
+
     let authorChildren = getChildren()
-    
+
     // if index is past end, fallback to append behavior
     if index >= authorChildren.count {
       appendChild(child)
@@ -1197,8 +1214,9 @@ extension MasonNode {
         }
       }
       
-      // Create an anonymous text container
-      let container = getOrCreateAnonymousTextContainer(checkLast: false)
+      // Create an anonymous text container (append=false: we position it
+      // ourselves below — appending here would leave a duplicate entry).
+      let container = getOrCreateAnonymousTextContainer(false, checkLast: false)
       container.children.removeAll()
       container.children.append(textChild)
       textChild.parent = container
@@ -1264,7 +1282,9 @@ extension MasonNode {
         // after container
         var afterContainer: MasonNode? = nil
         if !rightSlice.isEmpty {
-          afterContainer = getOrCreateAnonymousTextContainer(checkLast: false)
+          // append=false: the split logic inserts the container at the right
+          // position itself — appending here would leave a duplicate entry.
+          afterContainer = getOrCreateAnonymousTextContainer(false, checkLast: false)
           afterContainer?.children.removeAll()
           for n in rightSlice {
             afterContainer?.children.append(n)
@@ -1332,16 +1352,23 @@ extension MasonNode {
     let pos = max(0, min(children.count, insertIndex))
     children.insert(child, at: pos)
     child.parent = self
-    
+
     if child.nativePtr != nil {
       NativeHelpers.nativeNodeAddChild(mason, self, child)
-    } else {
-      NodeUtils.addView(self, child.view)
     }
-    
+    // Attach the platform view as well (matches appendChild); NodeUtils.addView
+    // is a no-op for nil views and TextContainer parents.
+    NodeUtils.addView(self, child.view)
+
+    // A non-text child (e.g. a Br) changes the parent's composed text —
+    // rebuild the inline segment cache when the parent renders text.
+    if let tc = view as? TextContainer {
+      tc.engine.invalidateInlineSegments()
+    }
+
     // Single pass invalidation of descendants with text styles
     MasonNode.invalidateDescendantTextViews(child, StateKeys.invalidateText)
-    
+
     NodeUtils.syncNode(self, children)
     if !style.inBatch { (view as? MasonElement)?.invalidateLayout() }
   }
@@ -1371,7 +1398,18 @@ extension MasonNode {
       }
     } else {
       NodeUtils.removeView(self, removed.view)
+      // Detach from the Rust layout tree as well (matches Android) — without
+      // this the layout engine keeps measuring the removed child.
+      if let ptr = nativePtr, let childPtr = removed.nativePtr {
+        mason_node_remove_child(mason.nativePtr, ptr, childPtr)
+      }
       removed.parent = nil
+      // Removing a non-text child (e.g. a Br) changes the parent's composed
+      // text — rebuild the inline segment cache when the parent renders text.
+      if let tc = view as? TextContainer {
+        tc.engine.invalidateInlineSegments()
+      }
+      NodeUtils.invalidateLayout(self)
     }
     return removed
   }

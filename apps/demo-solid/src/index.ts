@@ -1,13 +1,9 @@
 import { render } from '@nativescript-community/solid-js';
 import { Application } from '@nativescript/core';
 import { document, makeView, registerElement, scope } from 'dominative';
-console.log('[mason-init] dominative imported');
 import { App } from './app';
-console.log('[mason-init] app imported');
 import { B, Code, Div, H1, H2, H3, H4, P, Section, Span } from '@triniwiz/nativescript-masonkit/web';
-console.log('[mason-init] web imports done');
 import { Img, Br, Input, TextArea, View, Button, Text } from '@triniwiz/nativescript-masonkit';
-console.log('[mason-init] index imports done');
 
 /**
  * A dominative element backed by a mason view that accepts BOTH nested element
@@ -59,10 +55,7 @@ function makeMasonElement(base: any) {
             return;
           } catch (e) {
             // nextSib not trackable in the Mason tree; fall through to addChild
-            console.error('[mason:onInsertChild] insertBefore threw for', child?.constructor?.name, '| nextSib=', nextSib?.nodeName ?? nextSib?.constructor?.name, '| err=', (e as any)?.message);
           }
-        } else {
-          console.log('[mason:onInsertChild] no nextSib for', child?.constructor?.name);
         }
         this.addChild(child);
         return;
@@ -85,9 +78,7 @@ function makeMasonElement(base: any) {
 
 function safeRegister(key: string, maker: () => any) {
   try {
-    const cls = maker();
-    registerElement(key, cls);
-    console.log(`[mason-reg] registered '${key}' OK`);
+    registerElement(key, maker());
   } catch (e) {
     console.error(`[mason-reg] FAILED '${key}':`, e?.message ?? e, e?.stack);
   }

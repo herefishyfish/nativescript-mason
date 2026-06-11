@@ -149,14 +149,17 @@ export class Text extends TextBase {
     const nativeView = this._view as org.nativescript.mason.masonkit.TextView;
     if (nativeView && child.nativeViewProtected) {
       child[isTextChild_] = true;
-      const index = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
-      // Use addChildAt when we have a valid index (even when atIndex defaulted to -1
-      // but _children.indexOf found the real position). Fall back to addView (append)
-      // only when the child is genuinely not tracked yet.
-      if (index <= -1) {
+      const jsIndex = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      // Fall back to addView (append) only when the child is genuinely not
+      // tracked yet; otherwise map the JS index onto the native children list
+      // (views attach lazily, so the raw index can run ahead of native state).
+      if (jsIndex <= -1) {
+        child._isMasonChild = true;
         nativeView.addView(child.nativeViewProtected as never);
         return true;
       }
+      const index = (this as any)._nativeIndexFor(jsIndex);
+      child._isMasonChild = true;
       nativeView.addChildAt(child.nativeViewProtected, index as never);
       return true;
     }

@@ -240,12 +240,7 @@ impl Tree {
             let key: Id = node_id.into();
             match v.nodes.get(key) {
                 Some(n) => n,
-                None => {
-                    for (k, vec) in v.children.iter() {
-                        let _ = (k, vec);
-                    }
-                    panic!("missing node for id: {:?}", node_id);
-                }
+                None => panic!("missing node for id: {:?}", node_id),
             }
         })
     }

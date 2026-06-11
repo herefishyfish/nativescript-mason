@@ -1030,16 +1030,16 @@ class TextEngine(val container: TextContainer) {
         when (val seg = segments[i]) {
           is InlineSegment.Text -> {
             kinds[i] = 0
-            floats[i * 3 + 0] = seg.width
-            floats[i * 3 + 1] = seg.ascent
-            floats[i * 3 + 2] = seg.descent
-            floats[i * 3 + 3] = seg.flags.toFloat()
+            floats[i * 4 + 0] = seg.width
+            floats[i * 4 + 1] = seg.ascent
+            floats[i * 4 + 2] = seg.descent
+            floats[i * 4 + 3] = seg.flags.toFloat()
           }
 
           is InlineSegment.InlineChild -> {
             kinds[i] = 1
             longs[i] = seg.id
-            floats[i * 3 + 0] = seg.descent
+            floats[i * 4 + 0] = seg.descent
           }
 
           is InlineSegment.Br -> {

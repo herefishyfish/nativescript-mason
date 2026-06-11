@@ -2491,6 +2491,8 @@ extension UIKit.UIImage {
   @objc dynamic public func mason_replaceChildAt(text: Swift.String, _ index: Swift.Int)
   @objc dynamic public func mason_replaceChildAt(element: any Mason.MasonElementObjc, _ index: Swift.Int)
   @objc dynamic public func mason_replaceChildAt(node: Mason.MasonNode, _ index: Swift.Int)
+  @objc dynamic public func mason_removeChildAt(_ index: Swift.Int)
+  @objc dynamic public func mason_removeChildNode(_ node: Mason.MasonNode)
 }
 @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers @objcMembers @objc(MasonTextInput) @_Concurrency.MainActor @preconcurrency public class MasonTextInput : UIKit.UITextView, UIKit.UITextViewDelegate {
   @objc @_Concurrency.MainActor @preconcurrency public var placeholder: Swift.String? {

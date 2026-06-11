@@ -93454,6 +93454,56 @@
             "declAttributes": ["Dynamic", "AccessControl", "ObjC"],
             "isFromExtension": true,
             "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "mason_removeChildAt",
+            "printedName": "mason_removeChildAt(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Int",
+                "printedName": "Swift.Int",
+                "usr": "s:Si"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@CM@Mason@@objc(cs)NSObject(im)mason_removeChildAt:",
+            "mangledName": "$sSo8NSObjectC5MasonE19mason_removeChildAtyySiF",
+            "moduleName": "Mason",
+            "declAttributes": ["Dynamic", "AccessControl", "ObjC", "RawDocComment"],
+            "isFromExtension": true,
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "mason_removeChildNode",
+            "printedName": "mason_removeChildNode(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "MasonNode",
+                "printedName": "Mason.MasonNode",
+                "usr": "c:@M@Mason@objc(cs)MasonNode"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "c:@CM@Mason@@objc(cs)NSObject(im)mason_removeChildNode:",
+            "mangledName": "$sSo8NSObjectC5MasonE21mason_removeChildNodeyyAC0bF0CF",
+            "moduleName": "Mason",
+            "declAttributes": ["Dynamic", "AccessControl", "ObjC", "RawDocComment"],
+            "isFromExtension": true,
+            "funcSelfKind": "NonMutating"
           }
         ],
         "declKind": "Class",
@@ -95368,14 +95418,14 @@
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/MasonNode.swift",
       "kind": "BooleanLiteral",
-      "offset": 27073,
+      "offset": 27318,
       "length": 4,
       "value": "true"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/MasonNode.swift",
       "kind": "BooleanLiteral",
-      "offset": 27097,
+      "offset": 27342,
       "length": 4,
       "value": "true"
     },
@@ -95417,7 +95467,7 @@
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/MasonElement.swift",
       "kind": "BooleanLiteral",
-      "offset": 29099,
+      "offset": 28781,
       "length": 5,
       "value": "false"
     },
@@ -96405,76 +96455,76 @@
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "StringLiteral",
       "offset": 604,
-      "length": 36,
-      "value": "\"(?:\\d+px\\s+)(['\"]?[\\w\\s]+['\"]?)$\""
+      "length": 48,
+      "value": "\"^['\"]?(?:\\d+px\\s+)(['\"]?[\\w\\s-]+['\"]?)['\"]?$\""
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "StringLiteral",
-      "offset": 882,
+      "offset": 894,
       "length": 7,
       "value": "\"serif\""
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "BooleanLiteral",
-      "offset": 904,
+      "offset": 916,
       "length": 4,
       "value": "true"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "BooleanLiteral",
-      "offset": 949,
+      "offset": 961,
       "length": 4,
       "value": "true"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "StringLiteral",
-      "offset": 1048,
+      "offset": 1060,
       "length": 12,
       "value": "\"sans-serif\""
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "BooleanLiteral",
-      "offset": 1075,
+      "offset": 1087,
       "length": 4,
       "value": "true"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "BooleanLiteral",
-      "offset": 1117,
+      "offset": 1129,
       "length": 4,
       "value": "true"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "StringLiteral",
-      "offset": 1217,
+      "offset": 1229,
       "length": 11,
       "value": "\"monospace\""
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "BooleanLiteral",
-      "offset": 1243,
+      "offset": 1255,
       "length": 4,
       "value": "true"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "BooleanLiteral",
-      "offset": 1292,
+      "offset": 1304,
       "length": 4,
       "value": "true"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/NSCFontFaceSet.swift",
       "kind": "StringLiteral",
-      "offset": 1558,
+      "offset": 1570,
       "length": 29,
       "value": "\"NSCFontFaceSet Loader Queue\""
     },

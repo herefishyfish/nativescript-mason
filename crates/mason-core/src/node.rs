@@ -1118,6 +1118,9 @@ pub(crate) fn drain_deferred_cleanup(
         if !has_parent && !has_children {
             // Remove the node; Style::drop will release the arena handle
             tree.nodes.remove(id);
+            tree.parents.remove(id);
+            tree.children.remove(id);
+            tree.float_context.remove(id);
             nd.remove(id);
         }
     }
@@ -1143,13 +1146,21 @@ impl Drop for NodeRef {
                 if !has_parent && !has_children {
                     // Remove the node; Style::drop will release the arena handle
                     tree.nodes.remove(self.id);
+                    tree.parents.remove(self.id);
+                    tree.children.remove(self.id);
+                    tree.float_context.remove(self.id);
                     if let Some(mut nd) = self.node_data.try_write() {
                         nd.remove(self.id);
+                    } else {
+                        // node_data lock is contended — defer so the data
+                        // (and any measure-func context it holds) is still
+                        // released on the next drain instead of leaking.
+                        self.deferred_cleanup.lock().push(self.id);
                     }
                 }
             } else {
                 // Lock is contended — defer cleanup to avoid deadlock.
-                    self.deferred_cleanup.lock().push(self.id);
+                self.deferred_cleanup.lock().push(self.id);
             }
         }
     }

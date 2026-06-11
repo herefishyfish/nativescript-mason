@@ -296,7 +296,11 @@ export class Text extends TextBase {
 
     if (nativeView && child.nativeViewProtected) {
       child[isTextChild_] = true;
-      const index = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      const jsIndex = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      // Map the JS index onto the native children list (views attach lazily,
+      // so the raw index can run ahead of native state).
+      const index = jsIndex <= -1 ? jsIndex : (this as any)._nativeIndexFor(jsIndex);
+      child._isMasonChild = true;
       nativeView.addViewAt(child.nativeViewProtected, index);
       return true;
     }
