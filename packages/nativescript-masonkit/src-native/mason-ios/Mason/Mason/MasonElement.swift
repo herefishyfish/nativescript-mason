@@ -5,7 +5,7 @@
 //  Created by Osei Fortune on 02/10/2025.
 //
 import UIKit
-
+import FontManager
 
 internal func create_layout(_ floats: UnsafePointer<Float>?, _ count: UInt) -> UnsafeMutableRawPointer? {
   guard let floats = floats else {return nil}
@@ -126,19 +126,23 @@ func ctFont(from cgFont: CGFont, fontSize: CGFloat, weight: UIFont.Weight, style
   ]
   
   var symbolicTraits: CTFontSymbolicTraits = []
-  switch(style) {
+  switch(style.type) {
   case .normal:
     // noop
     break
   case .italic:
     symbolicTraits.insert(.traitItalic)
-  case .oblique(let value):
-    if value != nil {
-      // todo handle slant value
-      symbolicTraits.insert(.traitItalic)
-    }else {
-      symbolicTraits.insert(.traitItalic)
-    }
+  case .oblique:
+    symbolicTraits.insert(.traitItalic)
+//    if style.obliqueAngle != nil {
+//      // todo handle slant value
+//      symbolicTraits.insert(.traitItalic)
+//    }else {
+//      symbolicTraits.insert(.traitItalic)
+//    }
+  @unknown default:
+    //noop
+    break
   }
   if weightValue >= 0.6 {
     symbolicTraits.insert(.traitBold)
@@ -154,22 +158,29 @@ func ctFont(from cgFont: CGFont, fontSize: CGFloat, weight: UIFont.Weight, style
   // CoreText ignores weight traits when an explicit name like ".SFUI-Regular" is given.
   // Use the family name + traits so CoreText selects the correct weight variant.
   let isSystemFont = postScriptName.hasPrefix(".")
-  
+
   var attributes: [CFString: Any] = [
     kCTFontSizeAttribute: fontSize,
     kCTFontTraitsAttribute: traits
   ]
-  
+
   if isSystemFont {
-    // For system fonts, use CTFontCreateUIFontForLanguage to get the correct weight
     let uiFont = UIFont.systemFont(ofSize: fontSize, weight: weight)
     return CTFontCreateWithFontDescriptor(uiFont.fontDescriptor as CTFontDescriptor, fontSize, nil)
   } else {
-    attributes[kCTFontNameAttribute] = postScriptName as CFString
+    // Resolve by FAMILY name + traits, not the exact PostScript name: pinning a
+    // face makes CoreText ignore the weight trait. Fall back to the PostScript
+    // name only if the family can't be determined.
+    let baseCT = CTFontCreateWithGraphicsFont(cgFont, fontSize, nil, nil)
+    if let familyName = CTFontCopyFamilyName(baseCT) as String? {
+      attributes[kCTFontFamilyNameAttribute] = familyName as CFString
+    } else {
+      attributes[kCTFontNameAttribute] = postScriptName as CFString
+    }
   }
-  
+
   let descriptor = CTFontDescriptorCreateWithAttributes(attributes as CFDictionary)
-  
+
   return CTFontCreateWithFontDescriptor(descriptor, fontSize, nil)
 }
 
@@ -374,25 +385,20 @@ extension MasonElement {
     }
   }
 
-  /// Auto-compute layout when this is a root Mason view.
-  /// Call from layoutSubviews in any MasonElement UIView subclass.
-  /// Mirrors Android's onMeasure: if the parent isn't a MasonElement,
-  /// take the parent's size as the available space and compute.
+  /// Auto-compute layout when this is a root Mason view (parent isn't a
+  /// MasonElement). Call from layoutSubviews; mirrors Android's onMeasure.
   public func autoComputeIfRoot() {
     guard !(uiView.superview is MasonElement) else { return }
     guard let parentSize = uiView.superview?.bounds.size else { return }
-    // When the parent has zero bounds (e.g. during view controller transitions
-    // or before Auto Layout has run), skip layout BUT do NOT clear dirty flags.
-    // This ensures the next call with a real size will actually recompute
-    // instead of hitting a stale cache.
+    // Zero parent bounds (transitions, pre-Auto-Layout): skip but keep dirty
+    // flags so the next real-size call recomputes instead of hitting stale cache.
     guard parentSize.width > 0 || parentSize.height > 0 else { return }
     if _lastAutoComputeSize != parentSize || computeCacheDirty || node.isDirty {
       _lastAutoComputeSize = parentSize
       let scale = NSCMason.scale
       let w = scale * Float(parentSize.width)
       let h = scale * Float(parentSize.height)
-      // Preserve root view's frame — it's managed by the parent
-      // (autolayout/autoresize), not by Mason. Only children get repositioned.
+      // Preserve root view's frame — managed by the parent, not Mason.
       let savedFrame = uiView.frame
       isInLayout = true
       defer { isInLayout = false }
@@ -720,17 +726,32 @@ class MasonElementHelpers: NSObject {
         newFrame.inset(by: insets)
       }
       
-      if view.frame != newFrame {
-        view.frame = newFrame
+      // Setting `view.frame` is undefined when the view has a non-identity
+      // transform, so position via bounds+center instead (equivalent to frame
+      // when the transform is identity).
+      if view.transform.isIdentity && CATransform3DIsIdentity(view.layer.transform) {
+        if view.frame != newFrame {
+          view.frame = newFrame
+        }
+      } else {
+        let newBounds = CGRect(origin: view.bounds.origin, size: newFrame.size)
+        let newCenter = CGPoint(x: newFrame.midX, y: newFrame.midY)
+        if view.bounds.size != newBounds.size {
+          view.bounds = newBounds
+        }
+        if view.center != newCenter {
+          view.center = newCenter
+        }
       }
 
-      // Apply clipping per the CSS overflow spec.
-      // Hidden, Scroll, Clip → always clip that axis
-      // Auto → clip only when content overflows
-      // Visible → no clip
-      // Additionally, border-radius always clips children to the rounded
-      // rect (matching CSS/browser behaviour and Android's dispatchDraw
-      // canvas clip) regardless of the overflow value.
+      // Reposition the outset box-shadow layer here (where the frame is applied):
+      // layoutSubviews only fires on size changes, so position-only moves during
+      // reflow would otherwise leave the shadow stranded.
+      node.style.updateShadowLayer(for: CGRect(origin: .zero, size: view.bounds.size))
+
+      // Clipping per the CSS overflow spec: Hidden/Scroll/Clip always clip the
+      // axis, Auto clips only on overflow, Visible never. Border-radius always
+      // clips children to the rounded rect regardless of overflow.
       let overflow = node.style.overflow
       let clipX = overflow.x == .Hidden || overflow.x == .Scroll || overflow.x == .Clip
         || (overflow.x == .Auto && realLayout.contentWidth > realLayout.width)
@@ -741,10 +762,9 @@ class MasonElementHelpers: NSObject {
       borderRender.resolve(for: view.bounds)
       let hasRadii = borderRender.hasRadii()
 
-      // UIScrollView (Scroll) sets clipsToBounds = true once in init and it must
-      // never be changed here. Changing clipsToBounds on UIScrollView during
-      // layoutSubviews (which runs during touch processing) corrupts UIKit's
-      // gesture graph and causes UIGestureGraphEdge assertion failures.
+      // Never touch clipsToBounds on UIScrollView here: changing it during
+      // layoutSubviews corrupts UIKit's gesture graph (UIGestureGraphEdge
+      // assertions). It's fixed to true at init.
       if view is UIScrollView {
         // Nothing to do — clipping is fixed at init time.
       } else if clipX && clipY {
@@ -791,28 +811,10 @@ class MasonElementHelpers: NSObject {
           maskLayer.path = UIBezierPath(rect: clipRect).cgPath
           view.layer.mask = maskLayer
         }
-      } else if hasRadii {
-        // No overflow clipping requested, but border-radius is set.
-        // On iOS, sublayers are NOT clipped by the parent's draw() CG
-        // context (unlike Android's Canvas.clipPath in dispatchDraw).
-        // Apply a layer mask so child content is clipped to the rounded
-        // rect, matching CSS/browser and Android behaviour.
-        // Use layer.mask instead of clipsToBounds to avoid triggering
-        // layout cycles — clipsToBounds changes during layoutSubviews
-        // can cause frame shifts (the same issue Android had).
-        view.clipsToBounds = false
-        let clipPath = borderRender.getClipPath(rect: view.bounds, radius: borderRender.radius)
-        let newCGPath = clipPath.cgPath
-        if let existing = view.layer.mask as? CAShapeLayer {
-          if existing.path == nil || existing.path!.boundingBoxOfPath != newCGPath.boundingBoxOfPath {
-            existing.path = newCGPath
-          }
-        } else {
-          let maskLayer = CAShapeLayer()
-          maskLayer.path = newCGPath
-          view.layer.mask = maskLayer
-        }
       } else {
+        // Overflow visible: border-radius alone doesn't clip children (only the
+        // element's own bg/border are rounded, drawn in draw()). A mask here would
+        // clip the border stroke and overflowing children, so clear it.
         view.clipsToBounds = false
         if view.layer.mask != nil {
           view.layer.mask = nil
@@ -860,12 +862,14 @@ class MasonElementHelpers: NSObject {
     }
     
     if(!layout.children.isEmpty){
-      // Filter to only children with nativePtr (matching Rust layout tree order)
-      // Do NOT filter out flattened text containers here — indices must stay
-      // aligned with layout.children from Rust.
+      // Only children with nativePtr, matching Rust layout tree order. Keep
+      // flattened text containers so indices stay aligned with layout.children.
       let children = node.children.filter { $0.nativePtr != nil }
 
       let count = children.count
+      // Sweep orphaned outset-shadow layers (safety net for missed per-child
+      // willMove cleanup under heavy churn).
+      reconcileShadowLayers(node.view)
       for i in 0..<count{
         guard i < layout.children.count else { break }
         let child = children[i]
@@ -881,8 +885,8 @@ class MasonElementHelpers: NSObject {
           }
         }
 
-        let layout = layout.children[i]
-        applyToView(child, layout)
+        let childLayout = layout.children[i]
+        applyToView(child, childLayout)
       }
     }
     
@@ -890,6 +894,21 @@ class MasonElementHelpers: NSObject {
   
   
   
+  /// Remove outset-shadow sublayers in `container` whose owner is no longer a
+  /// direct child (or whose style was freed). Safety net for per-child cleanup.
+  internal static func reconcileShadowLayers(_ container: UIView?) {
+    guard let container = container, let sublayers = container.layer.sublayers else { return }
+    for layer in sublayers {
+      guard let shadow = layer as? MasonShadowLayer else { continue }
+      let ownerView = shadow.masonStyle?.node.view
+      if ownerView == nil || ownerView?.superview !== container {
+        shadow.removeFromSuperlayer()
+        // Reset bookkeeping so the owner re-attaches cleanly if it returns.
+        shadow.masonStyle?.markShadowLayerDetached()
+      }
+    }
+  }
+
   private static func setIfNeeded<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<UIScrollView, T>, on scroll: UIScrollView, to value: T) {
     if scroll[keyPath: keyPath] != value {
       scroll[keyPath: keyPath] = value

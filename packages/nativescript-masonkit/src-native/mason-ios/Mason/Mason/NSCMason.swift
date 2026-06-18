@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import FontManager
 
 @objc(NSCMason)
 @objcMembers
@@ -23,33 +24,41 @@ public class NSCMason: NSObject {
   
   public override init() {
     nativePtr = mason_init()
+    // Set the device scale up front so CSS strings parsed natively in Rust
+    // (e.g. grid-template `px` tracks) resolve to points, not raw device pixels.
+    mason_set_device_scale(nativePtr, NSCMason.scale)
     if let ptr = mason_get_buffer(nativePtr, 0) {
       let buffer = Unmanaged<NSMutableData>.fromOpaque(ptr).takeRetainedValue()
-      guard let font = NSCFontFaceSet.instance.getOrNil("serif") else {return}
-    
-      guard let font = font.uiFont else {return}
-      
-      // UIFont properties:
-      // - ascender: positive value, distance from baseline to top
-      // - descender: negative value, distance from baseline to bottom
-      // - lineHeight: total recommended line height
-      // - xHeight: height of lowercase 'x'
-      // - capHeight: height of capital letters
-      // - leading: extra spacing between lines (usually small or 0)
-      
-      let scale = NSCMason.scale
-      let ascent = Float(font.ascender) * scale
-      let descent = Float(-font.descender) * scale  // Make it positive
-      let lineHeight = Float(font.lineHeight) * scale
-      let xHeight = Float(font.xHeight) * scale
-      let capHeight = Float(font.capHeight) * scale
-      let leading = Float(font.leading) * scale
-      
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_ASCENT_OFFSET, ascent, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_DESCENT_OFFSET, descent, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_X_HEIGHT_OFFSET, xHeight, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_LEADING_OFFSET, leading, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_CAP_HEIGHT_OFFSET, capHeight, buffer)
+      let instance = NSCFontFaceSet.instance()
+      instance.load("16px serif", text: nil) { fonts, error in
+        if(error != nil){
+          guard let font = fonts.first else {return}
+          
+            guard let font = font.uiFont else {return}
+            
+            // UIFont properties:
+            // - ascender: positive value, distance from baseline to top
+            // - descender: negative value, distance from baseline to bottom
+            // - lineHeight: total recommended line height
+            // - xHeight: height of lowercase 'x'
+            // - capHeight: height of capital letters
+            // - leading: extra spacing between lines (usually small or 0)
+            
+            let scale = NSCMason.scale
+            let ascent = Float(font.ascender) * scale
+            let descent = Float(-font.descender) * scale  // Make it positive
+            let lineHeight = Float(font.lineHeight) * scale
+            let xHeight = Float(font.xHeight) * scale
+            let capHeight = Float(font.capHeight) * scale
+            let leading = Float(font.leading) * scale
+            
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_ASCENT_OFFSET, ascent, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_DESCENT_OFFSET, descent, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_X_HEIGHT_OFFSET, xHeight, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_LEADING_OFFSET, leading, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_CAP_HEIGHT_OFFSET, capHeight, buffer)
+        }
+      }
       
     }
   }

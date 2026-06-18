@@ -2182,7 +2182,7 @@ export class Event {
       return this[native_]?.timeStamp;
     }
 
-    return false;
+    return 0;
   }
 
   get defaultPrevented() {
@@ -2270,9 +2270,18 @@ export class Event {
     return this[native_]?.type;
   }
 
+  set type(_: string) {}
+
   get target(): any {
     return this['_target'];
   }
+
+  set target(_: any) {}
+  set currentTarget(_: any) {}
+  set bubbles(_: boolean) {}
+  set cancelable(_: boolean) {}
+  set timeStamp(_: number) {}
+  set defaultPrevented(_: boolean) {}
 }
 
 export class InputEvent extends Event {

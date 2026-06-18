@@ -159,9 +159,20 @@ class ViewUtils {
 
       val useFastFilter = style.mFilter?.canApplyFast() == true
 
-      // Block 2: Content with inner border-radius clip + overflow clip
+      // Block 2: Content with inner border-radius clip + overflow clip.
+      // Per CSS, border-radius clips child content only when overflow isn't visible;
+      // clipping unconditionally cut off transformed/overflowing children. Mirror
+      // applyOverflowClip's per-axis test so the rounded content clip applies only
+      // when an axis actually clips. (Own background/border rounded in Block 1.)
+      val overflowClipsContent = if (style.isValueInitialized) {
+        val ox = style.values.get(StyleKeys.OVERFLOW_X).toInt()
+        val oy = style.values.get(StyleKeys.OVERFLOW_Y).toInt()
+        val cx = when (ox) { 1, 2, 3 -> true; 4 -> style.node.overflowWidth.toFloat() > width; else -> false }
+        val cy = when (oy) { 1, 2, 3 -> true; 4 -> style.node.overflowHeight.toFloat() > height; else -> false }
+        cx || cy
+      } else false
       canvas.withSave {
-        if (hasRadii) {
+        if (hasRadii && overflowClipsContent) {
           val innerPath = style.mBorderRenderer.getClipPath(width, height)
           canvas.clipPath(innerPath)
         }

@@ -114,7 +114,7 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
     field.owner = self
     
     if(style.font.uiFont == nil){
-      style.font.loadSync { _ in }
+      style.font.loadSync(nil)
     }
     if let font = style.font.uiFont {
       field.font = font
@@ -128,7 +128,7 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
     let input = MasonPasswordInput()
     input.owner = self
     if(style.font.uiFont == nil){
-      style.font.loadSync { _ in }
+      style.font.loadSync(nil)
     }
     if let font = style.font.uiFont {
       input.font = font

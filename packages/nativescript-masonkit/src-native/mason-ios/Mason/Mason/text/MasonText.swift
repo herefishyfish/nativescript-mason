@@ -649,7 +649,7 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       break
     }
     
-    style.font.loadSync { _ in }
+    style.font.loadSync(nil)
     node.inBatch = false
   }
   

@@ -203,6 +203,16 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
     }
   }
 
+  // Inverse of addView — unlink the mason node so removals don't orphan it.
+  public func removeView(_ view: UIView) {
+    let childNode = (view as? MasonElement)?.node ?? mason.nodeForView(view)
+    _ = node.removeChild(childNode)
+  }
+
+  public func removeView(at index: Int) {
+    _ = node.removeChildAt(index: index)
+  }
+
 
   func checkAndUpdateStyle() {
       if (!node.inBatch) {

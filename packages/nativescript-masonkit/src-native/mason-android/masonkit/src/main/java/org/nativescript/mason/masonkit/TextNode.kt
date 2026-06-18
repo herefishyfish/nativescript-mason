@@ -198,10 +198,12 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
         }
       }
 
-      // Apply letter spacing
-      attributes.letterSpacing?.takeIf { it > 0 }?.let { spacing ->
+      // Apply letter spacing. Use LetterSpacingSpan (paint.letterSpacing, EM units)
+      // which adds tracking between glyphs; ScaleXSpan was wrong — it scales each
+      // glyph's width and visibly stretches the text.
+      attributes.letterSpacing?.takeIf { it != 0f }?.let { spacing ->
         spannable.setSpan(
-          android.text.style.ScaleXSpan(1f + spacing), start, end, flags
+          Spans.LetterSpacingSpan(spacing), start, end, flags
         )
       }
 

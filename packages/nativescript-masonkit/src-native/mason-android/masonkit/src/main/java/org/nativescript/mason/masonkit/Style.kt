@@ -601,12 +601,17 @@ class StateKeys internal constructor(val low: Long, val high: Long) {
     val WORD_SPACING = flag(77)
     val FONT_STRETCH = flag(78)
 
-    /** Pre-computed union of all text-related flags. Computed once at class-init. */
+    /**
+     * Union of every text flag TextEngine reacts to; `dirty ∩ ALL_TEXT` is forwarded,
+     * so an omitted key never relayouts/redraws. Keep in sync with TextEngine's
+     * hasTextLayoutFlags / hasTextVisualFlags / onTextStyleChanged.
+     */
     val ALL_TEXT: StateKeys = FONT_COLOR or FONT_SIZE or FONT_WEIGHT or FONT_STYLE or
       FONT_FAMILY or FONT_VARIANT_NUMERIC or TEXT_WRAP or WHITE_SPACE or
       TEXT_TRANSFORM or DECORATION_LINE or DECORATION_COLOR or DECORATION_STYLE or
       LETTER_SPACING or TEXT_JUSTIFY or BACKGROUND_COLOR or LINE_HEIGHT or
-      TEXT_ALIGN or TEXT_OVERFLOW or TEXT_SHADOWS
+      TEXT_ALIGN or TEXT_OVERFLOW or TEXT_SHADOWS or
+      WORD_SPACING or WRITING_MODE or UNICODE_BIDI or HYPHENS or FONT_STRETCH
 
     fun hasFlag(low: Long, high: Long, flag: StateKeys): Boolean =
       ((low and flag.low) != 0L) || ((high and flag.high) != 0L)
@@ -1046,86 +1051,27 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
     if (!isDirtyEmpty()) {
-      var invalidate = false
-      val value = StateKeys(isDirty, isDirtyHigh)
-      val backgroundColorDirty = value.hasFlag(StateKeys.BACKGROUND_COLOR)
-      val colorDirty = value.hasFlag(StateKeys.FONT_COLOR)
-      val sizeDirty = value.hasFlag(StateKeys.SIZE)
-      val weightDirty = value.hasFlag(StateKeys.FONT_WEIGHT)
-      val styleDirty = value.hasFlag(StateKeys.FONT_STYLE)
-      val lineHeightDirty = value.hasFlag(StateKeys.LINE_HEIGHT)
-      if (value.hasFlag(StateKeys.TEXT_TRANSFORM) || value.hasFlag(StateKeys.TEXT_WRAP) || value.hasFlag(
-          StateKeys.WHITE_SPACE
-        ) || value.hasFlag(
-          StateKeys.TEXT_OVERFLOW
-        ) || colorDirty || value.hasFlag(StateKeys.BACKGROUND_COLOR) || value.hasFlag(
-          StateKeys.DECORATION_COLOR
-        ) || value.hasFlag(StateKeys.DECORATION_LINE) || sizeDirty || weightDirty || styleDirty || lineHeightDirty || value.hasFlag(
-          StateKeys.DECORATION_THICKNESS
-        ) || value.hasFlag(
-          StateKeys.TEXT_SHADOWS
-        ) || value.hasFlag(StateKeys.HYPHENS) || value.hasFlag(StateKeys.WORD_SPACING)
-        || value.hasFlag(StateKeys.WRITING_MODE) || value.hasFlag(StateKeys.UNICODE_BIDI)
-        || value.hasFlag(StateKeys.FONT_STRETCH)
-      ) {
-        invalidate = true
-      }
+      // Forward dirty ∩ ALL_TEXT: onTextStyleChanged picks the layout-vs-visual
+      // branch from the exact flags, so it must carry every text key (a hand-picked
+      // subset previously dropped font-size, letter-spacing, etc.). Mirrors iOS.
+      val stateLow = isDirty and StateKeys.ALL_TEXT.low
+      val stateHigh = isDirtyHigh and StateKeys.ALL_TEXT.high
 
-      var state = StateKeys.NONE
-
-      if (styleDirty) {
-        state = state or StateKeys.FONT_STYLE
-      }
-
-      if (weightDirty) {
-        state = state or StateKeys.FONT_WEIGHT
-      }
-
-      if (sizeDirty) {
-        state = state or StateKeys.FONT_SIZE
-      }
-
-      if (colorDirty) {
-        state = state or StateKeys.FONT_COLOR
-      }
-
-      if (lineHeightDirty) {
-        state = state or StateKeys.LINE_HEIGHT
-      }
-
-      if (backgroundColorDirty) {
-        if (mBackground == null) {
-          mBackground = Background(this)
+      if (stateLow != 0L || stateHigh != 0L) {
+        // Background needs its holder created before the change is dispatched.
+        if ((stateLow and StateKeys.BACKGROUND_COLOR.low) != 0L ||
+          (stateHigh and StateKeys.BACKGROUND_COLOR.high) != 0L
+        ) {
+          if (mBackground == null) {
+            mBackground = Background(this)
+          }
         }
-        state = state or StateKeys.BACKGROUND_COLOR
-      }
-
-      if (value.hasFlag(StateKeys.HYPHENS)) {
-        state = state or StateKeys.HYPHENS
-      }
-
-      if (value.hasFlag(StateKeys.WORD_SPACING)) {
-        state = state or StateKeys.WORD_SPACING
-      }
-
-      if (value.hasFlag(StateKeys.WRITING_MODE)) {
-        state = state or StateKeys.WRITING_MODE
-      }
-
-      if (value.hasFlag(StateKeys.UNICODE_BIDI)) {
-        state = state or StateKeys.UNICODE_BIDI
-      }
-
-      if (value.hasFlag(StateKeys.FONT_STRETCH)) {
-        state = state or StateKeys.FONT_STRETCH
-      }
-
-      if (state != StateKeys.NONE) {
-        notifyTextStyleChanged(state)
-      }
-
-      if (invalidate && isDirtyEmpty()) {
-        (node.view as? Element)?.invalidateLayout()
+        notifyTextStyleChanged(stateLow, stateHigh)
+        // Repaint this node's own view: notifyTextStyleChanged routes to the
+        // styleChangeListener (often an ancestor that can't target this view), so
+        // visual-only changes like backgroundColor would otherwise not repaint.
+        // Mirrors iOS MasonUIView.onStyleChange (unconditional setNeedsDisplay).
+        (node.view as? android.view.View)?.invalidate()
       }
       return
     }
@@ -1138,6 +1084,14 @@ class Style internal constructor(@Transient internal var node: Node) {
     } else {
       isDirty = isDirty or low
       isDirtyHigh = isDirtyHigh or high
+    }
+    // JS-driven font-face changes bypass the Kotlin setters that normally invalidate
+    // the cache, so without this resolvedFontFace returns a stale FontFace/Typeface.
+    if (StateKeys.hasFlag(low, high, StateKeys.FONT_WEIGHT) ||
+      StateKeys.hasFlag(low, high, StateKeys.FONT_STYLE) ||
+      StateKeys.hasFlag(low, high, StateKeys.FONT_FAMILY)
+    ) {
+      invalidateResolvedFontFace()
     }
     if (!inBatch) {
       updateNativeStyle()

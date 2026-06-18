@@ -22,6 +22,7 @@ class Spans {
     DecorationLine,
     Justify,
     Tracking,
+    LetterSpacing,
     Size,
     Typeface
   }
@@ -90,6 +91,32 @@ class Spans {
   class ScaleXSpan(scale: Float) : android.text.style.ScaleXSpan(scale), NSCSpan {
     override val type: Type
       get() = Type.Justify
+  }
+
+  /**
+   * CSS `letter-spacing` tracking via [TextPaint.setLetterSpacing] (EM units) — not
+   * ScaleXSpan, which distorts glyph widths. [letterSpacingPx] is physical px;
+   * divide by textSize for EMs. Matches iOS `.kern`.
+   */
+  class LetterSpacingSpan(private val letterSpacingPx: Float) :
+    android.text.style.MetricAffectingSpan(), NSCSpan {
+    override val type: Type
+      get() = Type.LetterSpacing
+
+    override fun updateDrawState(tp: TextPaint?) {
+      tp?.let { apply(it) }
+    }
+
+    override fun updateMeasureState(textPaint: TextPaint) {
+      apply(textPaint)
+    }
+
+    private fun apply(tp: TextPaint) {
+      val textSize = tp.textSize
+      if (textSize > 0f) {
+        tp.letterSpacing = letterSpacingPx / textSize
+      }
+    }
   }
 
   // used to track empty children

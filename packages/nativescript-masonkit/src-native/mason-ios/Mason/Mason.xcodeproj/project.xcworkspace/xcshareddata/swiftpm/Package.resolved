@@ -1,6 +1,15 @@
 {
-  "originHash" : "990602f943d142d26b1a5421abe2a243e2e1077d090e31e151c33e3ec768723e",
+  "originHash" : "b50c74d0d8f4ee2a7c9d7aa816f692298db0fc5fe2d4b07c1d50dad59d4c2dc0",
   "pins" : [
+    {
+      "identity" : "font-manager",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/NativeScript/font-manager",
+      "state" : {
+        "revision" : "03686d380af1ffad9494b2c25b8425df0c10ced7",
+        "version" : "1.0.7"
+      }
+    },
     {
       "identity" : "sdwebimage",
       "kind" : "remoteSourceControl",

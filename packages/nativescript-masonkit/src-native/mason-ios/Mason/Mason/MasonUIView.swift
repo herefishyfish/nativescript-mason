@@ -61,12 +61,10 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
 
     // Outset shadows are handled by MasonShadowLayer
 
-    // Block 1: Background with border-radius clip
-    // Draw background across the full bounds so it meets edge-aligned children
-    // (image layers) and then draw the border on top. This avoids a 1px gap
-    // when border widths are present.
+    // Background across full bounds (border drawn on top) to avoid a 1px gap at
+    // edge-aligned children when border widths are present.
     if hasBackground {
-      // Expand background slightly (fractional device pixel) to avoid 1px hairline gaps
+      // Expand by a fractional device pixel to avoid 1px hairline gaps
       let scale = UIScreen.main.scale
       let expand: CGFloat = 1.0 / scale
       let innerRect = bounds.insetBy(dx: -expand, dy: -expand)
@@ -87,11 +85,9 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       style.mBoxShadowRenderer.drawInsetShadows(in: context, rect: bounds, borderRenderer: style.mBorderRender)
     }
 
-    // Border: CSSBorderRenderer.draw() builds its own rounded stroke paths
-    // internally, so an external clip is unnecessary. Clipping to the exact
-    // outer edge caused anti-aliased pixels to blend against the CGContext's
-    // default opaque-black fill, producing visible black fringing when both
-    // border-radius and box-shadow are present.
+    // No external clip: CSSBorderRenderer.draw() builds its own rounded stroke
+    // paths, and clipping the outer edge causes black anti-alias fringing with
+    // border-radius + box-shadow.
     if hasBorder {
       style.mBorderRender.draw(in: context, rect: bounds)
     }
@@ -105,27 +101,20 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   public var uiView: UIView { self }
 
   // MARK: - Scroll state
-  // When overflow-x/y is scroll or auto, this view scrolls like a <div> on
-  // the web. Scroll is implemented via bounds.origin — the same mechanism
-  // UIScrollView uses internally — so subviews don't move; the coordinate
-  // system shifts. A UIPanGestureRecognizer drives it; gestureRecognizerShouldBegin
-  // returns false when the view isn't actually scrollable, so non-scrolling
-  // divs carry zero gesture overhead.
+  // When overflow is scroll/auto, this view scrolls like a web <div> via
+  // bounds.origin (as UIScrollView does), driven by a pan gesture that only
+  // begins when actually scrollable.
   public var contentSize: CGSize = .zero
   private var _scrollPanStartOffset: CGPoint = .zero
   private var _scrollDecelerationLink: CADisplayLink?
   private var _scrollDecelerationVelocity: CGPoint = .zero
-  // UIScrollView.DecelerationRate.normal (0.998) is a per-millisecond factor.
-  // Our CADisplayLink fires once per frame (~16.67ms), so we raise it to the
-  // 1000/60 power to get the correct per-frame factor (≈ 0.967).
-  // Using 0.998 raw per frame would give ~8000pt of travel from a 1000pt/s flick;
-  // the corrected value gives ~505pt, matching UIScrollView feel.
+  // DecelerationRate.normal (0.998) is per-millisecond; raise to 1000/60 to get
+  // the per-frame factor (≈0.967) matching UIScrollView feel.
   private let _scrollDecelerationRate: CGFloat = pow(UIScrollView.DecelerationRate.normal.rawValue, 1000.0 / 60.0)
   private var _lastBoundsSize: CGSize = .zero
   private var _scrollGestureDelegate: _MasonScrollPanDelegate?
-  // True while a scroll gesture or deceleration is active.
-  // layoutSubviews skips autoComputeIfRoot during this window — bounds changes
-  // from scroll steps must not retrigger layout computation.
+  // True while a scroll gesture/deceleration is active; layoutSubviews skips
+  // autoComputeIfRoot so scroll-step bounds changes don't retrigger layout.
   private var _isScrolling = false
 
   public var contentOffset: CGPoint {
@@ -133,8 +122,7 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     set {
       let c = _clampScrollOffset(newValue)
       guard bounds.origin != c else { return }
-      // Disable implicit CA animations: bounds changes during scroll must not
-      // animate (they'd appear as lag). Mask position update also runs inside.
+      // Disable implicit CA animations so scroll bounds changes don't lag.
       CATransaction.begin()
       CATransaction.setDisableActions(true)
       var b = bounds; b.origin = c; bounds = b
@@ -162,21 +150,19 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   
   public override func layoutSubviews() {
     super.layoutSubviews()
-    // Skip Mason layout computation during active scroll steps — bounds.origin
-    // changes don't affect child positions, only the visible window. Running
-    // autoComputeIfRoot on every scroll frame causes expensive layout thrashing.
+    // Skip layout during scroll steps — bounds.origin changes only shift the
+    // visible window, not child positions.
     guard !_isScrolling else { return }
-    // autoComputeIfRoot must run before the size guard — style-only changes
-    // (overflow, color, etc.) mark the node dirty without changing the view size.
-    // If we gate on size first, those changes never trigger applyToView and
-    // contentSize stays at zero, making scroll clamp to (0,0).
+    // Must run before the size guard: style-only changes (overflow, color) mark
+    // the node dirty without resizing, and gating on size would leave contentSize
+    // at zero so scroll clamps to (0,0).
     autoComputeIfRoot()
-    // Expensive per-size work: shadow layer and compositing hints.
-    // Skip when only bounds.origin changed (scroll step) — size is unchanged.
+    // Safety-net sweep for orphaned outset-shadow layers on UIKit-driven
+    // relayouts that bypass applyToView's reconcile.
+    MasonElementHelpers.reconcileShadowLayers(self)
     let currentSize = bounds.size
-    // Always update shadow layer position — frame.origin may change without
-    // a size change (re-layout, animation) and the shadow layer lives in the
-    // superview's coordinate space, keyed to our frame.
+    // Always reposition the shadow layer: frame.origin can change without a size
+    // change, and the layer is keyed to our frame in the superview's coords.
     style.updateShadowLayer(for: CGRect(origin: .zero, size: currentSize))
     guard !currentSize.equalTo(_lastBoundsSize) else { return }
     _lastBoundsSize = currentSize
@@ -199,27 +185,34 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       isOpaque = false
     }
 
-    // Rasterize complex decorated views (gradient + radii or box shadow).
-    // IMPORTANT: never rasterize when layer.mask is set — Core Animation
-    // rasterises the layer content first, then applies the mask.  At
-    // anti-aliased mask edges the premultiplied-alpha compositing produces
-    // visible dark/black fringes (especially noticeable on dark backgrounds
-    // with border-radius + box-shadow).
+    // Rasterize only the gradient + rounded-corners case, and never when
+    // layer.mask is set (rasterize-then-mask produces black anti-alias fringes).
+    // Box-shadow must NOT trigger it: shadows render via a child layer, and
+    // flattening the subtree here visibly softens small text.
     let hasGradient = !bg.layers.isEmpty
-    let wantsRasterize = (hasGradient && style.mBorderRender.hasRadii()) || hasBoxShadow
+    let wantsRasterize = hasGradient && style.mBorderRender.hasRadii()
     if wantsRasterize && layer.mask == nil {
       layer.shouldRasterize = true
       layer.rasterizationScale = UIScreen.main.scale
     } else {
       layer.shouldRasterize = false
     }
-    // Re-apply transform from buffer after layout changes
+    // Re-apply transform after layout changes
     style.applyTransformFromBuffer()
   }
 
   public override func willMove(toWindow newWindow: UIWindow?) {
     super.willMove(toWindow: newWindow)
     if newWindow == nil { _stopScrollDeceleration() }
+  }
+
+  public override func willMove(toSuperview newSuperview: UIView?) {
+    super.willMove(toSuperview: newSuperview)
+    // On detach, remove our outset-shadow layer while the old superview (which
+    // owns it) is still current, else it's orphaned.
+    if newSuperview == nil {
+      style.removeShadowLayer()
+    }
   }
 
   init(mason doc: NSCMason) {
@@ -231,15 +224,14 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     computeCacheDirty = false
     node.view = self
     style.setStyleChangeListener(listener: self)
-    // Attach scroll pan gesture with a private delegate that:
-    // • gates begin on actual scrollability (gestureRecognizerShouldBegin)
-    // • allows simultaneous recognition with parent gestures
+    // Scroll pan gesture: delegate gates begin on scrollability and allows
+    // simultaneous recognition with parent gestures.
     let d = _MasonScrollPanDelegate()
     d.owner = self
     _scrollGestureDelegate = d
     _scrollPanGesture.delegate = d
     addGestureRecognizer(_scrollPanGesture)
-    // Redraw background/border when bounds.origin shifts during scroll.
+    // Redraw bg/border when bounds.origin shifts during scroll.
     contentMode = .redraw
   }
 
@@ -302,8 +294,19 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       node.addChildAt(mason.nodeForView(view), at)
     }
   }
-  
-  
+
+  // Inverse of addView: node.removeChild detaches the subview, removes the
+  // Rust node, and invalidates layout, avoiding a stale layout slot + ghost.
+  public func removeView(_ view: UIView) {
+    let childNode = (view as? MasonElement)?.node ?? mason.nodeForView(view)
+    _ = node.removeChild(childNode)
+  }
+
+  public func removeView(at index: Int) {
+    _ = node.removeChildAt(index: index)
+  }
+
+
   @objc public func addSubviews(_ views: [UIView]){
     addSubviews(views, at: -1)
   }
@@ -331,9 +334,8 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   func checkAndUpdateStyle() {
     if (!node.inBatch) {
       node.style.updateNativeStyle()
-      // Trigger a layout pass so autoComputeIfRoot sees the dirty node and
-      // runs applyToView — required for style-only changes (e.g. overflowY)
-      // that don't resize the view and wouldn't otherwise cause layoutSubviews.
+      // Trigger a layout pass for style-only changes (e.g. overflowY) that don't
+      // resize the view and so wouldn't otherwise cause layoutSubviews.
       setNeedsLayout()
     }
   }
@@ -1078,8 +1080,7 @@ extension MasonUIView {
     )
   }
 
-  // Reposition the layer mask (set by applyToView) so it tracks bounds.origin.
-  // Uses maskLayer.position instead of recreating a CGPath — no allocation per frame.
+  // Reposition the layer mask to track bounds.origin without recreating a CGPath.
   func _updateScrollMask() {
     guard let maskLayer = layer.mask else { return }
    /* let o = bounds.origin
@@ -1170,7 +1171,7 @@ extension MasonUIView {
       x: contentOffset.x + _scrollDecelerationVelocity.x / 60,
       y: contentOffset.y + _scrollDecelerationVelocity.y / 60
     )
-    // Stop threshold: 30 pt/s ≈ 0.5 pt/frame — matches UIScrollView stopping feel.
+    // Stop threshold 30 pt/s, matching UIScrollView stopping feel.
     if hypot(_scrollDecelerationVelocity.x, _scrollDecelerationVelocity.y) < 30
       || contentOffset == prev {
       _stopScrollDeceleration()
@@ -1179,9 +1180,8 @@ extension MasonUIView {
 }
 
 // MARK: - Private gesture delegate
-// Kept as a separate class because UIView already exposes gestureRecognizerShouldBegin
-// with the same ObjC selector — conforming MasonUIView directly to
-// UIGestureRecognizerDelegate would cause a compile-time conflict.
+// Separate class: UIView already exposes gestureRecognizerShouldBegin with the
+// same ObjC selector, so conforming MasonUIView directly would conflict.
 private final class _MasonScrollPanDelegate: NSObject, UIGestureRecognizerDelegate {
   weak var owner: MasonUIView?
 

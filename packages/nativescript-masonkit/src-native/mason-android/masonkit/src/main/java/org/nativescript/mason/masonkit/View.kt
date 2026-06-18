@@ -387,18 +387,22 @@ open class View @JvmOverloads constructor(
       node.mason.nodeForView(view)
     }
 
-    // If suppression is active we are in a platform-driven addView (from Node) — avoid mutating nodes.
+    // If suppression is active we are in a platform-driven removeView (from Node) — avoid mutating nodes.
     if (node.suppressChildOps > 0) {
       super.removeView(view)
       return
     }
 
+    // Our mason child: removeChild detaches the Rust node and invalidates layout.
+    // A raw super.removeView would orphan it, leaving stale slots / ghost backgrounds.
     if (childNode.parent == node) {
-      super.removeView(view)
+      node.removeChild(childNode)
+      onChildStructureChangedSafe()
       return
     }
 
-    node.removeChild(childNode)
+    // Not part of our mason subtree — plain android removal.
+    super.removeView(view)
 
     onChildStructureChangedSafe()
   }

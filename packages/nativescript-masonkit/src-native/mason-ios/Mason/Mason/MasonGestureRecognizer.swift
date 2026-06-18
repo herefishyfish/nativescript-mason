@@ -12,6 +12,14 @@ class MasonGestureRecognizer: UIGestureRecognizer {
   weak var targetView: UIView?
   internal var isSubmit: Bool = false
   var eventDispatched: Bool = false
+
+  // Movement past this many points (in WINDOW coords, stable while a scroll view
+  // moves content under the finger) marks a scroll/drag rather than a tap.
+  // Matches UIScrollView's default pan slop.
+  private static let tapSlop: CGFloat = 10.0
+  // Touch-down location in window space; nil once the gesture has bailed.
+  private var startLocationInWindow: CGPoint?
+
   init(targetView: UIView) {
     self.targetView = targetView
     super.init(target: nil, action: nil)
@@ -25,11 +33,29 @@ class MasonGestureRecognizer: UIGestureRecognizer {
   }
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-    // Track that a touch sequence started; click fires on touchesEnded.
+    // Record the start in window coords so touchesEnded can tell a tap from a scroll.
+    startLocationInWindow = touches.first?.location(in: nil)
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    // Past the slop = scroll/drag; bail so touchesEnded won't fire a click.
+    guard let touch = touches.first, let start = startLocationInWindow else { return }
+    let now = touch.location(in: nil)
+    if hypot(now.x - start.x, now.y - start.y) > Self.tapSlop {
+      startLocationInWindow = nil
+      state = .failed
+    }
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-    guard let touch = touches.first, let view = targetView else {
+    guard let touch = touches.first, let view = targetView, let start = startLocationInWindow else {
+      state = .failed
+      return
+    }
+
+    // Reject if the touch moved too far overall (scroll/drag, not a tap).
+    let endInWindow = touch.location(in: nil)
+    guard hypot(endInWindow.x - start.x, endInWindow.y - start.y) <= Self.tapSlop else {
       state = .failed
       return
     }
@@ -73,5 +99,6 @@ class MasonGestureRecognizer: UIGestureRecognizer {
 
   override func reset() {
     eventDispatched = false
+    startLocationInWindow = nil
   }
 }

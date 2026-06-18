@@ -7,7 +7,7 @@
 
 import Foundation
 import UIKit
-
+import FontManager
 
 private func measure(_ node: UnsafeRawPointer?, _ knownDimensionsWidth: Float, _ knownDimensionsHeight: Float, _ availableSpaceWidth: Float, _ availableSpaceHeight: Float) -> Int64 {
   let node: MasonNode = Unmanaged.fromOpaque(node!).takeUnretainedValue()
@@ -576,7 +576,7 @@ public class MasonNode: NSObject {
     var attrs: [NSAttributedString.Key: Any] = [:]
     
     if(style.font.font == nil){
-      style.font.loadSync { _ in }
+      style.font.loadSync(nil)
     }
     
     let paragraphStyle = NSMutableParagraphStyle()
@@ -618,7 +618,7 @@ public class MasonNode: NSObject {
     let fontFace = style.resolvedFontFace
     
     if(fontFace.font == nil){
-      fontFace.loadSync { _ in}
+      fontFace.loadSync(nil)
     }
     
     if let font = fontFace.font {
@@ -627,7 +627,7 @@ public class MasonNode: NSObject {
       let scale = NSCMason.scale
       let weight = style.resolvedFontWeight
       let fontStyle = style.resolvedInternalFontStyle
-      var font = ctFont(from: font, fontSize: CGFloat(fontSize), weight: weight.uiFontWeight, style: fontStyle)
+      var font = ctFont(from: font, fontSize: CGFloat(fontSize), weight: NSCUIFontWeight(weight), style: fontStyle)
 
       // font-variant-numeric: apply AAT feature settings
       let variantNumeric = style.resolvedFontVariantNumeric
@@ -644,7 +644,7 @@ public class MasonNode: NSObject {
       }
 
       attrs[.font] = font
-      attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] = weight.uiFontWeight.rawValue
+      attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] = weight.rawValue
       attrs[NSAttributedString.Key(Constants.FONT_STYLE)] = fontStyle
     }
     

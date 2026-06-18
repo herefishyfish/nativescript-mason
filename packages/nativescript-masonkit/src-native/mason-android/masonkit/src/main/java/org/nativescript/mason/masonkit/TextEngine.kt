@@ -1690,10 +1690,12 @@ class TextEngine(val container: TextContainer) {
     }
 
     val letterSpacingValue = container.style.resolvedLetterSpacing
-    // Apply letter spacing
+    // Apply letter spacing. Use LetterSpacingSpan (paint.letterSpacing, EM units)
+    // which adds tracking between glyphs; ScaleXSpan was wrong — it scales each
+    // glyph's width and visibly distorts the text.
     if (letterSpacingValue != 0f) {
       spannable.setSpan(
-        android.text.style.ScaleXSpan(1f + letterSpacingValue), start, end, flags
+        Spans.LetterSpacingSpan(letterSpacingValue), start, end, flags
       )
     }
 

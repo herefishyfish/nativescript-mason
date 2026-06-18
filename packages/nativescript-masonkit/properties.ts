@@ -265,6 +265,9 @@ flexDirectionProperty.overrideHandlers({
 flexWrapProperty.overrideHandlers({
   name: 'flexWrap',
   cssName: 'flex-wrap',
+  valueConverter: function (value) {
+    return value as never;
+  },
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
     if (view) {

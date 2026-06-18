@@ -826,7 +826,9 @@ public class TextEngine: NSObject {
         let symbolicTraits = CTFontGetSymbolicTraits(font)
         let isBold = symbolicTraits.contains(.traitBold)
         let weight = attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] as? CGFloat ?? traits?[kCTFontWeightTrait as CFString] as? CGFloat ?? 0
-        if !isBold && weight >= 0.4 {
+        // Fake-bold only when a bold weight is requested but no real bold face
+        // exists. `weight` is the CSS weight (100–900), so threshold is 600.
+        if !isBold && weight >= 600 {
           drawRunWithFakeBold(run, in: context, at: baselineOrigin)
         } else {
           CTRunDraw(run, context, CFRange(location: 0, length: 0))
@@ -1132,7 +1134,9 @@ public class TextEngine: NSObject {
           let symbolicTraits = CTFontGetSymbolicTraits(font)
           let isBold = symbolicTraits.contains(.traitBold)
           let weight = attributes[NSAttributedString.Key(Constants.FONT_WEIGHT)] as? CGFloat ?? traits?[kCTFontWeightTrait as CFString] as? CGFloat ?? 0
-          if !isBold && weight >= 0.4 {
+          // Fake-bold only when a bold weight is requested but no real bold face
+          // exists. `weight` is the CSS weight (100–900), so threshold is 600.
+          if !isBold && weight >= 600 {
               drawRunWithFakeBold(run, in: context, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y))
             } else {
             CTRunDraw(run, context, CFRange(location: 0, length: 0))

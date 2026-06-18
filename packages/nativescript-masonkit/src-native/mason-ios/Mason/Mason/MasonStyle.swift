@@ -8,7 +8,7 @@
 import Foundation
 import UIKit
 import QuartzCore
-
+import FontManager
 
 private func getDimension(_ value: Float,_ type: Int) -> MasonDimension? {
   switch (type) {
@@ -557,8 +557,13 @@ public class MasonStyle: NSObject {
   }
   
   private func syncFontMetricsNow(){
-    guard let font = font.uiFont else {return}
-    
+    guard let baseFont = font.uiFont else {return}
+
+    // `font.uiFont` is built at a fixed size; size it to the actual fontSize so
+    // metrics feed the correct line-box height (else font-size doesn't relayout).
+    let size = CGFloat(resolvedFontSize)
+    let font = size > 0 ? baseFont.withSize(size) : baseFont
+
     // UIFont properties:
     // - ascender: positive value, distance from baseline to top
     // - descender: negative value, distance from baseline to bottom
@@ -767,7 +772,7 @@ public class MasonStyle: NSObject {
   public init(node: MasonNode) {
     self.node = node
     super.init()
-    font =  NSCFontFace(family: "sans-serif",owner: self)
+    font =  NSCFontFace(family: "sans-serif")
     mBackground = Background(style: self)
   }
   
@@ -1697,13 +1702,13 @@ public class MasonStyle: NSObject {
       setInt32(StyleKeys.FONT_SIZE, newValue)
       setUInt8(StyleKeys.FONT_SIZE_TYPE, 0)
       setUInt8(StyleKeys.FONT_SIZE_STATE, StyleState.SET)
- 
+
       if(inBatch){
         setOrAppendState(StateKeys.fontSize)
       }else {
         notifyTextStyleChanged(StateKeys.fontSize)
       }
-      
+
       syncFontMetrics()
     }
   }
@@ -1719,15 +1724,15 @@ public class MasonStyle: NSObject {
       
       switch style {
       case .Normal:
-        font.style = "normal"
+        font.style = .normal()
         setInt32(StyleKeys.FONT_STYLE_SLANT, 0)
         break
       case .Italic:
-        font.style = "italic"
+        font.style = .italic()
         setInt32(StyleKeys.FONT_STYLE_SLANT, 0)
         break
       case .Oblique:
-        font.style = "oblique"
+        font.style = .oblique(withAngle: 0)
         setInt32(StyleKeys.FONT_STYLE_SLANT, slant)
         break
       }
@@ -1766,19 +1771,19 @@ public class MasonStyle: NSObject {
     let type = getInt8(StyleKeys.FONT_STYLE_TYPE)
     switch(type){
     case 0:
-      return NSCFontStyle.normal
+      return .normal()
     case 1:
-      return NSCFontStyle.italic
+      return .italic()
     case 2:
       let slant = getInt32(StyleKeys.FONT_STYLE_SLANT)
       if(slant > 0){
-        return NSCFontStyle.oblique(Int(slant))
+        return .oblique(withAngle: Int(slant))
       }else {
-        return NSCFontStyle.oblique(nil)
+        return .oblique(withAngle: 0)
       }
     default:
       // todo handle invalid cases
-      return font.fontDescriptors.styleValue
+      return font.fontDescriptors.style
     }
   }
   
@@ -1797,13 +1802,15 @@ public class MasonStyle: NSObject {
       }
       
       // Invalid font style
-      switch(font.fontDescriptors.styleValue){
+      switch(font.fontDescriptors.style.type){
       case .normal:
         return .Normal
       case .italic:
         return .Italic
-      case .oblique(_):
+      case .oblique:
         return .Oblique
+      @unknown default:
+        return .Normal
       }
       
     }
@@ -1817,13 +1824,13 @@ public class MasonStyle: NSObject {
         
         switch newValue {
         case .Normal:
-          font.style = "normal"
+          font.style = .normal()
           break
         case .Italic:
-          font.style = "italic"
+          font.style = .italic()
           break
         case .Oblique:
-          font.style = "oblique"
+          font.style = .oblique(withAngle: 0)
           break
         }
         invalidateResolvedFontCache()
@@ -1923,10 +1930,10 @@ public class MasonStyle: NSObject {
   
   public var fontFamily: String {
     get {
-      return font.fontFamily
+      return font.family
     }
     set {
-      let oldFamily = font.fontFamily
+      let oldFamily = font.family
       if (oldFamily != newValue) {
         guard let oldFont = font else {return}
         // Create new font with updated family
@@ -1935,7 +1942,7 @@ public class MasonStyle: NSObject {
         font.style = oldFont.style
         font.fontDescriptors.display = oldFont.fontDescriptors.display
         
-        font.loadSync { _ in }
+        font.loadSync(nil)
         
         syncFontMetrics()
         
@@ -2784,32 +2791,8 @@ public class MasonStyle: NSObject {
     didSet {
       boxShadows = ShadowParser.parseBoxShadow(style: self, value: boxShadow)
       if let view = node.view {
-        let hasOutsetShadows = boxShadows.contains { !$0.inset }
-        
-        if hasOutsetShadows {
-          // Add shadow layer to superview's layer so it can extend beyond view bounds
-          // without affecting the view's own clipping. Insert it BELOW the child's
-          // layer so the shadow appears above the parent's background but beneath
-          // the child's content (matches browser behavior).
-          if let superview = view.superview {
-            if !shadowLayerAdded || shadowLayerParent !== superview.layer {
-              mShadowLayer.removeFromSuperlayer()
-              // Try to insert below the child's layer to sit between parent and child
-              if let childLayer = view.layer as CALayer?, superview.layer.sublayers?.contains(childLayer) == true {
-                superview.layer.insertSublayer(mShadowLayer, below: childLayer)
-              } else {
-                // Fallback to insert at index 0 if child's layer can't be located
-                superview.layer.insertSublayer(mShadowLayer, at: 0)
-              }
-              shadowLayerAdded = true
-              shadowLayerParent = superview.layer
-            }
-            mShadowLayer.updateBounds(viewBounds: view.bounds, viewFrame: view.frame)
-          }
-        } else if shadowLayerAdded {
-          mShadowLayer.isHidden = true
-        }
-        
+        syncShadowLayer(view, viewBounds: view.bounds)
+
         // Invalidate draw flags so _cachedHasBoxShadow is recalculated
         // before the next draw() pass — prevents stale early-out.
         if let masonView = view as? MasonUIView {
@@ -2820,36 +2803,57 @@ public class MasonStyle: NSObject {
       }
     }
   }
+
+  /// Attach + position the outset box-shadow layer in the SUPERVIEW's layer,
+  /// below the child, so it paints beyond the child's bounds and sits behind it
+  /// (hosting it in the child's own layer renders the opaque fill as black wedges
+  /// over the child's transparent rounded corners).
+  private func syncShadowLayer(_ view: UIView, viewBounds: CGRect) {
+    let hasOutsetShadows = boxShadows.contains { !$0.inset }
+    guard hasOutsetShadows else {
+      if shadowLayerAdded { mShadowLayer.isHidden = true }
+      return
+    }
+    mShadowLayer.isHidden = false
+
+    guard let superview = view.superview else { return }
+    let host = superview.layer
+
+    if !shadowLayerAdded || shadowLayerParent !== host {
+      mShadowLayer.removeFromSuperlayer()
+      if let childLayer = view.layer as CALayer?, superview.layer.sublayers?.contains(childLayer) == true {
+        superview.layer.insertSublayer(mShadowLayer, below: childLayer)
+      } else {
+        superview.layer.insertSublayer(mShadowLayer, at: 0)
+      }
+      shadowLayerAdded = true
+      shadowLayerParent = host
+    }
+
+    mShadowLayer.updateBounds(viewBounds: viewBounds, viewFrame: view.frame, inOwnLayer: false)
+  }
   
+  /// Detach the outset-shadow layer (it lives in the superview's layer, so
+  /// removing the child alone leaves a ghost shadow). Call on view removal.
+  internal func removeShadowLayer() {
+    if shadowLayerAdded {
+      mShadowLayer.removeFromSuperlayer()
+      shadowLayerAdded = false
+      shadowLayerParent = nil
+    }
+  }
+
+  /// Reset shadow-layer bookkeeping when the layer was pulled externally.
+  /// Idempotent; does NOT touch the layer (the caller already removed it).
+  internal func markShadowLayerDetached() {
+    shadowLayerAdded = false
+    shadowLayerParent = nil
+  }
+
   /// Call this from layoutSubviews to update shadow layer bounds
   internal func updateShadowLayer(for bounds: CGRect) {
     guard let view = node.view else { return }
-    let hasOutsetShadows = boxShadows.contains { !$0.inset }
-    guard hasOutsetShadows else {
-      if shadowLayerAdded {
-        mShadowLayer.isHidden = true
-      }
-      return
-    }
-
-    // Add shadow layer on first layout if it wasn't added during boxShadow setter
-    // (e.g. boxShadow was set before the view had a superview)
-    if !shadowLayerAdded || shadowLayerParent !== view.superview?.layer {
-      if let superview = view.superview {
-        mShadowLayer.removeFromSuperlayer()
-        if let childLayer = view.layer as CALayer?, superview.layer.sublayers?.contains(childLayer) == true {
-          superview.layer.insertSublayer(mShadowLayer, below: childLayer)
-        } else {
-          superview.layer.insertSublayer(mShadowLayer, at: 0)
-        }
-        shadowLayerAdded = true
-        shadowLayerParent = superview.layer
-      }
-    }
-
-    if shadowLayerAdded {
-      mShadowLayer.updateBounds(viewBounds: bounds, viewFrame: view.frame)
-    }
+    syncShadowLayer(view, viewBounds: bounds)
   }
   
   internal lazy var mBorderRender: CSSBorderRenderer  = {
@@ -4225,9 +4229,9 @@ extension MasonStyle {
     
     // If family is inherited but weight/style are set, need to create a new FontFace
     let baseFamily = if (familyState == StyleState.INHERIT) {
-      parentStyleWithTextValues?.resolvedFontFace.fontFamily ?? font.fontFamily
+      parentStyleWithTextValues?.resolvedFontFace.family ?? font.family
     } else {
-      font.fontFamily
+      font.family
     }
     
     let resolvedWeight = if (weightState == StyleState.INHERIT) {
@@ -4245,7 +4249,7 @@ extension MasonStyle {
     
     
     // If everything matches current font, return it
-    if (font.fontFamily == baseFamily && font.weight == resolvedWeight && font.fontDescriptors.styleValue == resolvedStyle) {
+    if (font.family == baseFamily && font.weight == resolvedWeight && font.fontDescriptors.style == resolvedStyle) {
       return font
     }
     
@@ -4258,7 +4262,7 @@ extension MasonStyle {
     // Create a new FontFace with resolved properties and cache it
     let resolvedFont = NSCFontFace(family: baseFamily)
     resolvedFont.weight = resolvedWeight
-    resolvedFont.style = resolvedStyle.cssValue
+    resolvedFont.style = resolvedStyle
     _cachedResolvedFont = resolvedFont
     _resolvedFontKey = key
     

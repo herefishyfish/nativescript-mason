@@ -131,6 +131,26 @@ class Scroll @JvmOverloads constructor(
     node.addChildAt(childNode, index)
   }
 
+  // removeView is the inverse of addView — drop the mason node (which detaches
+  // the android view under suppression via NodeUtils.removeView) so removals
+  // don't orphan the node and leave stale layout slots.
+
+  override fun removeView(view: android.view.View?) {
+    view ?: return
+    val childNode = if (view is Element) view.node else node.mason.nodeForView(view)
+    if (node.suppressChildOps > 0) { super.removeView(view); return }
+    if (childNode.parent == node) {
+      node.removeChild(childNode)
+      return
+    }
+    super.removeView(view)
+  }
+
+  override fun removeViewAt(index: Int) {
+    if (node.suppressChildOps > 0) { super.removeViewAt(index); return }
+    node.removeChildAt(index)
+  }
+
   // Measurement
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
