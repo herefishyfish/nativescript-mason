@@ -859,7 +859,7 @@ export class Style {
         setInt32(this.style_view, StyleKeys.FONT_SIZE, value);
         setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
         setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 0);
-        this.commitState(StateKeys.SIZE);
+        this.commitState(StateKeys.FONT_SIZE);
         break;
       case 'object':
         switch (value.unit) {
