@@ -776,7 +776,7 @@ fn grid_sizing_taffy() -> Result<(), ()> {
         style.grid_row.start = col.0;
         style.grid_row.end = col.1;
 
-        style.align_self = Some(AlignSelf::Stretch);
+        style.align_self = Some(AlignSelf::STRETCH);
 
         style
     };
@@ -798,7 +798,7 @@ fn grid_sizing_taffy() -> Result<(), ()> {
         style.grid_row.start = row.0;
         style.grid_row.end = row.1;
 
-        style.align_self = Some(AlignSelf::End);
+        style.align_self = Some(AlignSelf::END);
 
         style
     };
@@ -820,7 +820,7 @@ fn grid_sizing_taffy() -> Result<(), ()> {
         style.grid_row.start = row.0;
         style.grid_row.end = row.1;
 
-        style.align_self = Some(AlignSelf::Start);
+        style.align_self = Some(AlignSelf::START);
 
         style
     };
@@ -913,7 +913,7 @@ fn grid_sizing() {
         });
         style.set_grid_column_css("1/3");
         style.set_grid_row_css("1/3");
-        style.set_align_self(Some(AlignSelf::Stretch));
+        style.set_align_self(Some(AlignSelf::STRETCH));
     });
 
     mason.set_measure(a.id(), Some(grid_sizing_inline), 0 as _);
@@ -1061,8 +1061,8 @@ fn taffy_g_names_xp() -> Result<(), ()> {
 
     let mut root_style = taffy::Style::default();
     root_style.display = Display::Grid;
-    root_style.align_content = Some(AlignContent::Start);
-    root_style.justify_content = Some(JustifyContent::Start);
+    root_style.align_content = Some(AlignContent::START);
+    root_style.justify_content = Some(JustifyContent::START);
     root_style.gap = Size {
         width: LengthPercentage::length(10.),
         height: LengthPercentage::length(10.),
@@ -2003,10 +2003,10 @@ fn flex_bug() {
             height: Dimension::percent(1.),
         });
 
-        style.set_align_content(Some(AlignContent::Stretch));
-        style.set_align_items(Some(AlignItems::Center));
+        style.set_align_content(Some(AlignContent::STRETCH));
+        style.set_align_items(Some(AlignItems::CENTER));
         style.set_flex_direction(FlexDirection::Column);
-        style.set_justify_content(Some(JustifyContent::Start));
+        style.set_justify_content(Some(JustifyContent::START));
         style.set_display(Display::Flex);
     });
 

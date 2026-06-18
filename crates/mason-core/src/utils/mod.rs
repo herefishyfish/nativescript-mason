@@ -76,15 +76,15 @@ pub const fn text_align_to_enum(value: TextAlign) -> i8 {
 
 pub const fn align_content_from_enum(value: i8) -> Option<AlignContent> {
     match value {
-        0 => Some(AlignContent::Start),
-        1 => Some(AlignContent::End),
-        2 => Some(AlignContent::Center),
-        3 => Some(AlignContent::Stretch),
-        4 => Some(AlignContent::SpaceBetween),
-        5 => Some(AlignContent::SpaceAround),
-        6 => Some(AlignContent::SpaceEvenly),
-        7 => Some(AlignContent::FlexStart),
-        8 => Some(AlignContent::FlexEnd),
+        0 => Some(AlignContent::START),
+        1 => Some(AlignContent::END),
+        2 => Some(AlignContent::CENTER),
+        3 => Some(AlignContent::STRETCH),
+        4 => Some(AlignContent::SPACE_BETWEEN),
+        5 => Some(AlignContent::SPACE_AROUND),
+        6 => Some(AlignContent::SPACE_EVENLY),
+        7 => Some(AlignContent::FLEX_START),
+        8 => Some(AlignContent::FLEX_END),
         _ => None,
     }
 }
@@ -105,13 +105,13 @@ pub const fn align_content_to_enum(value: AlignContent) -> i8 {
 
 pub const fn align_items_from_enum(value: i8) -> Option<AlignItems> {
     match value {
-        0 => Some(AlignItems::Start),
-        1 => Some(AlignItems::End),
-        2 => Some(AlignItems::Center),
-        3 => Some(AlignItems::Baseline),
-        4 => Some(AlignItems::Stretch),
-        5 => Some(AlignItems::FlexStart),
-        6 => Some(AlignItems::FlexEnd),
+        0 => Some(AlignItems::START),
+        1 => Some(AlignItems::END),
+        2 => Some(AlignItems::CENTER),
+        3 => Some(AlignItems::BASELINE),
+        4 => Some(AlignItems::STRETCH),
+        5 => Some(AlignItems::FLEX_START),
+        6 => Some(AlignItems::FLEX_END),
         _ => None,
     }
 }
@@ -151,13 +151,13 @@ pub const fn align_items_to_enum(value: AlignItems) -> i8 {
 
 pub const fn align_self_from_enum(value: i8) -> Option<AlignSelf> {
     match value {
-        0 => Some(AlignSelf::Start),
-        1 => Some(AlignSelf::End),
-        2 => Some(AlignSelf::Center),
-        3 => Some(AlignSelf::Baseline),
-        4 => Some(AlignSelf::Stretch),
-        5 => Some(AlignSelf::FlexStart),
-        6 => Some(AlignSelf::FlexEnd),
+        0 => Some(AlignSelf::START),
+        1 => Some(AlignSelf::END),
+        2 => Some(AlignSelf::CENTER),
+        3 => Some(AlignSelf::BASELINE),
+        4 => Some(AlignSelf::STRETCH),
+        5 => Some(AlignSelf::FLEX_START),
+        6 => Some(AlignSelf::FLEX_END),
         _ => None,
     }
 }
@@ -246,15 +246,15 @@ pub const fn flex_wrap_to_enum(value: FlexWrap) -> i8 {
 
 pub const fn justify_content_from_enum(value: i8) -> Option<JustifyContent> {
     match value {
-        0 => Some(JustifyContent::Start),
-        1 => Some(JustifyContent::End),
-        2 => Some(JustifyContent::Center),
-        3 => Some(JustifyContent::Stretch),
-        4 => Some(JustifyContent::SpaceBetween),
-        5 => Some(JustifyContent::SpaceAround),
-        6 => Some(JustifyContent::SpaceEvenly),
-        7 => Some(JustifyContent::FlexStart),
-        8 => Some(JustifyContent::FlexEnd),
+        0 => Some(JustifyContent::START),
+        1 => Some(JustifyContent::END),
+        2 => Some(JustifyContent::CENTER),
+        3 => Some(JustifyContent::STRETCH),
+        4 => Some(JustifyContent::SPACE_BETWEEN),
+        5 => Some(JustifyContent::SPACE_AROUND),
+        6 => Some(JustifyContent::SPACE_EVENLY),
+        7 => Some(JustifyContent::FLEX_START),
+        8 => Some(JustifyContent::FLEX_END),
         _ => None,
     }
 }
