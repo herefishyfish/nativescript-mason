@@ -1231,9 +1231,11 @@ impl Tree {
             if let Some(children) = tree.children.get_mut(parent) {
                 children.retain(|&id| id != child);
             }
-            if let Some(node) = tree.nodes.get_mut(parent) {
-                node.mark_dirty();
-            }
+            // Propagate the dirty flag up the ancestor chain (matching `append`).
+            // Marking only the immediate parent leaves ancestors' (and the root's)
+            // layout caches intact, so a subsequent compute from the root returns
+            // a stale cached layout and never re-lays-out the mutated subtree.
+            Tree::mark_dirty_inner(tree, parent);
         }
     }
 
@@ -1370,11 +1372,10 @@ impl Tree {
             let children = tree.children.get_mut(parent).unwrap();
             children.push(node);
             tree.parents.insert(node, Some(parent));
+            Tree::mark_dirty_inner(&mut tree, parent);
             return;
         }
-        if let Some(node) = tree.nodes.get_mut(parent) {
-            node.mark_dirty();
-        }
+        Tree::mark_dirty_inner(&mut tree, parent);
     }
 
     pub fn insert_before(&mut self, parent: Id, node: Id, reference: Id) {
@@ -1406,9 +1407,7 @@ impl Tree {
         children.insert(node_pos, node);
         tree.parents.insert(node, Some(parent));
 
-        if let Some(node) = tree.nodes.get_mut(parent) {
-            node.mark_dirty();
-        }
+        Tree::mark_dirty_inner(&mut tree, parent);
     }
 
     pub fn add_child_at_index(&mut self, node: Id, child: Id, index: usize) {
@@ -1438,9 +1437,7 @@ impl Tree {
 
             tree.parents.insert(child, Some(node));
 
-            if let Some(node_data) = tree.nodes.get_mut(node) {
-                node_data.mark_dirty();
-            }
+            Tree::mark_dirty_inner(&mut tree, node);
         }
     }
 
@@ -1564,9 +1561,7 @@ impl Tree {
                 tree.parents.remove(*child);
             }
 
-            if let Some(node) = tree.nodes.get_mut(parent) {
-                node.mark_dirty();
-            }
+            Tree::mark_dirty_inner(tree, parent);
         }
     }
 
@@ -1618,14 +1613,18 @@ impl Tree {
 
         let mut tree = self.0.write();
         let tree = &mut tree;
-        if let Some(node) = tree.nodes.get_mut(node) {
+        let node_id = node;
+        if let Some(node) = tree.nodes.get_mut(node_id) {
             let style = node.style_mut();
             if let Some(scale) = scale {
                 style.device_scale = Some(scale);
             }
             func(style);
-            node.mark_dirty();
         }
+        // A style change can affect this node's contribution to its ancestors'
+        // layout (size, flex basis, etc.), so propagate the dirty flag to the
+        // root — marking only this node leaves ancestor/root caches stale.
+        Tree::mark_dirty_inner(tree, node_id);
     }
 }
 
