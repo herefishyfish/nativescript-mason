@@ -237,7 +237,9 @@ extension Mason.Button {
     @objc get
     @objc set
   }
-  @objc public static let scale: Swift.Float
+  @objc public static var scale: Swift.Float {
+    @objc get
+  }
 }
 @_inheritsConvenienceInitializers @objcMembers @objc(MeasureOutput) public class MeasureOutput : ObjectiveC.NSObject {
   @objc override dynamic public init()
@@ -2099,7 +2101,7 @@ extension UIKit.UIColor {
   public func toUInt32() -> Swift.UInt32
 }
 extension UIKit.UIImage {
-  public static func triangle(direction: UIKit.UIImage.Direction, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 8, height: 5), scale: CoreFoundation.CGFloat = UIScreen.main.scale) -> UIKit.UIImage
+  public static func triangle(direction: UIKit.UIImage.Direction, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 8, height: 5), scale: CoreFoundation.CGFloat = CGFloat(NSCMason.scale)) -> UIKit.UIImage
   public enum Direction {
     case up, down
     public static func == (a: UIKit.UIImage.Direction, b: UIKit.UIImage.Direction) -> Swift.Bool
@@ -2116,7 +2118,7 @@ extension UIKit.UIImage {
       get
     }
   }
-  public static func chevron(direction: UIKit.UIImage.ChevronDirection, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 16, height: 6), lineWidth: CoreFoundation.CGFloat = 1.5, scale: CoreFoundation.CGFloat = UIScreen.main.scale) -> UIKit.UIImage
+  public static func chevron(direction: UIKit.UIImage.ChevronDirection, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 16, height: 6), lineWidth: CoreFoundation.CGFloat = 1.5, scale: CoreFoundation.CGFloat = CGFloat(NSCMason.scale)) -> UIKit.UIImage
   public func mason_resize(to size: CoreFoundation.CGSize) -> UIKit.UIImage?
 }
 @objc extension ObjectiveC.NSObject {
@@ -3090,6 +3092,7 @@ public struct FontVariantNumeric : Swift.OptionSet, Swift.CustomStringConvertibl
     @objc get
   }
   @objc @_Concurrency.MainActor @preconcurrency public var contentSize: CoreFoundation.CGSize
+  @objc @_Concurrency.MainActor @preconcurrency public var isScrollContainer: Swift.Bool
   @objc @_Concurrency.MainActor @preconcurrency public var contentOffset: CoreFoundation.CGPoint {
     @objc get
     @objc set

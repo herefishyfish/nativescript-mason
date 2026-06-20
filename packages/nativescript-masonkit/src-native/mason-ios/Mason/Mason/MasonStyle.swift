@@ -3914,7 +3914,8 @@ public class MasonStyle: NSObject {
       if backdropFilter.isEmpty && !mBackdropFilter.filters.isEmpty {
         mBackdropFilter.reset()
         if let view = node.view {
-          view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop" })?.removeFromSuperlayer()
+          view.subviews.filter { $0.layer.name == "_mason_backdrop" }.forEach { $0.removeFromSuperview() }
+          view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop_layer" })?.removeFromSuperlayer()
         }
         return
       }
@@ -3925,6 +3926,25 @@ public class MasonStyle: NSObject {
         if let view = node.view {
           mBackdropFilter.applyAsBackdrop(to: view)
         }
+      }
+    }
+  }
+
+  /// Keep the backdrop effect view / layer sized to the host view. Called from
+  /// `MasonUIView.layoutSubviews` because `backdropFilter` is usually set before
+  /// the view has a non-zero bounds, so the initial frame in `applyAsBackdrop`
+  /// would otherwise stay `.zero` and the effect would never appear.
+  func updateBackdropFrames(for bounds: CGRect) {
+    guard !mBackdropFilter.filters.isEmpty, let view = node.view else { return }
+    if let effectView = view.subviews.first(where: { $0.layer.name == "_mason_backdrop" }) {
+      if effectView.frame != bounds { effectView.frame = bounds }
+    }
+    if let backdropLayer = view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop_layer" }) {
+      if backdropLayer.frame != bounds {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backdropLayer.frame = bounds
+        CATransaction.commit()
       }
     }
   }

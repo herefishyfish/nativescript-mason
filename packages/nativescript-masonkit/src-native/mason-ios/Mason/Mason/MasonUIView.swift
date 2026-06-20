@@ -65,7 +65,7 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     // edge-aligned children when border widths are present.
     if hasBackground {
       // Expand by a fractional device pixel to avoid 1px hairline gaps
-      let scale = UIScreen.main.scale
+      let scale = CGFloat(NSCMason.scale)
       let expand: CGFloat = 1.0 / scale
       let innerRect = bounds.insetBy(dx: -expand, dy: -expand)
 
@@ -105,6 +105,8 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   // bounds.origin (as UIScrollView does), driven by a pan gesture that only
   // begins when actually scrollable.
   public var contentSize: CGSize = .zero
+  // When true, default `visible` overflow on Y acts as `auto` (web-like scroll-on-overflow).
+  @objc public var isScrollContainer: Bool = false
   private var _scrollPanStartOffset: CGPoint = .zero
   private var _scrollDecelerationLink: CADisplayLink?
   private var _scrollDecelerationVelocity: CGPoint = .zero
@@ -164,6 +166,9 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     // Always reposition the shadow layer: frame.origin can change without a size
     // change, and the layer is keyed to our frame in the superview's coords.
     style.updateShadowLayer(for: CGRect(origin: .zero, size: currentSize))
+    // Keep the backdrop-filter effect view/layer sized to us (it's usually set
+    // before layout, when bounds is still .zero).
+    style.updateBackdropFrames(for: CGRect(origin: .zero, size: currentSize))
     guard !currentSize.equalTo(_lastBoundsSize) else { return }
     _lastBoundsSize = currentSize
     invalidateDrawFlags()
@@ -193,7 +198,7 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     let wantsRasterize = hasGradient && style.mBorderRender.hasRadii()
     if wantsRasterize && layer.mask == nil {
       layer.shouldRasterize = true
-      layer.rasterizationScale = UIScreen.main.scale
+      layer.rasterizationScale = CGFloat(NSCMason.scale)
     } else {
       layer.shouldRasterize = false
     }
@@ -1060,16 +1065,17 @@ extension MasonUIView {
   var _canScrollH: Bool {
     switch node.style.overflow.x {
     case .Scroll: return true
-    case .Auto:   return contentSize.width > bounds.width
-    default:      return false
+    case .Auto:    return contentSize.width > bounds.width
+    default:       return false
     }
   }
 
   var _canScrollV: Bool {
     switch node.style.overflow.y {
     case .Scroll: return true
-    case .Auto:   return contentSize.height > bounds.height
-    default:      return false
+    case .Auto:    return contentSize.height > bounds.height
+    case .Visible: return isScrollContainer && contentSize.height > bounds.height
+    default:       return false
     }
   }
 

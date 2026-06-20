@@ -49,6 +49,14 @@ const FEATURES = [
     glyph: 'Bg',
     count: 'Playground',
   },
+  {
+    id: 'QA',
+    label: 'QA Harness',
+    desc: 'Scroll-auto, backdrop-filter & stress tests',
+    bg: '#2d3436',
+    glyph: 'QA',
+    count: 'Tests',
+  },
 ] as const
 
 const STATS = [

@@ -74,8 +74,13 @@ class ViewUtils {
       superDraw: (Canvas) -> Unit,
       ignoreBorder: Boolean = false,
     ) {
+      // Skip draw during backdrop capture — this view is the "hole" the blurred result fills.
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && style.mBackdropHelper?.isCapturing == true) {
+        return
+      }
+
       val suppressOps = view.getTag(R.id.tag_suppress_ops) as? Boolean ?: false
-      if (suppressOps || (!style.isValueInitialized && style.mFilter == null && style.boxShadows.isEmpty())) {
+      if (suppressOps || (!style.isValueInitialized && style.mFilter == null && style.boxShadows.isEmpty() && style.mBackdropHelper == null)) {
         superDraw(canvas)
         return
       }
@@ -84,6 +89,13 @@ class ViewUtils {
       val height = view.height.toFloat()
 
       style.mBorderRenderer.updateCache(width, height)
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        style.mBackdropHelper?.let { helper ->
+          val outerPath = style.mBorderRenderer.getOuterClipPath(width, height)
+          helper.draw(canvas, if (!outerPath.isEmpty) outerPath else null)
+        }
+      }
 
       val hasRadii = style.mBorderRenderer.hasRadii()
       val hasBackground =

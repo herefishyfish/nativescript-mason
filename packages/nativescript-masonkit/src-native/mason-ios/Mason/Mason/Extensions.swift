@@ -166,7 +166,7 @@ public extension UIImage {
     direction: Direction,
     color: UIColor,
     size: CGSize = CGSize(width: 8, height: 5),
-    scale: CGFloat = UIScreen.main.scale
+    scale: CGFloat = CGFloat(NSCMason.scale)
   ) -> UIImage {
     let renderer = UIGraphicsImageRenderer(size: size, format: {
       let f = UIGraphicsImageRendererFormat()
@@ -207,7 +207,7 @@ public extension UIImage {
           color: UIColor,
           size: CGSize = CGSize(width: 16, height: 6),
           lineWidth: CGFloat = 1.5,
-          scale: CGFloat = UIScreen.main.scale
+          scale: CGFloat = CGFloat(NSCMason.scale)
       ) -> UIImage {
 
           let format = UIGraphicsImageRendererFormat()

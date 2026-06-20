@@ -539,7 +539,7 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
   }
 
   public func removeView(at index: Int) {
-    node.removeChildAt(index: index)
+    _ = node.removeChildAt(index: index)
     engine.invalidateInlineSegments()
   }
 
@@ -556,7 +556,7 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
     isOpaque = false
     backgroundColor = .clear
     textLayer.textView = self
-    textLayer.contentsScale = UIScreen.main.scale
+    textLayer.contentsScale = CGFloat(NSCMason.scale)
     style.setStyleChangeListener(listener: self)
     node.view = self
     node.measureFunc = { [weak self] known, available in
@@ -572,9 +572,12 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
     switch(type){
     case .None:
       break
+    // Web user-agent defaults (16px base). Margins are the browser em values
+    // resolved to CSS px, then × scale to mason's device-pixel space. Must stay
+    // in sync with Android TextView.kt.
     case .P:
       style.display = .Block
-      style.margin = MasonRect(.Points(16), .Points(0), .Points(16), .Points(0))
+      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0)) // 1em
       break
     case .Span:
       style.display = .Inline
@@ -584,46 +587,46 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       style.fontFamily = "monospace"
       break
     case .H1:
-      fontSize = 32
+      fontSize = 32 // 2em
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0))
+      style.margin = MasonRect(.Points(21.44 * scale), .Points(0), .Points(21.44 * scale), .Points(0)) // 0.67em
       break
     case .H2:
-      fontSize = 24
+      fontSize = 24 // 1.5em
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(14 * scale), .Points(0), .Points(14 * scale), .Points(0))
+      style.margin = MasonRect(.Points(19.92 * scale), .Points(0), .Points(19.92 * scale), .Points(0)) // 0.83em
       break
     case .H3:
-      fontSize = 20
+      fontSize = 19 // 1.17em ≈ 18.72
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(12 * scale), .Points(0), .Points(8 * scale), .Points(0))
+      style.margin = MasonRect(.Points(18.72 * scale), .Points(0), .Points(18.72 * scale), .Points(0)) // 1em
       break
     case .H4:
-      fontSize = 16
+      fontSize = 16 // 1em
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(10 * scale), .Points(0), .Points(10 * scale), .Points(0))
+      style.margin = MasonRect(.Points(21.28 * scale), .Points(0), .Points(21.28 * scale), .Points(0)) // 1.33em
       break
     case .H5:
-      fontSize = 13
+      fontSize = 13 // 0.83em ≈ 13.28
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(8 * scale), .Points(0), .Points(8 * scale), .Points(0))
+      style.margin = MasonRect(.Points(22.18 * scale), .Points(0), .Points(22.18 * scale), .Points(0)) // 1.67em
       break
     case .H6:
-      fontSize = 10
+      fontSize = 11 // 0.67em ≈ 10.72
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(6 * scale), .Points(0), .Points(6 * scale), .Points(0))
+      style.margin = MasonRect(.Points(24.98 * scale), .Points(0), .Points(24.98 * scale), .Points(0)) // 2.33em
       break
     case .Li:
       break
     case .Blockquote:
       style.display = .Block
-      style.margin = MasonRect(.Points(16 * scale), .Points(40 * scale), .Points(16 * scale), .Points(40 * scale))
+      style.margin = MasonRect(.Points(16 * scale), .Points(40 * scale), .Points(16 * scale), .Points(40 * scale)) // 1em 40px
       break
     case .B, .Strong:
       style.display = .Inline
@@ -633,7 +636,7 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       style.display = .Block
       style.fontFamily = "monospace"
       whiteSpace = .Pre
-      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0))
+      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0)) // 1em
       break
     case .I, .Em:
       style.display = .Inline

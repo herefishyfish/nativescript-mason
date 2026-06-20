@@ -16,6 +16,7 @@ export class Scroll extends ViewBase {
     if (!this[native_]) {
       // using MasonUIView is now as it is a view with it's own scroll handling as UIKit's UIScrollView breaks with multiple nested scroll views.
       const view = Tree.instance.createView() as never;
+      (view as any).isScrollContainer = true;
       this[native_] = view;
       return view;
     }

@@ -111,7 +111,11 @@ class TextEngine(val container: TextContainer) {
       }
     }
 
-  private var mIncludePadding: Boolean = true
+  // Web parity: browsers don't add Android's extra "font padding" (top/bottom
+  // metrics) to the line box — `line-height: normal` uses the font's recommended
+  // ascent/descent (~1.2×). includeFontPadding=true inflated lines to ~1.33×, so
+  // default it off to match the web/iOS line box.
+  private var mIncludePadding: Boolean = false
   var includePadding: Boolean
     get() {
       return mIncludePadding

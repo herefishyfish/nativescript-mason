@@ -115,7 +115,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
   }
 
   public func removeView(at index: Int) {
-    node.removeChildAt(index: index)
+    _ = node.removeChildAt(index: index)
     engine.invalidateInlineSegments()
   }
 
@@ -208,7 +208,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     isOpaque = false
     style.setStyleChangeListener(listener: self)
     
-    let scale = Float((window?.screen.scale ?? CGFloat(NSCMason.scale)))
+    let scale = NSCMason.scale
     let x =  6 * scale
     let y =  scale
     

@@ -218,11 +218,15 @@ class TextView @JvmOverloads constructor(
       view = this@TextView
       this.isAnonymous = isAnonymous
     }
+    // Web user-agent default margins are authored in CSS px; mason stores
+    // layout in device pixels, so scale by display density (mirrors how CSS px
+    // values are scaled). Must stay in sync with iOS MasonText.swift.
+    val density = resources.displayMetrics.density
     val margin = { top: Float, bottom: Float ->
       Rect<LengthPercentageAuto>(
-        top = LengthPercentageAuto.Points(top),
+        top = LengthPercentageAuto.Points(top * density),
         right = LengthPercentageAuto.Points(0f),
-        bottom = LengthPercentageAuto.Points(bottom),
+        bottom = LengthPercentageAuto.Points(bottom * density),
         left = LengthPercentageAuto.Points(0f),
       )
     }
@@ -248,43 +252,43 @@ class TextView @JvmOverloads constructor(
         TextType.H1 -> {
           node.style.display = Display.Block
           style.fontWeight = FontWeight.Bold
-          fontSize = 32
-          node.style.margin = margin(16f, 16f)
+          fontSize = 32 // 2em
+          node.style.margin = margin(21.44f, 21.44f) // 0.67em
         }
 
         TextType.H2 -> {
           node.style.display = Display.Block
           style.fontWeight = FontWeight.Bold
-          fontSize = 24
-          node.style.margin = margin(14f, 14f)
+          fontSize = 24 // 1.5em
+          node.style.margin = margin(19.92f, 19.92f) // 0.83em
         }
 
         TextType.H3 -> {
           node.style.display = Display.Block
           style.fontWeight = FontWeight.Bold
-          fontSize = 20
-          node.style.margin = margin(12f, 8f)
+          fontSize = 19 // 1.17em ≈ 18.72
+          node.style.margin = margin(18.72f, 18.72f) // 1em
         }
 
         TextType.H4 -> {
           node.style.display = Display.Block
           style.fontWeight = FontWeight.Bold
-          fontSize = Constants.DEFAULT_FONT_SIZE
-          node.style.margin = margin(10f, 10f)
+          fontSize = Constants.DEFAULT_FONT_SIZE // 1em (16)
+          node.style.margin = margin(21.28f, 21.28f) // 1.33em
         }
 
         TextType.H5 -> {
           node.style.display = Display.Block
           style.fontWeight = FontWeight.Bold
-          fontSize = 13
-          node.style.margin = margin(8f, 8f)
+          fontSize = 13 // 0.83em ≈ 13.28
+          node.style.margin = margin(22.18f, 22.18f) // 1.67em
         }
 
         TextType.H6 -> {
           node.style.display = Display.Block
           style.fontWeight = FontWeight.Bold
-          fontSize = 10
-          node.style.margin = margin(6f, 6f)
+          fontSize = 11 // 0.67em ≈ 10.72
+          node.style.margin = margin(24.98f, 24.98f) // 2.33em
         }
 
         TextType.Li -> {
@@ -293,10 +297,10 @@ class TextView @JvmOverloads constructor(
         TextType.Blockquote -> {
           node.style.display = Display.Block
           node.style.margin = Rect(
-            top = LengthPercentageAuto.Points(16f),
-            right = LengthPercentageAuto.Points(40f),
-            bottom = LengthPercentageAuto.Points(16f),
-            left = LengthPercentageAuto.Points(40f),
+            top = LengthPercentageAuto.Points(16f * density),
+            right = LengthPercentageAuto.Points(40f * density),
+            bottom = LengthPercentageAuto.Points(16f * density),
+            left = LengthPercentageAuto.Points(40f * density),
           )
         }
 

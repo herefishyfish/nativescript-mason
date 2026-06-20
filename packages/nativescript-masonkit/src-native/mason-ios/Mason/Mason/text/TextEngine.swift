@@ -498,8 +498,18 @@ public class TextEngine: NSObject {
     }
     
     
+    // CoreText single-line bounds are tight (~1.0× font size); CSS `line-height:
+    // normal` expects ~1.2×. Floor to that so a single line matches the web/Android
+    // box. Multi-line already exceeds 1.2×, so max() leaves it untouched.
+    if !isInLine && size.height > 0,
+       let fv = engine.node.getDefaultAttributes()[.font],
+       CFGetTypeID(fv as CFTypeRef) == CTFontGetTypeID() {
+      let normalLineHeight = CTFontGetSize(fv as! CTFont) * 1.2
+      if normalLineHeight > size.height { size.height = normalLineHeight }
+    }
+
     size.height = (size.height * scale).rounded(.up)
-    
+
     if let known = known {
       if !known.width.isNaN && known.width >= 0 {
         size.width = known.width

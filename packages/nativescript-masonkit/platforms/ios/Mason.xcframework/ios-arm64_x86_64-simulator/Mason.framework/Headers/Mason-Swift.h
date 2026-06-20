@@ -1510,6 +1510,7 @@ SWIFT_CLASS_NAMED("MasonUIView")
 @property (nonatomic, readonly, strong) NSCMason * _Nonnull mason;
 @property (nonatomic, readonly, strong) UIView * _Nonnull uiView;
 @property (nonatomic) CGSize contentSize;
+@property (nonatomic) BOOL isScrollContainer;
 @property (nonatomic) CGPoint contentOffset;
 @property (nonatomic, readonly, strong) MasonStyle * _Nonnull style;
 - (void)markNodeDirty;
@@ -3483,6 +3484,7 @@ SWIFT_CLASS_NAMED("MasonUIView")
 @property (nonatomic, readonly, strong) NSCMason * _Nonnull mason;
 @property (nonatomic, readonly, strong) UIView * _Nonnull uiView;
 @property (nonatomic) CGSize contentSize;
+@property (nonatomic) BOOL isScrollContainer;
 @property (nonatomic) CGPoint contentOffset;
 @property (nonatomic, readonly, strong) MasonStyle * _Nonnull style;
 - (void)markNodeDirty;

@@ -51,8 +51,11 @@ class Scroll @JvmOverloads constructor(
     return node.style.values.get(StyleKeys.OVERFLOW_X) == Overflow.Auto.value
   }
 
+  // Default `visible` on Y acts as `auto` (web-like); horizontal stays non-scrolling
+  // to avoid surprise sideways scroll. Explicit `hidden`/`clip`/`scroll` override.
   private fun isAutoY(): Boolean {
-    return node.style.values.get(StyleKeys.OVERFLOW_Y) == Overflow.Auto.value
+    val v = node.style.values.get(StyleKeys.OVERFLOW_Y)
+    return v == Overflow.Auto.value || v == Overflow.Visible.value
   }
 
   constructor(context: Context, mason: Mason) : this(context, null, 0, true) {
@@ -175,8 +178,6 @@ class Scroll @JvmOverloads constructor(
           return
         }
 
-        updateScrollState()
-
         val computedW = node.computedWidth.toInt()
         val computedH = node.computedHeight.toInt()
 
@@ -186,6 +187,8 @@ class Scroll @JvmOverloads constructor(
           MeasureSpec.AT_MOST -> min(specHeight, computedH)
           else -> computedH
         }
+
+        updateScrollState(measuredW, measuredH)
 
         setMeasuredDimension(measuredW, measuredH)
       } else {
@@ -201,7 +204,7 @@ class Scroll @JvmOverloads constructor(
    * [scrollContentHeight] from the current layout-tree data.  Called after
    * the layout engine has computed this node.
    */
-  private fun updateScrollState() {
+  private fun updateScrollState(viewportW: Int = -1, viewportH: Int = -1) {
     val computedW = node.computedWidth.toInt()
     val computedH = node.computedHeight.toInt()
 
@@ -210,11 +213,16 @@ class Scroll @JvmOverloads constructor(
     val cw = nv.contentWidth.toInt()
     val ch = nv.contentHeight.toInt()
 
-    _enableScrollX = isScrollableX() || (isAutoX() && cw > computedW)
-    _enableScrollY = isScrollableY() || (isAutoY() && ch > computedH)
+    // For a height:auto container computedH == contentH, so comparing them would
+    // never report overflow. Use the actual laid-out viewport size instead.
+    val vpW = when { viewportW >= 0 -> viewportW; width > 0 -> width; else -> computedW }
+    val vpH = when { viewportH >= 0 -> viewportH; height > 0 -> height; else -> computedH }
 
-    scrollContentWidth = if (_enableScrollX) maxOf(cw, computedW) else computedW
-    scrollContentHeight = if (_enableScrollY) maxOf(ch, computedH) else computedH
+    _enableScrollX = isScrollableX() || (isAutoX() && cw > vpW)
+    _enableScrollY = isScrollableY() || (isAutoY() && ch > vpH)
+
+    scrollContentWidth = if (_enableScrollX) maxOf(cw, vpW) else vpW
+    scrollContentHeight = if (_enableScrollY) maxOf(ch, vpH) else vpH
   }
 
   // Layout
@@ -236,9 +244,8 @@ class Scroll @JvmOverloads constructor(
       }
     } else {
       // When laid out by a parent Element, the parent computed our layout.
-      // Read content dimensions to determine scroll state.
       if (node.layoutTree.nodeCount > 0) {
-        updateScrollState()
+        updateScrollState(r - l, b - t)
       }
     }
 
