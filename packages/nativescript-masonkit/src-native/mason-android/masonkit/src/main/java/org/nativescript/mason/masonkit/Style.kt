@@ -1624,6 +1624,8 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
       val layers = parseBackgroundLayers(value)
       mBackground?.layers = layers.toMutableList()
+      isValueInitialized = true
+      (node.view as? android.view.View)?.invalidate()
     }
 
   var backgroundRepeat: String

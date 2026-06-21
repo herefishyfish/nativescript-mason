@@ -1694,6 +1694,54 @@ public class MasonStyle: NSObject {
     }
   }
   
+  public func setTextDecoration(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let line: DecorationLine
+    switch v {
+    case "none": line = .None
+    case "underline": line = .Underline
+    case "overline": line = .Overline
+    case "line-through": line = .LineThrough
+    default: return
+    }
+    decorationLine = line
+  }
+
+  public func setBorderColor(_ css: String) {
+    guard let color = UIColor(css: css) else { return }
+    mBorderLeft.color = color
+    mBorderTop.color = color
+    mBorderRight.color = color
+    mBorderBottom.color = color
+    setOrAppendState(.borderColor)
+    node.view?.setNeedsDisplay()
+  }
+
+  public func applyListStyleType(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let type: ListStyleType
+    switch v {
+    case "none": type = .None
+    case "disc": type = .Disc
+    case "circle": type = .Circle
+    case "square": type = .Square
+    case "decimal": type = .Decimal
+    default: return
+    }
+    listStyleType = type
+  }
+
+  public func applyListStylePosition(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let pos: ListStylePosition
+    switch v {
+    case "inside": pos = .Inside
+    case "outside": pos = .Outside
+    default: return
+    }
+    listStylePosition = pos
+  }
+
   public var fontSize: Int32 {
     get {
       return getInt32(StyleKeys.FONT_SIZE)

@@ -1,6 +1,7 @@
 package org.nativescript.mason.masonkit
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.FocusFinder
@@ -12,6 +13,7 @@ import android.view.ViewConfiguration
 import android.view.ViewDebug.ExportedProperty
 import android.view.ViewGroup
 import android.view.animation.AnimationUtils
+import android.widget.EdgeEffect
 import android.widget.FrameLayout
 import android.widget.OverScroller
 import androidx.core.view.isEmpty
@@ -68,6 +70,13 @@ open class TwoDScrollView : FrameLayout {
   private var touchSlop = 0
   private var minimumVelocity = 0
   private var maximumVelocity = 0
+  private var overflingDistance = 0
+
+  // Overscroll effects (stretch on API 31+, glow earlier), one per edge.
+  private lateinit var edgeGlowTop: EdgeEffect
+  private lateinit var edgeGlowBottom: EdgeEffect
+  private lateinit var edgeGlowLeft: EdgeEffect
+  private lateinit var edgeGlowRight: EdgeEffect
 
   @JvmOverloads
   constructor(context: Context, attrs: AttributeSet? = null) : super(context, attrs) {
@@ -139,6 +148,24 @@ open class TwoDScrollView : FrameLayout {
     touchSlop = configuration.scaledTouchSlop
     minimumVelocity = configuration.scaledMinimumFlingVelocity
     maximumVelocity = configuration.scaledMaximumFlingVelocity
+    overflingDistance = configuration.scaledOverflingDistance
+    edgeGlowTop = EdgeEffect(context)
+    edgeGlowBottom = EdgeEffect(context)
+    edgeGlowLeft = EdgeEffect(context)
+    edgeGlowRight = EdgeEffect(context)
+  }
+
+  private fun getScrollRangeX(): Int =
+    maxOf(scrollContentWidth - (width - paddingLeft - paddingRight), 0)
+
+  private fun getScrollRangeY(): Int =
+    maxOf(scrollContentHeight - (height - paddingTop - paddingBottom), 0)
+
+  private fun releaseEdgeEffects() {
+    edgeGlowTop.onRelease()
+    edgeGlowBottom.onRelease()
+    edgeGlowLeft.onRelease()
+    edgeGlowRight.onRelease()
   }
 
   private fun canScroll(): Boolean {
@@ -189,35 +216,53 @@ open class TwoDScrollView : FrameLayout {
       }
 
       MotionEvent.ACTION_MOVE -> {
-        var deltaX = (lastMotionX - x).toInt()
-        var deltaY = (lastMotionY - y).toInt()
+        val deltaXRaw = (lastMotionX - x).toInt()
+        val deltaYRaw = (lastMotionY - y).toInt()
         lastMotionX = x
         lastMotionY = y
 
-        if (enableScrollX) {
-          if (deltaX < 0) {
-            if (scrollX < 0) deltaX = 0
-          } else if (deltaX > 0) {
-            val rightEdge = width - paddingRight
-            val availableToScroll = scrollContentWidth - scrollX - rightEdge
-            deltaX = if (availableToScroll > 0) min(availableToScroll, deltaX) else 0
+        val rangeX = getScrollRangeX()
+        val rangeY = getScrollRangeY()
+        val w = width.coerceAtLeast(1).toFloat()
+        val h = height.coerceAtLeast(1).toFloat()
+        var appliedX = 0
+        var appliedY = 0
+        var needsInvalidate = false
+
+        if (enableScrollX && deltaXRaw != 0) {
+          when {
+            scrollX + deltaXRaw < 0 -> {
+              appliedX = -scrollX
+              edgeGlowLeft.onPull((appliedX - deltaXRaw) / w, 1f - y / h)
+              needsInvalidate = true
+            }
+            scrollX + deltaXRaw > rangeX -> {
+              appliedX = rangeX - scrollX
+              edgeGlowRight.onPull((deltaXRaw - appliedX) / w, y / h)
+              needsInvalidate = true
+            }
+            else -> appliedX = deltaXRaw
           }
-        } else {
-          deltaX = 0
         }
 
-        if (enableScrollY) {
-          if (deltaY < 0) {
-            if (scrollY < 0) deltaY = 0
-          } else if (deltaY > 0) {
-            val bottomEdge = height - paddingBottom
-            val availableToScroll = scrollContentHeight - scrollY - bottomEdge
-            deltaY = if (availableToScroll > 0) min(availableToScroll, deltaY) else 0
+        if (enableScrollY && deltaYRaw != 0) {
+          when {
+            scrollY + deltaYRaw < 0 -> {
+              appliedY = -scrollY
+              edgeGlowTop.onPull((appliedY - deltaYRaw) / h, x / w)
+              needsInvalidate = true
+            }
+            scrollY + deltaYRaw > rangeY -> {
+              appliedY = rangeY - scrollY
+              edgeGlowBottom.onPull((deltaYRaw - appliedY) / h, 1f - x / w)
+              needsInvalidate = true
+            }
+            else -> appliedY = deltaYRaw
           }
-        } else {
-          deltaY = 0
         }
-        if (deltaY != 0 || deltaX != 0) scrollBy(deltaX, deltaY)
+
+        if (appliedX != 0 || appliedY != 0) scrollBy(appliedX, appliedY)
+        if (needsInvalidate) postInvalidateOnAnimation()
       }
 
       MotionEvent.ACTION_UP -> {
@@ -232,8 +277,19 @@ open class TwoDScrollView : FrameLayout {
           velocityTracker!!.recycle()
           velocityTracker = null
         }
+        releaseEdgeEffects()
+        postInvalidateOnAnimation()
         // Let the view handle the up event (e.g. for tap/click listeners)
         super.onTouchEvent(ev)
+      }
+
+      MotionEvent.ACTION_CANCEL -> {
+        if (velocityTracker != null) {
+          velocityTracker!!.recycle()
+          velocityTracker = null
+        }
+        releaseEdgeEffects()
+        postInvalidateOnAnimation()
       }
     }
     return true
@@ -274,17 +330,29 @@ open class TwoDScrollView : FrameLayout {
       val x = scroller!!.currX
       val y = scroller!!.currY
       if (childCount > 0) {
-        scrollTo(
-          clamp(x, width - paddingRight - paddingLeft, scrollContentWidth),
-          clamp(y, height - paddingBottom - paddingTop, scrollContentHeight)
-        )
+        val rangeX = getScrollRangeX()
+        val rangeY = getScrollRangeY()
+        scrollTo(x.coerceIn(0, rangeX), y.coerceIn(0, rangeY))
+
+        // Hand leftover velocity to the edge effect when the fling over-flings past an edge.
+        if (!scroller!!.isFinished) {
+          val v = scroller!!.currVelocity.toInt()
+          if (enableScrollY) {
+            if (y < 0 && edgeGlowTop.isFinished) edgeGlowTop.onAbsorb(v)
+            else if (y > rangeY && edgeGlowBottom.isFinished) edgeGlowBottom.onAbsorb(v)
+          }
+          if (enableScrollX) {
+            if (x < 0 && edgeGlowLeft.isFinished) edgeGlowLeft.onAbsorb(v)
+            else if (x > rangeX && edgeGlowRight.isFinished) edgeGlowRight.onAbsorb(v)
+          }
+        }
       } else {
         scrollTo(x, y)
       }
       if (oldX != scrollX || oldY != scrollY) {
         onScrollChanged(scrollX, scrollY, oldX, oldY)
       }
-      postInvalidate()
+      postInvalidateOnAnimation()
     }
   }
 
@@ -639,7 +707,9 @@ open class TwoDScrollView : FrameLayout {
       scroller!!.fling(
         scrollX, scrollY, vx, vy,
         0, if (enableScrollX) maxOf(scrollContentWidth - viewportWidth, 0) else 0,
-        0, if (enableScrollY) maxOf(scrollContentHeight - viewportHeight, 0) else 0
+        0, if (enableScrollY) maxOf(scrollContentHeight - viewportHeight, 0) else 0,
+        if (enableScrollX) overflingDistance else 0,
+        if (enableScrollY) overflingDistance else 0
       )
 
       val movingDown = velocityY > 0
@@ -657,6 +727,59 @@ open class TwoDScrollView : FrameLayout {
       awakenScrollBars(SCROLL_ANIMATION_DURATION)
       invalidate()
     }
+  }
+
+  // Paint the overscroll effects, mirroring framework ScrollView edge drawing.
+  override fun draw(canvas: Canvas) {
+    super.draw(canvas)
+
+    if (!::edgeGlowTop.isInitialized) return
+
+    var needInvalidate = false
+    val sX = scrollX
+    val sY = scrollY
+
+    if (!edgeGlowTop.isFinished) {
+      val restore = canvas.save()
+      val w = width - paddingLeft - paddingRight
+      canvas.translate(paddingLeft.toFloat(), min(0, sY).toFloat())
+      edgeGlowTop.setSize(w, height)
+      if (edgeGlowTop.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (!edgeGlowBottom.isFinished) {
+      val restore = canvas.save()
+      val w = width - paddingLeft - paddingRight
+      val h = height
+      canvas.translate((-w + paddingLeft).toFloat(), (max(getScrollRangeY(), sY) + h).toFloat())
+      canvas.rotate(180f, w.toFloat(), 0f)
+      edgeGlowBottom.setSize(w, h)
+      if (edgeGlowBottom.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (!edgeGlowLeft.isFinished) {
+      val restore = canvas.save()
+      val h = height - paddingTop - paddingBottom
+      canvas.rotate(270f)
+      canvas.translate((-h + paddingTop).toFloat(), min(0, sX).toFloat())
+      edgeGlowLeft.setSize(h, width)
+      if (edgeGlowLeft.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (!edgeGlowRight.isFinished) {
+      val restore = canvas.save()
+      val h = height - paddingTop - paddingBottom
+      canvas.rotate(90f)
+      canvas.translate(-paddingTop.toFloat(), -(max(getScrollRangeX(), sX) + width).toFloat())
+      edgeGlowRight.setSize(h, width)
+      if (edgeGlowRight.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (needInvalidate) postInvalidateOnAnimation()
   }
 
   private fun clamp(n: Int, my: Int, child: Int): Int {

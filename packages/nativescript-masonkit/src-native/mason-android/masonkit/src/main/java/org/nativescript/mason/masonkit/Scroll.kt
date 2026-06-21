@@ -218,11 +218,17 @@ class Scroll @JvmOverloads constructor(
     val vpW = when { viewportW >= 0 -> viewportW; width > 0 -> width; else -> computedW }
     val vpH = when { viewportH >= 0 -> viewportH; height > 0 -> height; else -> computedH }
 
-    _enableScrollX = isScrollableX() || (isAutoX() && cw > vpW)
-    _enableScrollY = isScrollableY() || (isAutoY() && ch > vpH)
+    // Taffy content size (cw/ch) excludes the container's own padding; the
+    // scrollable region must include it (the computed box), else the bottom
+    // padding is unreachable. Use the larger of content size and computed box.
+    val fullW = maxOf(cw, computedW)
+    val fullH = maxOf(ch, computedH)
 
-    scrollContentWidth = if (_enableScrollX) maxOf(cw, vpW) else vpW
-    scrollContentHeight = if (_enableScrollY) maxOf(ch, vpH) else vpH
+    _enableScrollX = isScrollableX() || (isAutoX() && fullW > vpW)
+    _enableScrollY = isScrollableY() || (isAutoY() && fullH > vpH)
+
+    scrollContentWidth = if (_enableScrollX) maxOf(fullW, vpW) else vpW
+    scrollContentHeight = if (_enableScrollY) maxOf(fullH, vpH) else vpH
   }
 
   // Layout

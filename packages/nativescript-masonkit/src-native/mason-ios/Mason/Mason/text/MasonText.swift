@@ -266,7 +266,19 @@ public class MasonTextLayer: CALayer {
     }
     // Ensure the context starts clear (transparent)
     context.clear(bounds)
-    
+
+    // Clip background and text content to border-radius, matching the pattern in
+    // MasonUIView.draw: saveGState → clip to rounded path → draw content → restoreGState
+    // → draw border (border uses its own rounded paths and must not be clipped).
+    textView.style.mBorderRender.resolve(for: bounds)
+    let hasRadii = textView.style.mBorderRender.hasRadii()
+    if hasRadii {
+      context.saveGState()
+      let clipPath = textView.style.mBorderRender.getClipPath(rect: bounds, radius: textView.style.mBorderRender.radius)
+      context.addPath(clipPath.cgPath)
+      context.clip()
+    }
+
     // Draw background first — but skip for paragraph text nodes or when a
     // parent container supplies a CSS `background` string. This avoids
     // the text layer filling the whole paragraph when the visual background
@@ -278,11 +290,11 @@ public class MasonTextLayer: CALayer {
       let parentBg = tv.node.parent?.style.background.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       if !parentBg.isEmpty && !hasOwnBg { skipBackground = true }
     }
-    
+
     if !skipBackground {
       textView.style.mBackground.draw(on: self, in: context, rect: bounds)
     }
-    
+
     // If this is a flattened blockquote, draw an inline left bar (on top of background)
     var flattenedBlockquote = false
     if let tv = textView as? MasonText, tv.type == .Blockquote {
@@ -301,15 +313,21 @@ public class MasonTextLayer: CALayer {
         }
       }
     }
-    
+
     // Draw text
     textView.engine.drawText(context: context, rect: bounds)
-    
+
+    // Restore pre-clip state before drawing border — border uses its own rounded path
+    // and must not be constrained by the content clip set above.
+    if hasRadii {
+      context.restoreGState()
+    }
+
     // Draw full border only when not flattened (flattened blockquote uses inline bar above)
     if !flattenedBlockquote {
       textView.style.mBorderRender.draw(in: context, rect: bounds)
     }
-    
+
     textView.style.applyResolvedFilter(in: context, rect: bounds, view: textView)
   }
 }
@@ -644,7 +662,7 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       break
     case .A:
       node.style.display = Display.Inline
-      node.style.decorationLine = DecorationLine.Underline
+      // No forced underline — match web (CSS resets links); honor text-decoration.
       node.hasClickGesture = true
       let recognizer = MasonGestureRecognizer(targetView: self)
       recognizer.owner = self

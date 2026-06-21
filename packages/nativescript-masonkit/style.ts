@@ -3002,6 +3002,9 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset (e.g. a media query toggling grid-rows off) passes null; the native
+    // setters are non-null, so coerce to '' which clears the template.
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateRows(this.nativeView, value);
     }
@@ -3045,6 +3048,9 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset (e.g. a media query toggling grid-cols off) passes null; the native
+    // setters are non-null, so coerce to '' which clears the template.
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateColumns(this.nativeView, value);
     }
@@ -3073,6 +3079,8 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset passes null; the native setters are non-null, coerce to '' (clears it).
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateAreas(this.nativeView, value);
     }
@@ -3242,7 +3250,9 @@ export class Style {
       this.prepareMut();
       setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, value);
       setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
-      setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 0);
+      // Values ≥ 4 are rem-derived px values (smallest Tailwind rem = leading-3: 0.75rem→12).
+      // Values < 4 are genuine CSS unitless multipliers (leading-loose=2, leading-normal=1.5).
+      setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, value >= 4 ? 1 : 0);
       this.commitState(StateKeys.LINE_HEIGHT);
     } else if (typeof value === 'object') {
       switch (value.unit) {
@@ -3538,6 +3548,15 @@ export class Style {
       value,
       () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, value),
       () => ((this.nativeView as MasonElementObjc).style.borderRadius = value),
+    );
+  }
+
+  set textDecoration(value: string) {
+    this.setPseudoCssStringValue(
+      'text-decoration',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setTextDecoration(this.nativeView, value),
+      () => (this.nativeView as MasonElementObjc).style.setTextDecoration(value),
     );
   }
 

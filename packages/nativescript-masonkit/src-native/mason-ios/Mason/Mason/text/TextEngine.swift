@@ -733,8 +733,12 @@ public class TextEngine: NSObject {
     if let provider = container as? SingleLineTextBaselineProviding {
       topBaselineY = provider.singleLineTextBaselineY(ascent: ascent, descent: descent, in: drawBounds)
     } else {
-      // Default text containers stay top-aligned to preserve block text behavior.
-      topBaselineY = drawBounds.minY + ascent
+      // Centre the glyph box within the content box. For a single line this is the
+      // CSS half-leading (line-height taller than the font splits evenly above and
+      // below), which also vertically centres text in padded elements like links/
+      // buttons instead of pinning it to the top. Never go above the content top.
+      let extra = max(0, drawBounds.height - (ascent + descent))
+      topBaselineY = drawBounds.minY + extra / 2 + ascent
     }
 
     return Self.coreTextSingleLineBaselineY(fromTop: topBaselineY, in: bounds)

@@ -1564,6 +1564,10 @@ public struct StateKeys : Swift.Equatable {
     @objc get
     @objc set
   }
+  @objc public func setTextDecoration(_ css: Swift.String)
+  @objc public func setBorderColor(_ css: Swift.String)
+  @objc public func applyListStyleType(_ css: Swift.String)
+  @objc public func applyListStylePosition(_ css: Swift.String)
   @objc public var fontSize: Swift.Int32 {
     @objc get
     @objc set

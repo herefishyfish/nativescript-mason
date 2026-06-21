@@ -207,15 +207,21 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
         )
       }
 
-      // Apply line height
+      // Resolve line-height to absolute (multiplier * font-size) + idempotent
+      // FixedLineHeightSpan; RelativeLineHeightSpan compounds on repeated
+      // chooseHeight() calls into an exponential blowup.
       attributes.lineHeight?.let { lineHeight ->
         val type = attributes.lineHeightType ?: 0
         lineHeight.takeIf { it > 0 }?.let {
-          // 1 px/dip
           if (type == StyleState.SET) {
             spannable.setSpan(FixedLineHeightSpan(it.toInt()), start, end, flags)
           } else {
-            spannable.setSpan(RelativeLineHeightSpan(it), start, end, flags)
+            val fontSizeDip = (attributes.fontSize?.takeIf { fs -> fs > 0 }
+              ?: Constants.DEFAULT_FONT_SIZE).toFloat()
+            val absolute = (it * fontSizeDip).toInt()
+            if (absolute > 0) {
+              spannable.setSpan(FixedLineHeightSpan(absolute), start, end, flags)
+            }
           }
         }
       }
