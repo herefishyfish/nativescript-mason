@@ -346,7 +346,12 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
   }()
   
   private var frameCache: [Int: CTFrame] = [:] // keyed by hash of attributed string + width
-  
+
+  // Last laid-out size; used to force a text redraw on resize (e.g. rotation).
+  // needsDisplayOnBoundsChange alone leaves offscreen views with a stale bitmap
+  // that CoreAnimation rescales into the new bounds, squishing the glyphs.
+  private var lastLaidOutSize: CGSize = .zero
+
   private func cachedFrame(for text: NSAttributedString, width: CGFloat) -> CTFrame {
     let key = text.hash ^ width.hashValue
     if let cached = frameCache[key] {
@@ -490,6 +495,14 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
   
   public override func layoutSubviews() {
     super.layoutSubviews()
+
+    // On a size change, redraw the text layer at the new width rather than
+    // letting CoreAnimation rescale a stale bitmap.
+    if !bounds.size.equalTo(lastLaidOutSize) {
+      lastLaidOutSize = bounds.size
+      textLayer.setNeedsDisplay()
+    }
+
     // Ensure engine layout has been computed for the containing layout so float rects are available
     let containerNode = node.parent ?? node
     
@@ -602,7 +615,9 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       break
     case .Code:
       style.display = .Inline
-      style.fontFamily = "monospace"
+      // ui-monospace → Menlo; the `monospace` generic maps to Courier, which looks
+    // wide/loose next to Android's clean mono.
+    style.fontFamily = "ui-monospace"
       break
     case .H1:
       fontSize = 32 // 2em
@@ -652,7 +667,9 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       break
     case .Pre:
       style.display = .Block
-      style.fontFamily = "monospace"
+      // ui-monospace → Menlo; the `monospace` generic maps to Courier, which looks
+    // wide/loose next to Android's clean mono.
+    style.fontFamily = "ui-monospace"
       whiteSpace = .Pre
       style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0)) // 1em
       break

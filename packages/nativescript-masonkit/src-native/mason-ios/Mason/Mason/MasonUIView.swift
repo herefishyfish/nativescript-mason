@@ -313,26 +313,11 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       isOpaque = false
     }
 
-    // Rasterize only the gradient + rounded-corners case, and never when
-    // layer.mask is set (rasterize-then-mask produces black anti-alias fringes).
-    // Box-shadow must NOT trigger it: shadows render via a child layer, and
-    // flattening the subtree here visibly softens small text.
-    //
-    // Also skip rasterization whenever the view has subviews (i.e. it contains
-    // text/child elements). shouldRasterize flattens the whole sublayer subtree
-    // into an offscreen bitmap that is resampled at the layer's (often
-    // fractional) screen position during compositing, which softens child text.
-    // The gradient itself is already drawn clipped to the rounded path in draw(_:),
-    //  so rasterization is only a caching optimization and is safe to drop for content containers.
-    
-    let hasGradient = !bg.layers.isEmpty
-    let wantsRasterize = hasGradient && style.mBorderRender.hasRadii() && subviews.isEmpty
-    if wantsRasterize && layer.mask == nil {
-      layer.shouldRasterize = true
-      layer.rasterizationScale = CGFloat(NSCMason.scale)
-    } else {
-      layer.shouldRasterize = false
-    }
+    // Never rasterize: it flattens the sublayer subtree into an offscreen bitmap
+    // that gets resampled when composited, softening child text. draw(_:) already
+    // clips the gradient background to the rounded border path, so corners stay
+    // clean without it.
+    layer.shouldRasterize = false
     // Re-apply transform after layout changes
     style.applyTransformFromBuffer()
   }
