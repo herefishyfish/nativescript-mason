@@ -725,7 +725,23 @@ class MasonElementHelpers: NSObject {
         let insets = UIEdgeInsets(top: top, left: left, bottom: bottom, right: right)
         newFrame.inset(by: insets)
       }
-      
+
+      // Root scroll container is a VIEWPORT: Mason sizes a height:auto / visible
+      // node to its full content, but the on-screen box must not exceed the
+      // available space, or there is no scrollable delta (box == contentSize).
+      // Clamp the box to the superview (the NativeScript-managed viewport); the
+      // children stay laid out in the full content space and `contentSize`
+      // (computed below from the unclamped layout) overflows it → scroll engages.
+      // Only roots (superview is not a MasonElement) self-size; nested nodes are
+      // positioned by their Mason parent and must keep the computed frame.
+      if let mv = view as? MasonUIView, mv.isScrollContainer,
+         !(view.superview is MasonElement),
+         let avail = view.superview?.bounds.size,
+         avail.width > 0, avail.height > 0 {
+        if newFrame.size.height > avail.height { newFrame.size.height = avail.height }
+        if newFrame.size.width > avail.width { newFrame.size.width = avail.width }
+      }
+
       // Setting `view.frame` is undefined when the view has a non-identity
       // transform, so position via bounds+center instead (equivalent to frame
       // when the transform is identity).
