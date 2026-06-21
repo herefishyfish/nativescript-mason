@@ -3383,6 +3383,55 @@ export class Style {
     }
   }
 
+  get textTransform() {
+    if (!this.style_view) {
+      return 'none';
+    }
+    const type = getInt8(this.style_view, StyleKeys.TEXT_TRANSFORM);
+    switch (type) {
+      case 1:
+        return 'capitalize';
+      case 2:
+        return 'uppercase';
+      case 3:
+        return 'lowercase';
+      default:
+        return 'none';
+    }
+  }
+
+  set textTransform(value: 'none' | 'capitalize' | 'uppercase' | 'lowercase') {
+    if (!this.style_view) {
+      return;
+    }
+
+    let transform = -1;
+
+    switch (value) {
+      case 'none':
+        transform = 0;
+        break;
+      case 'capitalize':
+        transform = 1;
+        break;
+      case 'uppercase':
+        transform = 2;
+        break;
+      case 'lowercase':
+        transform = 3;
+        break;
+      default:
+        break;
+    }
+
+    if (transform !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.TEXT_TRANSFORM, transform);
+      setInt8(this.style_view, StyleKeys.TEXT_TRANSFORM_STATE, 1);
+      this.commitState(StateKeys.TEXT_TRANSFORM);
+    }
+  }
+
   get background() {
     if (!this.nativeView) {
       return '';

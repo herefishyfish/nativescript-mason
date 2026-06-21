@@ -1,4 +1,4 @@
-import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
+import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, textTransformProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
 import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
@@ -540,6 +540,23 @@ textAlignmentProperty.overrideHandlers({
         // Revert to old value if newValue is invalid
         // @ts-ignore
         target.textAlignment = oldValue as never;
+      }
+    }
+  },
+});
+
+textTransformProperty.overrideHandlers({
+  name: 'textTransform',
+  cssName: 'text-transform',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      if (newValue) {
+        view.textTransform = newValue as never;
+      } else {
+        // Revert to old value if newValue is invalid
+        // @ts-ignore
+        target.textTransform = oldValue as never;
       }
     }
   },
