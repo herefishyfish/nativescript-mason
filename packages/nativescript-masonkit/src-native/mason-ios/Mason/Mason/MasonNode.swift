@@ -647,7 +647,7 @@ public class MasonNode: NSObject {
       attrs[.font] = font
       attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] = weight.rawValue
       attrs[NSAttributedString.Key(Constants.FONT_STYLE)] = fontStyle
-      fontNaturalLineHeight = CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
+      fontNaturalLineHeight = CTFontGetAscent(font) + CTFontGetDescent(font)
     }
     
     

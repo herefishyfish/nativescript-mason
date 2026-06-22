@@ -193,19 +193,15 @@ class TextView @JvmOverloads constructor(
             }
           }
         }
-        // A CSS line-height taller than the font adds half-leading above AND
-        // below each line. Android's StaticLayout clamps the FIRST line's top,
-        // so on a single line all the extra leading lands below the glyphs and
-        // the text sits high (visible in padded one-line elements like buttons).
-        // Centre a single line in its line box by shifting it down half the
-        // leading — matching the web. Multi-line text flows top-down as-is.
         val fm = paint.fontMetricsInt
-        val glyphH = fm.descent - fm.ascent
         val contentH = height - paddingTop - paddingBottom
-        val dy = if (layoutToDraw.lineCount == 1 && contentH > glyphH) (contentH - glyphH) / 2f else 0f
+        val dy = if (layoutToDraw.lineCount == 1 && contentH > 0) {
+          val baseline0 = layoutToDraw.getLineBaseline(0)
+          val glyphCenter = baseline0 + (fm.ascent + fm.descent) / 2f
+          contentH / 2f - glyphCenter
+        } else 0f
         // We bypass super.onDraw, which normally insets the layout by the view's
-        // padding — so apply paddingLeft/paddingTop here. Without it, padded text
-        // (e.g. <a> button pills) draws at the view's top-left, ignoring padding.
+        // padding — so apply paddingLeft/paddingTop here.
         val tx = paddingLeft.toFloat()
         val ty = paddingTop.toFloat() + dy
         if (tx != 0f || ty != 0f) {
