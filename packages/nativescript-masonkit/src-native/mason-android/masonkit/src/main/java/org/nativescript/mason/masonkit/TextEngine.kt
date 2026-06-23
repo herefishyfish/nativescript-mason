@@ -362,8 +362,15 @@ class TextEngine(val container: TextContainer) {
     // width constraint so StaticLayout won't measure wider than the author
     // intended. Percent/Auto cases require context-dependent resolution
     // and are not handled here.
-
-    when (val msw = style.maxSize.width) {
+    //
+    // Skip this during the min-content pass (availableWidth == -1): min-content
+    // is the widest unbreakable word and is NOT reduced by `max-width`. Clamping
+    // here forces widthConstraint to the max-width, so the min-content branch
+    // below returns the wrapped line width (~max-width) instead of the widest
+    // word. A grid item then reports a min-content as large as its max-width,
+    // which becomes an `auto` track's base size — the track can no longer shrink
+    // to its container and overflows (e.g. a heading with `max-w-*` never wraps).
+    if (availableWidth != -1f) when (val msw = style.maxSize.width) {
       is Dimension.Points -> {
         val resolvedMax = msw.points.toInt()
         if (resolvedMax > 0) {
