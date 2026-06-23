@@ -50,6 +50,14 @@ const FEATURES = [
     count: 'Playground',
   },
   {
+    id: 'Position',
+    label: 'Position',
+    desc: 'Absolute insets, stretch, centering & badges',
+    bg: '#00cec9',
+    glyph: 'Po',
+    count: 'Tests',
+  },
+  {
     id: 'QA',
     label: 'QA Harness',
     desc: 'Scroll-auto, backdrop-filter & stress tests',

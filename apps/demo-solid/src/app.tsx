@@ -6,6 +6,7 @@ import Grid from './components/grid'
 import Shadows from './components/shadows'
 import Transforms from './components/transforms'
 import Backgrounds from './components/backgrounds'
+import Position from './components/position'
 import QA from './components/qa'
 
 declare module 'solid-navigation' {
@@ -18,6 +19,7 @@ declare module 'solid-navigation' {
       Shadows: RouteDefinition
       Transforms: RouteDefinition
       Backgrounds: RouteDefinition
+      Position: RouteDefinition
       QA: RouteDefinition
     }
   }
@@ -33,6 +35,7 @@ const App = () => {
       <Route name="Shadows" component={Shadows} />
       <Route name="Transforms" component={Transforms} />
       <Route name="Backgrounds" component={Backgrounds} />
+      <Route name="Position" component={Position} />
       <Route name="QA" component={QA} />
     </StackRouter>
   )
