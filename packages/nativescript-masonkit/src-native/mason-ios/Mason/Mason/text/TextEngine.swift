@@ -508,6 +508,23 @@ public class TextEngine: NSObject {
       if normalLineHeight > size.height { size.height = normalLineHeight }
     }
 
+    // A line-height tighter than the font's natural line box makes CoreText clamp
+    // each line's ascent/descent, so the measured height (≈ lines × line-height)
+    // is short of the glyph ink, which then clips at the edges. Reserve the
+    // shortfall once so the first line's full ascent and last line's full descent
+    // fit; the draw path re-anchors the baselines into that reserved space.
+    if allowWrap, size.height > 0,
+       let paragraph = text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle,
+       paragraph.maximumLineHeight > 0,
+       let fv = engine.node.getDefaultAttributes()[.font],
+       CFGetTypeID(fv as CFTypeRef) == CTFontGetTypeID() {
+      let font = fv as! CTFont
+      let naturalLineHeight = CTFontGetAscent(font) + CTFontGetDescent(font)
+      if paragraph.maximumLineHeight < naturalLineHeight {
+        size.height += naturalLineHeight - paragraph.maximumLineHeight
+      }
+    }
+
     size.height = (size.height * scale).rounded(.up)
 
     if let known = known {
@@ -1082,6 +1099,33 @@ public class TextEngine: NSObject {
     var origins = Array(repeating: CGPoint.zero, count: linesCount)
     CTFrameGetLineOrigins(frame, CFRangeMake(0, 0), &origins)
 
+    // Re-anchor the vertical baseline using the font's true metrics rather than
+    // CoreText's frame positioning, which is driven by the (possibly clamped)
+    // line-height and leaves the glyph box off-centre or clipped.
+    //   • A single line is centred within the content box — same rule as
+    //     drawSingleLine — so padded inline-blocks (links, buttons, pills) sit in
+    //     the middle instead of riding high/low from font ascent/descent asymmetry.
+    //   • A tight multi-line block (line-height < the font's natural line box) has
+    //     its first baseline pinned to the full font ascent so the first line's
+    //     ascenders and the last line's descenders stay inside the reserved box.
+    var textBaseY = layoutBounds.origin.y
+    if text.length > 0,
+       let fontValue = node.getDefaultAttributes()[.font],
+       CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID() {
+      let font = fontValue as! CTFont
+      let fontAscent = CTFontGetAscent(font)
+      let naturalLineHeight = fontAscent + CTFontGetDescent(font)
+      let paragraph = text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+      let maxLineHeight = paragraph?.maximumLineHeight ?? 0
+      if linesCount == 1 {
+        let extra = max(0, drawBounds.height - naturalLineHeight)
+        let baselineFromTop = drawBounds.origin.y + extra / 2 + fontAscent
+        textBaseY = bounds.height - origins[0].y - baselineFromTop
+      } else if maxLineHeight > 0 && maxLineHeight < naturalLineHeight {
+        textBaseY = bounds.height - drawBounds.origin.y - fontAscent - origins[0].y
+      }
+    }
+
     // Draw text shadows if any
     if !style.textShadows.isEmpty {
       for shadow in style.textShadows {
@@ -1099,7 +1143,7 @@ public class TextEngine: NSObject {
           case .Left, .Auto, .Start, .Justify:
             horizontalOffset = 0
           }
-          let textPos = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y)
+          let textPos = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY)
           context.saveGState()
           context.setShadow(offset: CGSize(width: shadow.offsetX, height: -shadow.offsetY), blur: shadow.blurRadius, color: shadow.color.cgColor)
           
@@ -1133,7 +1177,7 @@ public class TextEngine: NSObject {
       case .Left, .Auto, .Start, .Justify:
         horizontalOffset = 0
       }
-      context.textPosition = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y)
+      context.textPosition = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY)
       let runsCF = CTLineGetGlyphRuns(line)
       let runCount = CFArrayGetCount(runsCF)
       for j in 0..<runCount {
@@ -1151,7 +1195,7 @@ public class TextEngine: NSObject {
           // Fake-bold only when a bold weight is requested but no real bold face
           // exists. `weight` is the CSS weight (100–900), so threshold is 600.
           if !isBold && weight >= 600 {
-              drawRunWithFakeBold(run, in: context, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y))
+              drawRunWithFakeBold(run, in: context, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY))
             } else {
             CTRunDraw(run, context, CFRange(location: 0, length: 0))
           }
@@ -1161,7 +1205,7 @@ public class TextEngine: NSObject {
       }
 
       // Draw text decorations (underline, strikethrough) for this line
-      drawTextDecorations(for: line, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y), in: context)
+      drawTextDecorations(for: line, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY), in: context)
     }
 
     context.restoreGState()
@@ -1170,7 +1214,7 @@ public class TextEngine: NSObject {
 
     for i in 0..<linesCount {
       let line = unsafeBitCast(CFArrayGetValueAtIndex(linesCF, i), to: CTLine.self)
-      let lineOrigin = origins[i]
+      let lineOrigin = CGPoint(x: origins[i].x, y: origins[i].y + (textBaseY - layoutBounds.origin.y))
       drawInlineAttachments(for: line, origin: lineOrigin, frameBounds: layoutBounds, clipRect: drawBounds, in: context, bounds: bounds)
     }
 
