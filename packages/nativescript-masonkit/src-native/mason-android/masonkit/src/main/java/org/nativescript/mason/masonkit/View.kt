@@ -168,11 +168,12 @@ open class View @JvmOverloads constructor(
 
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    // so they can extend beyond child bounds
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-
-    ViewUtils.dispatchDraw(this, canvas, style) { c ->
+    // Draw children's outset box shadows at parent level so they can extend
+    // beyond child bounds — after this view's own background/border (see
+    // ViewUtils.render) so an opaque parent background can't paint over them.
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) { c ->
       // Draw list markers for HTML <li> children before drawing children,
       // so markers appear in the parent's padding zone (left of the content area).
       drawListItemMarkers(c)

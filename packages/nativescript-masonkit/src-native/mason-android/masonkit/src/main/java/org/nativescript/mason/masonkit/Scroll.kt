@@ -93,8 +93,9 @@ class Scroll @JvmOverloads constructor(
   }
 
   override fun dispatchDraw(canvas: Canvas) {
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-    ViewUtils.dispatchDraw(this, canvas, style) {
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) {
       super.dispatchDraw(it)
     }
   }
