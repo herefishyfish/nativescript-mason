@@ -96570,14 +96570,14 @@
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/text\/TextEngine.swift",
       "kind": "FloatLiteral",
-      "offset": 32807,
+      "offset": 34134,
       "length": 3,
       "value": "1.0"
     },
     {
       "filePath": "\/Users\/triniwiz\/Documents\/GitHub\/nativescript-mason\/packages\/nativescript-masonkit\/src-native\/mason-ios\/Mason\/Mason\/text\/TextEngine.swift",
       "kind": "BooleanLiteral",
-      "offset": 51434,
+      "offset": 52926,
       "length": 5,
       "value": "false"
     },

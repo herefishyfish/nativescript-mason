@@ -745,17 +745,41 @@ public class TextEngine: NSObject {
     return bounds.height - baselineY
   }
 
+  /// Baseline (top-origin) that vertically centres a single line in `drawBounds`.
+  /// We centre the visible cap-height block (cap-top → baseline) rather than the
+  /// full ascent+descent box: the ascent's internal leading and the (usually
+  /// empty) descent make full-box centring read as slightly high. This matches how
+  /// Android's text lands. `capHeight <= 0` falls back to centring the glyph box.
+  ///
+  /// `baselineOffset` is the value getDefaultAttributes() puts on the run for loose
+  /// line-heights — CoreText raises the glyphs by it at draw time, so we add it
+  /// back to the baseline to cancel it out. Without this, fonts whose natural line
+  /// box is much smaller than the CSS line-height render visibly high. A guard
+  /// keeps the ascenders from clipping above the content top in short boxes.
+  internal func singleLineBaselineFromTop(ascent: CGFloat, descent: CGFloat, capHeight: CGFloat, baselineOffset: CGFloat, in drawBounds: CGRect) -> CGFloat {
+    let centred: CGFloat
+    if capHeight > 0 {
+      centred = drawBounds.midY + capHeight / 2
+    } else {
+      let extra = max(0, drawBounds.height - (ascent + descent))
+      centred = drawBounds.minY + extra / 2 + ascent
+    }
+    let ascenderGuard = drawBounds.minY + ascent
+    return max(centred, ascenderGuard) + baselineOffset
+  }
+
   private func singleLineBaselineY(ascent: CGFloat, descent: CGFloat, in drawBounds: CGRect, bounds: CGRect) -> CGFloat {
     let topBaselineY: CGFloat
     if let provider = container as? SingleLineTextBaselineProviding {
       topBaselineY = provider.singleLineTextBaselineY(ascent: ascent, descent: descent, in: drawBounds)
     } else {
-      // Centre the glyph box within the content box. For a single line this is the
-      // CSS half-leading (line-height taller than the font splits evenly above and
-      // below), which also vertically centres text in padded elements like links/
-      // buttons instead of pinning it to the top. Never go above the content top.
-      let extra = max(0, drawBounds.height - (ascent + descent))
-      topBaselineY = drawBounds.minY + extra / 2 + ascent
+      let attrs = node.getDefaultAttributes()
+      let baselineOffset = (attrs[.baselineOffset] as? CGFloat) ?? 0
+      let capHeight: CGFloat = {
+        if let fv = attrs[.font], CFGetTypeID(fv as CFTypeRef) == CTFontGetTypeID() { return CTFontGetCapHeight(fv as! CTFont) }
+        return 0
+      }()
+      topBaselineY = singleLineBaselineFromTop(ascent: ascent, descent: descent, capHeight: capHeight, baselineOffset: baselineOffset, in: drawBounds)
     }
 
     return Self.coreTextSingleLineBaselineY(fromTop: topBaselineY, in: bounds)
@@ -1118,8 +1142,8 @@ public class TextEngine: NSObject {
       let paragraph = text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
       let maxLineHeight = paragraph?.maximumLineHeight ?? 0
       if linesCount == 1 {
-        let extra = max(0, drawBounds.height - naturalLineHeight)
-        let baselineFromTop = drawBounds.origin.y + extra / 2 + fontAscent
+        let baselineOffset = (text.attribute(.baselineOffset, at: 0, effectiveRange: nil) as? CGFloat) ?? 0
+        let baselineFromTop = singleLineBaselineFromTop(ascent: fontAscent, descent: naturalLineHeight - fontAscent, capHeight: CTFontGetCapHeight(font), baselineOffset: baselineOffset, in: drawBounds)
         textBaseY = bounds.height - origins[0].y - baselineFromTop
       } else if maxLineHeight > 0 && maxLineHeight < naturalLineHeight {
         textBaseY = bounds.height - drawBounds.origin.y - fontAscent - origins[0].y
@@ -1298,7 +1322,7 @@ public class TextEngine: NSObject {
     
     // Check if text contains explicit line breaks (from <br> tags)
     let hasExplicitLineBreaks = text.string.contains("\n")
-    
+
     // Handle nowrap case - but still respect explicit line breaks from <br>
     if style.textWrap == .NoWrap && !hasExplicitLineBreaks {
       drawSingleLine(text: text, in: context, bounds: rect)
