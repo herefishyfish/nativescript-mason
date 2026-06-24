@@ -24,7 +24,7 @@ private let cssNames = [
 ]
 
 private let lengthPercentageRegex = try! NSRegularExpression(
-    pattern: "^(-?(?:\\d*\\.\\d+|\\d+\\.\\d*|\\d+))(px|%|dip|em)?;?$",
+    pattern: "^(-?(?:\\d*\\.\\d+|\\d+\\.\\d*|\\d+)(?:[eE][+-]?\\d+)?)(px|%|dip|em)?;?$",
     options: []
 )
 
@@ -36,17 +36,20 @@ func parseLengthPercentage(_ value: String, scale: Float = NSCMason.scale) -> Ma
   }
   let ns = v as NSString
   let parsed = Double(ns.substring(with: match.range(at: 1)))
-  let num = Float(parsed ?? 0)
+  // Clamp values that exceed a practical maximum (e.g. Float.MAX_VALUE from
+  // calc(infinity*1px) evaluated by NS's CSS parser) to avoid overflow.
+  let rawNum = Float(parsed ?? 0)
+  let num = max(-9999, min(9999, rawNum))
 
   let unitRange = match.range(at: 2)
   let unit: String? =
       unitRange.location != NSNotFound
       ? String(v[Range(unitRange, in: v)!])
       : nil
-  
+
   switch unit {
-  case "px": return .Points(num)
-  case "%": return .Percent(num / 100)
+  case "px": return .Points(num * scale)
+  case "%": return .Percent(rawNum / 100)  // percentages don't overflow so use rawNum
   case "dip": return .Points(num * scale)
   default: do {
     if(parsed != nil){
@@ -76,7 +79,7 @@ func parseLengthPercentageAuto(_ value: String, scale: Float = NSCMason.scale) -
   
   switch unit {
   case "auto": return .Auto
-  case "px": return .Points(num)
+  case "px": return .Points(num * scale)
   case "%": return .Percent(num / 100)
   case "dip": return .Points(num * scale)
   default: do {
@@ -109,9 +112,9 @@ func parseLength(_ style: MasonStyle, _ value: String, scale: Float = NSCMason.s
   switch unit {
   case "px":
     if(resolve){
-      return num / scale
+      return num
     }
-    return num
+    return num * scale
   case "%": return 0
   case "dip": return num * scale
   case "em": return (Float(style.fontSize) * scale) * num
@@ -127,6 +130,28 @@ func parseLength(_ style: MasonStyle, _ value: String, scale: Float = NSCMason.s
 
 // Split regex
 private let splitRegex = try! NSRegularExpression(pattern: "\\s+", options: [])
+
+/// Split on top-level whitespace but preserve parentheses groups (e.g. "rgba(0, 1, 2)").
+func splitTopLevelWhitespace(_ input: String) -> [String] {
+  var result: [String] = []
+  var current = ""
+  var depth = 0
+  for ch in input {
+    if ch == "(" { depth += 1; current.append(ch); continue }
+    if ch == ")" { depth = max(0, depth - 1); current.append(ch); continue }
+
+    if ch.isWhitespace && depth == 0 {
+      let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty { result.append(trimmed) }
+      current = ""
+    } else {
+      current.append(ch)
+    }
+  }
+  let finalTrim = current.trimmingCharacters(in: .whitespacesAndNewlines)
+  if !finalTrim.isEmpty { result.append(finalTrim) }
+  return result
+}
 
 
 // MARK: - Parsing
@@ -202,15 +227,54 @@ extension CSSBorderRenderer {
     self.invalidateCache()
     self.style.node.view?.setNeedsDisplay()
   }
+
+  /// Parse a side-specific CSS border shorthand, e.g. `border-left: 4px solid #00B894`.
+  func parseBorderSideShorthand(_ side: CSSBorderRenderer.Side, _ value: String) {
+    let borderSide: BorderSide
+    switch side {
+    case .left: borderSide = self.left
+    case .top: borderSide = self.top
+    case .right: borderSide = self.right
+    case .bottom: borderSide = self.bottom
+    }
+
+    if value.isEmpty {
+      borderSide.width = .Points(0)
+      borderSide.style = .none
+      borderSide.color = .clear
+      self.invalidateCache()
+      self.style.node.view?.setNeedsDisplay()
+      return
+    }
+
+    let parsed = CSSBorderRenderer.parseBorderShorthand(value)
+    if parsed.color == nil && parsed.style == nil && (parsed.widths == nil || parsed.widths!.isEmpty) {
+      return
+    }
+
+    let width = (parsed.widths != nil && !parsed.widths!.isEmpty) ? parsed.widths![0] : MasonLengthPercentage.Points(3)
+    let style = parsed.style ?? .solid
+    let color = parsed.color ?? .black
+
+    borderSide.width = width
+    borderSide.style = style
+    borderSide.color = color
+
+    self.invalidateCache()
+    self.style.node.view?.setNeedsDisplay()
+  }
+
   /// Parse CSS shorthand border: "1px solid red"
   static func parseBorderShorthand(_ value: String) -> (widths: [MasonLengthPercentage]?, style: CSSBorderRenderer.BorderStyle?, color: UIColor?) {
     var widths: [MasonLengthPercentage] = []
     var style: BorderStyle? = nil
     var color: UIColor? = nil
 
-    let tokens = value.split(separator: " ").map { String($0).lowercased() }
-    for t in tokens {
-      if let s = BorderStyle(name: t) { style = s; continue }
+    let tokens = splitTopLevelWhitespace(value)
+    for raw in tokens {
+      let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+      let lower = t.lowercased()
+      if let s = BorderStyle(name: lower) { style = s; continue }
       if let w = parseLengthPercentage(t) { widths.append(w); continue }
       if let c = parseColor(t) { color = c; continue }
     }
@@ -220,27 +284,49 @@ extension CSSBorderRenderer {
   
   
   static func parseBorderRadius(_ style: MasonStyle, _ value: String) {
-      let parts = value
-          .split(whereSeparator: { $0.isWhitespace })
-          .compactMap { parseLengthPercentage(String($0)) }
+      // Support horizontal/vertical slash syntax: e.g. "10px 20px / 5px 6px"
+      let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+      let horizPart: String
+      let vertPart: String
+      if let slashRange = cleaned.range(of: "/") {
+        horizPart = cleaned[..<slashRange.lowerBound].trimmingCharacters(in: .whitespaces)
+        vertPart = cleaned[slashRange.upperBound...].trimmingCharacters(in: .whitespaces)
+      } else {
+        horizPart = cleaned
+        vertPart = ""
+      }
 
-      // Map 1-4 values to corners per CSS spec
-      let corners: [(MasonLengthPercentage, MasonLengthPercentage)]
-      switch parts.count {
-      case 1:
-        corners = Array(repeating: (parts[0], parts[0]), count: 4)
-      case 2:
-        corners = [(parts[0], parts[0]), (parts[1], parts[1]),
-                   (parts[0], parts[0]), (parts[1], parts[1])]
-      case 3:
-        corners = [(parts[0], parts[0]), (parts[1], parts[1]),
-                   (parts[2], parts[2]), (parts[1], parts[1])]
-      case 4:
-        corners = [(parts[0], parts[0]), (parts[1], parts[1]),
-                   (parts[2], parts[2]), (parts[3], parts[3])]
-      default:
+      let hTokens = horizPart.split(whereSeparator: { $0.isWhitespace }).compactMap { parseLengthPercentage(String($0)) }
+      let vTokens = vertPart.isEmpty ? [] : vertPart.split(whereSeparator: { $0.isWhitespace }).compactMap { parseLengthPercentage(String($0)) }
+
+      func mapTokens(_ tokens: [MasonLengthPercentage]) -> [(MasonLengthPercentage, MasonLengthPercentage)]? {
+        switch tokens.count {
+        case 1:
+          return Array(repeating: (tokens[0], tokens[0]), count: 4)
+        case 2:
+          return [(tokens[0], tokens[0]), (tokens[1], tokens[1]), (tokens[0], tokens[0]), (tokens[1], tokens[1])]
+        case 3:
+          return [(tokens[0], tokens[0]), (tokens[1], tokens[1]), (tokens[2], tokens[2]), (tokens[1], tokens[1])]
+        case 4:
+          return [(tokens[0], tokens[0]), (tokens[1], tokens[1]), (tokens[2], tokens[2]), (tokens[3], tokens[3])]
+        default:
+          return nil
+        }
+      }
+
+      guard let hMapped = mapTokens(hTokens) else { return }
+      let vMappedPairs: [(MasonLengthPercentage, MasonLengthPercentage)]
+      if vTokens.isEmpty {
+        vMappedPairs = hMapped
+      } else if let vm = mapTokens(vTokens) {
+        // vm currently pairs each token with itself; we need separate horizontal/vertical
+        // We'll combine: hMapped contains (h,h) pairs; vm contains (v,v) pairs
+        vMappedPairs = zip(hMapped, vm).map { (hpair, vpair) in (hpair.0, vpair.0) }
+      } else {
         return
       }
+
+      let corners = vMappedPairs
 
       // Write to style buffer and update struct
       let cornerKeys: [(xType: Int, xValue: Int, yType: Int, yValue: Int, exp: Int)] = [
@@ -282,7 +368,127 @@ extension CSSBorderRenderer {
       }
   }
 
-  // ─── corner-shape ────────────────────────────────────────────────────────
+  static func parsePaddingShorthand(_ style: MasonStyle, _ value: String) {
+    let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+    if cleaned.isEmpty {
+      style.prepareMut()
+      let zero = MasonLengthPercentage.Points(0)
+      style.setInt8(StyleKeys.PADDING_LEFT_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_LEFT_VALUE, zero.value)
+      style.setInt8(StyleKeys.PADDING_RIGHT_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_RIGHT_VALUE, zero.value)
+      style.setInt8(StyleKeys.PADDING_TOP_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_TOP_VALUE, zero.value)
+      style.setInt8(StyleKeys.PADDING_BOTTOM_TYPE, zero.type)
+      style.setFloat(StyleKeys.PADDING_BOTTOM_VALUE, zero.value)
+      style.setOrAppendState(.padding)
+      return
+    }
+
+    let tokens = splitTopLevelWhitespace(cleaned).compactMap { parseLengthPercentage($0) }
+    if tokens.isEmpty { return }
+
+    let mapped: [MasonLengthPercentage]
+    switch tokens.count {
+    case 1: mapped = [tokens[0], tokens[0], tokens[0], tokens[0]]
+    case 2: mapped = [tokens[0], tokens[1], tokens[0], tokens[1]]
+    case 3: mapped = [tokens[0], tokens[1], tokens[2], tokens[1]]
+    default: mapped = [tokens[0], tokens[1], tokens[2], tokens[3]]
+    }
+
+    style.prepareMut()
+    style.setInt8(StyleKeys.PADDING_LEFT_TYPE, mapped[3].type)
+    style.setFloat(StyleKeys.PADDING_LEFT_VALUE, mapped[3].value)
+    style.setInt8(StyleKeys.PADDING_RIGHT_TYPE, mapped[1].type)
+    style.setFloat(StyleKeys.PADDING_RIGHT_VALUE, mapped[1].value)
+    style.setInt8(StyleKeys.PADDING_TOP_TYPE, mapped[0].type)
+    style.setFloat(StyleKeys.PADDING_TOP_VALUE, mapped[0].value)
+    style.setInt8(StyleKeys.PADDING_BOTTOM_TYPE, mapped[2].type)
+    style.setFloat(StyleKeys.PADDING_BOTTOM_VALUE, mapped[2].value)
+    style.setOrAppendState(.padding)
+  }
+
+  static func parseMarginShorthand(_ style: MasonStyle, _ value: String) {
+    let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+    if cleaned.isEmpty {
+      style.prepareMut()
+      let zero = MasonLengthPercentageAuto.Points(0)
+      style.setInt8(StyleKeys.MARGIN_LEFT_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_LEFT_VALUE, zero.value)
+      style.setInt8(StyleKeys.MARGIN_RIGHT_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_RIGHT_VALUE, zero.value)
+      style.setInt8(StyleKeys.MARGIN_TOP_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_TOP_VALUE, zero.value)
+      style.setInt8(StyleKeys.MARGIN_BOTTOM_TYPE, zero.type)
+      style.setFloat(StyleKeys.MARGIN_BOTTOM_VALUE, zero.value)
+      style.setOrAppendState(.margin)
+      return
+    }
+
+    let tokens = splitTopLevelWhitespace(cleaned).compactMap { parseLengthPercentageAuto($0) }
+    if tokens.isEmpty { return }
+
+    let mapped: [MasonLengthPercentageAuto]
+    switch tokens.count {
+    case 1: mapped = [tokens[0], tokens[0], tokens[0], tokens[0]]
+    case 2: mapped = [tokens[0], tokens[1], tokens[0], tokens[1]]
+    case 3: mapped = [tokens[0], tokens[1], tokens[2], tokens[1]]
+    default: mapped = [tokens[0], tokens[1], tokens[2], tokens[3]]
+    }
+
+    style.prepareMut()
+    style.setInt8(StyleKeys.MARGIN_LEFT_TYPE, mapped[3].type)
+    style.setFloat(StyleKeys.MARGIN_LEFT_VALUE, mapped[3].value)
+    style.setInt8(StyleKeys.MARGIN_RIGHT_TYPE, mapped[1].type)
+    style.setFloat(StyleKeys.MARGIN_RIGHT_VALUE, mapped[1].value)
+    style.setInt8(StyleKeys.MARGIN_TOP_TYPE, mapped[0].type)
+    style.setFloat(StyleKeys.MARGIN_TOP_VALUE, mapped[0].value)
+    style.setInt8(StyleKeys.MARGIN_BOTTOM_TYPE, mapped[2].type)
+    style.setFloat(StyleKeys.MARGIN_BOTTOM_VALUE, mapped[2].value)
+    style.setOrAppendState(.margin)
+  }
+
+  static func parseInsetShorthand(_ style: MasonStyle, _ value: String) {
+    let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ";", with: "")
+    if cleaned.isEmpty {
+      style.prepareMut()
+      let zero = MasonLengthPercentageAuto.Points(0)
+      style.setInt8(StyleKeys.INSET_LEFT_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_LEFT_VALUE, zero.value)
+      style.setInt8(StyleKeys.INSET_RIGHT_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_RIGHT_VALUE, zero.value)
+      style.setInt8(StyleKeys.INSET_TOP_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_TOP_VALUE, zero.value)
+      style.setInt8(StyleKeys.INSET_BOTTOM_TYPE, zero.type)
+      style.setFloat(StyleKeys.INSET_BOTTOM_VALUE, zero.value)
+      style.setOrAppendState(.inset)
+      return
+    }
+
+    let tokens = splitTopLevelWhitespace(cleaned).compactMap { parseLengthPercentageAuto($0) }
+    if tokens.isEmpty { return }
+
+    let mapped: [MasonLengthPercentageAuto]
+    switch tokens.count {
+    case 1: mapped = [tokens[0], tokens[0], tokens[0], tokens[0]]
+    case 2: mapped = [tokens[0], tokens[1], tokens[0], tokens[1]]
+    case 3: mapped = [tokens[0], tokens[1], tokens[2], tokens[1]]
+    default: mapped = [tokens[0], tokens[1], tokens[2], tokens[3]]
+    }
+
+    style.prepareMut()
+    style.setInt8(StyleKeys.INSET_LEFT_TYPE, mapped[3].type)
+    style.setFloat(StyleKeys.INSET_LEFT_VALUE, mapped[3].value)
+    style.setInt8(StyleKeys.INSET_RIGHT_TYPE, mapped[1].type)
+    style.setFloat(StyleKeys.INSET_RIGHT_VALUE, mapped[1].value)
+    style.setInt8(StyleKeys.INSET_TOP_TYPE, mapped[0].type)
+    style.setFloat(StyleKeys.INSET_TOP_VALUE, mapped[0].value)
+    style.setInt8(StyleKeys.INSET_BOTTOM_TYPE, mapped[2].type)
+    style.setFloat(StyleKeys.INSET_BOTTOM_VALUE, mapped[2].value)
+    style.setOrAppendState(.inset)
+  }
+
+  // corner-shape
   // CSS syntax:
   //   corner-shape: round                      → exponent 1 on all corners (default)
   //   corner-shape: superellipse               → exponent 0.5 on all corners
@@ -291,7 +497,7 @@ extension CSSBorderRenderer {
   //   corner-shape: notch                      → exponent 2 on all corners
   //   corner-shape: bevel                      → exponent 4 on all corners
   //   1–4 value shorthand follows CSS corner order: TL TR BR BL
-  // ─────────────────────────────────────────────────────────────────────────
+  
 
   private static let cornerShapeTokenRegex = try! NSRegularExpression(
     pattern: "^(round|superellipse(?:\\((-?\\d+(?:\\.\\d+)?)\\))?|squircle|notch|bevel)$",

@@ -4,13 +4,10 @@ import android.graphics.Paint
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.TextPaint
-import android.text.style.AbsoluteSizeSpan
 import android.text.style.AlignmentSpan
-import android.text.style.ForegroundColorSpan
 import android.text.style.LineHeightSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.UnderlineSpan
-import android.util.Log
 
 
 open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData {
@@ -154,14 +151,24 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
   }
 
   // Build attributed string from this text node's data and attributes
-  fun attributed(): SpannableStringBuilder {
+  fun attributed(ignoreBackground: Boolean = false): SpannableStringBuilder {
     val processed = this.container?.let {
       processText(data, it.style)
     } ?: data
     val spannable = SpannableStringBuilder(processed)
 
+    val previousBG = attributes.backgroundColor
+
+    if (attributes.backgroundColor != null) {
+      attributes.backgroundColor = null
+    }
+
     // Apply attributes as spans
     applyAttributes(spannable, 0, spannable.length, attributes)
+
+    if (ignoreBackground && previousBG != null) {
+      attributes.backgroundColor = previousBG
+    }
 
     return spannable
   }
@@ -180,51 +187,52 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       // Apply color
       attributes.color?.let { color ->
         if (color != 0) {
-          spannable.setSpan(ForegroundColorSpan(color), start, end, flags)
+          spannable.setSpan(Spans.ForegroundColorSpan(attributes), start, end, flags)
         }
       }
 
       // Apply font size
       attributes.fontSize?.let { size ->
-        var fontSize: Int? = null
-        when (size) {
-          is Int -> {
-            fontSize = size
-          }
-
-          is Float -> {
-            fontSize = size.toInt()
-          }
-        }
-        fontSize?.takeIf { it > 0 }?.let {
-          spannable.setSpan(AbsoluteSizeSpan(it, true), start, end, flags)
+        size.takeIf { it > 0 }?.let {
+          spannable.setSpan(Spans.SizeSpan(attributes, true), start, end, flags)
         }
       }
 
-      // Apply letter spacing
-      attributes.letterSpacing?.takeIf { it > 0 }?.let { spacing ->
+      // Apply letter spacing. Use LetterSpacingSpan (paint.letterSpacing, EM units)
+      // which adds tracking between glyphs; ScaleXSpan was wrong — it scales each
+      // glyph's width and visibly stretches the text.
+      attributes.letterSpacing?.takeIf { it != 0f }?.let { spacing ->
         spannable.setSpan(
-          android.text.style.ScaleXSpan(1f + spacing), start, end, flags
+          Spans.LetterSpacingSpan(spacing), start, end, flags
         )
       }
 
-      // Apply line height
+      // Resolve line-height to absolute (multiplier * font-size) + idempotent
+      // FixedLineHeightSpan; RelativeLineHeightSpan compounds on repeated
+      // chooseHeight() calls into an exponential blowup.
       attributes.lineHeight?.let { lineHeight ->
         val type = attributes.lineHeightType ?: 0
         lineHeight.takeIf { it > 0 }?.let {
-          // 1 px/dip
           if (type == StyleState.SET) {
             spannable.setSpan(FixedLineHeightSpan(it.toInt()), start, end, flags)
           } else {
-            spannable.setSpan(RelativeLineHeightSpan(it), start, end, flags)
+            val fontSizeDip = (attributes.fontSize?.takeIf { fs -> fs > 0 }
+              ?: Constants.DEFAULT_FONT_SIZE).toFloat()
+            val absolute = (it * fontSizeDip).toInt()
+            if (absolute > 0) {
+              spannable.setSpan(FixedLineHeightSpan(absolute), start, end, flags)
+            }
           }
         }
       }
 
       // Apply typeface
-      attributes.font?.font.let { typeface ->
-        if (typeface is android.graphics.Typeface) {
-          spannable.setSpan(Spans.TypefaceSpan(typeface), start, end, flags)
+      attributes.font?.let { fontFace ->
+        fontFace.font?.let { typeface ->
+          val isBold = fontFace.weight.weight >= 600
+          val isItalic =
+            fontFace.style.fontStyle == android.graphics.Typeface.ITALIC
+          spannable.setSpan(Spans.TypefaceSpan(typeface, isBold, isItalic), start, end, flags)
         }
       }
 
@@ -266,7 +274,7 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       // Apply backgroundColor only when alpha is non-zero (ARGB format: alpha in high 8 bits)
       attributes.backgroundColor?.let { color ->
         if (color != 0 && ((color shr 24) and 0xFF) != 0) {
-          spannable.setSpan(Spans.BackgroundColorSpan(color), start, end, flags)
+          spannable.setSpan(Spans.BackgroundColorSpan(attributes), start, end, flags)
         }
       }
 

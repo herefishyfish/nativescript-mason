@@ -4,22 +4,24 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
+import android.os.Build
 import android.util.AttributeSet
-import android.util.Log
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import androidx.core.view.ViewCompat
 import androidx.core.widget.TextViewCompat
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.mason.masonkit.enums.BoxSizing
 import org.nativescript.mason.masonkit.enums.Display
-import org.nativescript.mason.masonkit.enums.TextAlign
 import org.nativescript.mason.masonkit.events.Event
 
 class Button @JvmOverloads constructor(
   context: Context, attrs: AttributeSet? = null, override: Boolean = false
-) : androidx.appcompat.widget.AppCompatButton(context, attrs), Element, MeasureFunc, TextContainer {
+) : androidx.appcompat.widget.AppCompatTextView(context, attrs), Element, MeasureFunc,
+  TextContainer {
 
 
   override val view: View
@@ -44,6 +46,12 @@ class Button @JvmOverloads constructor(
   override lateinit var node: Node
     private set
 
+  // Track last-known view states to detect transitions independent of
+  // the node's pseudo buffer (which may be written from touch handlers).
+  private var lastPressed: Boolean = false
+  private var lastDisabled: Boolean = false
+  private var lastFocus: Boolean = false
+
   override val engine: TextEngine by lazy {
     TextEngine(this)
   }
@@ -57,9 +65,29 @@ class Button @JvmOverloads constructor(
     }
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach { it.shader = null } // force rebuild on next draw
+    style.mBackground?.layers?.forEach {
+      it.shader = null
+      it.shaderWidth = -1
+      it.shaderHeight = -1
+    } // force rebuild on next draw
     style.mBorderRenderer.invalidate()
     super.onSizeChanged(w, h, oldw, oldh)
+  }
+
+
+  private val defaultPaint by lazy {
+    Paint().apply {
+      color = Color.argb(40, 0, 0, 0) // subtle dark overlay
+    }
+  }
+
+  private val pressedStateTouchSlop by lazy(LazyThreadSafetyMode.NONE) {
+    ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+  }
+
+  private fun isWithinPressedBounds(x: Float, y: Float): Boolean {
+    val slop = pressedStateTouchSlop
+    return x >= -slop && y >= -slop && x < width + slop && y < height + slop
   }
 
   override fun onDraw(canvas: Canvas) {
@@ -69,33 +97,32 @@ class Button @JvmOverloads constructor(
 
     // Default :active brightness fallback — only when the user hasn't set
     // an explicit :active pseudo buffer (their bg override takes priority).
-    if (node.hasPseudo(PseudoState.ACTIVE) &&
-      style.resolvedFilterString.isEmpty() &&
-      node.getPseudoBuffer(PseudoState.ACTIVE.mask).capacity() == 0
-    ) {
-      val w = width.toFloat()
-      val h = height.toFloat()
-      canvas.save()
-      if (style.mBorderRenderer.hasRadii()) {
-        canvas.clipPath(style.mBorderRenderer.getOuterClipPath(w, h))
-      }
-      val gray = (0.85f * 255).toInt()
-      val paint = Paint().apply {
-        color = Color.rgb(gray, gray, gray)
-        xfermode = PorterDuffXfermode(PorterDuff.Mode.MULTIPLY)
-      }
-      canvas.drawRect(0f, 0f, w, h, paint)
-      canvas.restore()
-    }
+    /*    if (node.hasPseudo(PseudoState.ACTIVE) &&
+          style.resolvedFilterString.isEmpty() &&
+          node.getPseudoBuffer(PseudoState.ACTIVE.mask).capacity() == 0
+        ) {
+          val w = width.toFloat()
+          val h = height.toFloat()
+          canvas.withSave {
+            if (style.mBorderRenderer.hasRadii()) {
+              clipPath(style.mBorderRenderer.getOuterClipPath(w, h))
+            }
+              drawRect(0f, 0f, w, h, defaultPaint)
+          }
+        }*/
   }
 
   constructor(context: Context, mason: Mason) : this(context, null, true) {
     setup(mason)
   }
 
+  override fun getAccessibilityClassName(): CharSequence {
+    return android.widget.Button::class.java.name
+  }
+
   private fun setup(mason: Mason) {
     TextViewCompat.setAutoSizeTextTypeWithDefaults(this, TextViewCompat.AUTO_SIZE_TEXT_TYPE_NONE)
-    node = mason.createTextNode(this, false).apply {
+    node = mason.createButtonNode(this).apply {
       view = this@Button
     }
 
@@ -107,33 +134,47 @@ class Button @JvmOverloads constructor(
 
     val x = 6f
 
-    val y = 1f
-
     setPadding(0, 0, 0, 0)
-    configure { style ->
-      style.display = Display.InlineBlock
-
-      style.padding = Rect(
-        LengthPercentage.Points(y),
-        LengthPercentage.Points(x),
-        LengthPercentage.Points(y),
-        LengthPercentage.Points(x),
-      )
-      style.background = "#F0F0F0"
-      style.border = "1 solid #767676"
-      style.borderRadius = "4"
-      style.textAlign = TextAlign.Center
-      style.syncFontMetrics()
-    }
 
     paint.textSize = fontSize
-
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      defaultFocusHighlightEnabled = false
+    }
     minWidth = 0
     minHeight = 0
     isAllCaps = false
-    background = null
+    setBackgroundColor(Color.TRANSPARENT)
+    stateListAnimator = null
+    elevation = 0f
     isClickable = true
     isFocusable = true
+    outlineProvider = null
+    setBackgroundResource(0)
+    ViewCompat.setBackgroundTintList(view, null)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      foreground = null
+    }
+    configure { style ->
+      // Mason button defaults stay close to UA expectations, but use a lighter
+      // 1px border so the native appearance does not feel overly heavy.
+      style.display = Display.InlineBlock
+      style.boxSizing = BoxSizing.BorderBox
+      style.padding = Rect(
+        LengthPercentage.Points(1f),
+        LengthPercentage.Points(x),
+        LengthPercentage.Points(1f),
+        LengthPercentage.Points(x),
+      )
+      style.fontSize = Constants.DEFAULT_FONT_SIZE
+      style.background = "#F0F0F0"
+      style.border = "1 solid #767676"
+      style.borderRadius = "4"
+      style.textAlign
+      style.syncFontMetrics()
+    }
+
+
+    node.hasNativeClickDispatch = true
 
     setOnClickListener {
       node.mason.dispatch(
@@ -155,30 +196,80 @@ class Button @JvmOverloads constructor(
     super.drawableStateChanged()
 
     // Sync pseudo-states via Node API
-    try {
-      // Ensure engine recomputes when active (pressed) state changes so pseudo
-      // style merges are applied. Previously used `false` which skipped marking
-      // the engine dirty and prevented pseudo updates from taking effect.
-      node.setPseudo(PseudoState.ACTIVE, isPressed, true)
-      node.setPseudo(PseudoState.DISABLED, !isEnabled, false)
-      node.setPseudo(PseudoState.FOCUS, isFocused, true)
-      // Re-resolve text paint properties for pseudo-aware values
-      onChange(
-        StateKeys.FONT_COLOR.low or StateKeys.FONT_SIZE.low or StateKeys.TEXT_ALIGN.low,
-        StateKeys.FONT_COLOR.high or StateKeys.FONT_SIZE.high or StateKeys.TEXT_ALIGN.high or StateKeys.FONT_WEIGHT.high
-      )
-    } catch (_: Throwable) {
-      // ignore if node/native not ready
+
+    // Ensure engine recomputes when active (pressed) state changes so pseudo
+    // style merges are applied. Previously used `false` which skipped marking
+    // the engine dirty and prevented pseudo updates from taking effect.
+    // Detect view-state transitions using last-known values so we reliably
+    // trigger a rebuild even when the node's pseudo buffer was updated
+    // earlier (e.g., from touch handlers).
+    var pseudoChanged = false
+    var textAffectingPseudoChanged = false
+    val key = StateKeys.ALL_TEXT
+    val hadPseudoTextBefore = node.hasPseudoSetFor(key)
+    var changedTextKeys = StateKeys.NONE
+
+    val wantActive = isPressed
+    if (wantActive != lastPressed) {
+      lastPressed = wantActive
+      val activeTextKeys = node.getPseudoSetFlags(PseudoState.ACTIVE.mask) and key
+      if (activeTextKeys != StateKeys.NONE) {
+        textAffectingPseudoChanged = true
+        changedTextKeys = changedTextKeys or activeTextKeys
+      }
+      node.setPseudo(PseudoState.ACTIVE, wantActive, true)
+      pseudoChanged = true
     }
 
-    // Force background/border rebuild when pressed state changes
-    style.mBackground?.layers?.forEach { it.shader = null }
-    style.mBorderRenderer.invalidate()
+    val wantDisabled = !isEnabled
+    if (wantDisabled != lastDisabled) {
+      lastDisabled = wantDisabled
+      val disabledTextKeys = node.getPseudoSetFlags(PseudoState.DISABLED.mask) and key
+      if (disabledTextKeys != StateKeys.NONE) {
+        textAffectingPseudoChanged = true
+        changedTextKeys = changedTextKeys or disabledTextKeys
+      }
+      node.setPseudo(PseudoState.DISABLED, wantDisabled, true)
+      pseudoChanged = true
+    }
 
-    invalidate()
+    val wantFocus = isFocused
+    if (wantFocus != lastFocus) {
+      lastFocus = wantFocus
+      val focusTextKeys = node.getPseudoSetFlags(PseudoState.FOCUS.mask) and key
+      if (focusTextKeys != StateKeys.NONE) {
+        textAffectingPseudoChanged = true
+        changedTextKeys = changedTextKeys or focusTextKeys
+      }
+      node.setPseudo(PseudoState.FOCUS, wantFocus, true)
+      pseudoChanged = true
+    }
+
+    if (pseudoChanged) {
+      // Re-resolve text paint properties only when one of the toggled pseudo
+      // buffers can affect text. This still restores base text on the way back
+      // to normal, but avoids unnecessary layout work for visual-only pseudos.
+      if (textAffectingPseudoChanged) {
+        val nowHasPseudoText = node.hasPseudoSetFor(key)
+        if (hadPseudoTextBefore || nowHasPseudoText) {
+          onChange(changedTextKeys.low, changedTextKeys.high)
+        }
+      }
+
+      // Force background/border rebuild when pressed state changes
+      style.mBackground?.layers?.forEach {
+        it.shader = null
+        it.shaderWidth = -1
+        it.shaderHeight = -1
+      }
+      style.mBorderRenderer.invalidate()
+
+      invalidate()
+    }
   }
 
   override fun onHoverEvent(event: MotionEvent): Boolean {
+    if (!isEnabled) return super.onHoverEvent(event)
     when (event.actionMasked) {
       MotionEvent.ACTION_HOVER_ENTER -> node.setPseudo(PseudoState.HOVER, true)
       MotionEvent.ACTION_HOVER_EXIT -> node.setPseudo(PseudoState.HOVER, false)
@@ -187,9 +278,31 @@ class Button @JvmOverloads constructor(
   }
 
   override fun onTouchEvent(ev: MotionEvent): Boolean {
+    if (!isEnabled) return super.onTouchEvent(ev)
     when (ev.actionMasked) {
-      MotionEvent.ACTION_DOWN -> node.setPseudo(PseudoState.ACTIVE, true)
-      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> node.setPseudo(PseudoState.ACTIVE, false)
+      MotionEvent.ACTION_DOWN -> {
+        isPressed = true
+        return true
+      }
+
+      MotionEvent.ACTION_MOVE -> {
+        isPressed = isWithinPressedBounds(ev.x, ev.y)
+        return true
+      }
+
+      MotionEvent.ACTION_UP -> {
+        val shouldClick = isWithinPressedBounds(ev.x, ev.y)
+        isPressed = false
+        if (shouldClick) {
+          performClick()
+        }
+        return true
+      }
+
+      MotionEvent.ACTION_CANCEL -> {
+        isPressed = false
+        return true
+      }
     }
     return super.onTouchEvent(ev)
   }
@@ -201,15 +314,36 @@ class Button @JvmOverloads constructor(
 
 
   override fun measure(
-    knownDimensions: Size<Float?>,
-    availableSpace: Size<Float?>
-  ): Size<Float> {
-    return engine.measure(paint, knownDimensions, availableSpace)
+    knownWidth: Float, knownHeight: Float,
+    availableWidth: Float, availableHeight: Float
+  ): Long {
+    return engine.measure(paint, knownWidth, knownHeight, availableWidth, availableHeight)
   }
 
   override fun onChange(low: Long, high: Long) {
     engine.onTextStyleChanged(low, high, paint, resources.displayMetrics)
   }
 
+  fun addView(view: Element) {
+    node.addChildAt(view.node, -1)
+  }
 
+  fun addView(view: Element, index: Int) {
+    node.addChildAt(view.node, index)
+  }
+
+  fun removeView(view: Element) {
+    node.removeChild(view.node)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeView(index: Int) {
+    node.removeChildAt(index)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeAllViews() {
+    node.removeChildren()
+    engine.invalidateInlineSegments()
+  }
 }

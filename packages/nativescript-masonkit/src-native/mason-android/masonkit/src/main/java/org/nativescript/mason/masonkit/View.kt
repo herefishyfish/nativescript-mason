@@ -3,7 +3,6 @@ package org.nativescript.mason.masonkit
 import android.content.Context
 import android.graphics.Canvas
 import android.util.AttributeSet
-import android.util.Log
 import android.util.SparseArray
 import android.util.TypedValue
 import android.view.MotionEvent
@@ -14,6 +13,7 @@ import androidx.core.util.size
 import com.google.gson.ExclusionStrategy
 import com.google.gson.FieldAttributes
 import com.google.gson.GsonBuilder
+import org.nativescript.fontmanager.FontFace
 import org.nativescript.mason.masonkit.enums.AlignContent
 import org.nativescript.mason.masonkit.enums.AlignItems
 import org.nativescript.mason.masonkit.enums.AlignSelf
@@ -25,8 +25,11 @@ import org.nativescript.mason.masonkit.enums.GridAutoFlow
 import org.nativescript.mason.masonkit.enums.JustifyContent
 import org.nativescript.mason.masonkit.enums.JustifyItems
 import org.nativescript.mason.masonkit.enums.JustifySelf
+import org.nativescript.mason.masonkit.enums.ListStyleType
 import org.nativescript.mason.masonkit.enums.Overflow
 import org.nativescript.mason.masonkit.enums.Position
+import org.nativescript.mason.masonkit.enums.TextType
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 open class View @JvmOverloads constructor(
@@ -127,6 +130,13 @@ open class View @JvmOverloads constructor(
   }
 
   private fun dispatchToChild(child: android.view.View, ev: MotionEvent): Boolean {
+    // Check if the touch point is within the child's bounds (standard Android behavior)
+    val x = ev.x + scrollX
+    val y = ev.y + scrollY
+    if (x < child.left || x >= child.right || y < child.top || y >= child.bottom) {
+      return false
+    }
+
     val offsetX = scrollX - child.left
     val offsetY = scrollY - child.top
 
@@ -139,23 +149,122 @@ open class View @JvmOverloads constructor(
 
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach {
-      it.shader = null
-      it.shaderWidth = -1
-      it.shaderHeight = -1
-    } // force rebuild on next draw
-    style.mBorderRenderer.invalidate()
+    // Skip expensive work when size hasn't actually changed
+    if (w != oldw || h != oldh) {
+      style.mBackground?.layers?.forEach {
+        it.shader = null
+        it.shaderWidth = -1
+        it.shaderHeight = -1
+      } // force rebuild on next draw
+      style.mBorderRenderer.invalidate()
+      // Reapply transforms now that pivot and size are known
+      try {
+        style.applyTransformToView()
+      } catch (_: Exception) {
+      }
+    }
     super.onSizeChanged(w, h, oldw, oldh)
   }
 
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    // so they can extend beyond child bounds
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
+    // Draw children's outset box shadows at parent level so they can extend
+    // beyond child bounds — after this view's own background/border (see
+    // ViewUtils.render) so an opaque parent background can't paint over them.
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) { c ->
+      // Draw list markers for HTML <li> children before drawing children,
+      // so markers appear in the parent's padding zone (left of the content area).
+      drawListItemMarkers(c)
+      super.dispatchDraw(c)
+    }
+  }
 
-    ViewUtils.dispatchDraw(this, canvas, style) {
-      super.dispatchDraw(it)
+  private fun resolveListStyleTypeFor(child: TextView): Byte {
+    if (style.isValueInitialized) {
+      val isSet = style.values.get(StyleKeys.LIST_STYLE_TYPE_STATE) != StyleState.INHERIT
+      if (isSet) return style.values.get(StyleKeys.LIST_STYLE_TYPE)
+    }
+    if (child.style.isValueInitialized) {
+      val isSet = child.style.values.get(StyleKeys.LIST_STYLE_TYPE_STATE) != StyleState.INHERIT
+      if (isSet) return child.style.values.get(StyleKeys.LIST_STYLE_TYPE)
+    }
+    return ListStyleType.Disc.value
+  }
+
+  private fun drawListItemMarkers(canvas: Canvas) {
+    var liIndex = 0
+    for (i in 0 until childCount) {
+      val child = getChildAt(i) as? TextView ?: continue
+      if (child.type != TextType.Li) continue
+      drawMarkerForListItem(canvas, child, liIndex++)
+    }
+  }
+
+  private fun drawMarkerForListItem(canvas: Canvas, child: TextView, position: Int) {
+    val listTypeByte = resolveListStyleTypeFor(child)
+    if (listTypeByte == ListStyleType.None.value) return
+
+    val basePaint = child.style.paint
+    val markerPaint = android.graphics.Paint(basePaint).apply {
+      color = child.style.resolvedColor
+      style = android.graphics.Paint.Style.FILL
+      strokeWidth = 0f
+    }
+
+    val fm = basePaint.fontMetrics
+    val markerSize = basePaint.textSize * 0.35f
+    val gap = basePaint.textSize * 0.5f
+
+    // Centre the marker on the first line's box midpoint (text sits centred in
+    // the line-height box) — not the bare font baseline, which drifts off-line.
+    val fontLineHeight = fm.descent - fm.ascent
+    val lhVal = child.style.resolvedLineHeight
+    val lhType = child.style.resolvedLineHeightType
+    val lineBox = when {
+      lhType == StyleState.SET -> max(lhVal * basePaint.density, fontLineHeight)
+      lhVal > 0f -> max(lhVal * basePaint.textSize, fontLineHeight)
+      else -> fontLineHeight
+    }
+    val cy = child.top.toFloat() + lineBox / 2f
+    // Baseline of the first line derived from the centred line box (fm.ascent is
+    // negative, fm.descent positive on Android).
+    val baselineY = cy - (fm.ascent + fm.descent) / 2f
+
+    // The marker shape's right edge sits at child.left - gap.
+    val markerRight = child.left.toFloat() - gap
+
+    when (listTypeByte) {
+      ListStyleType.Disc.value -> {
+        val r = markerSize / 2f
+        canvas.drawCircle(markerRight - r, cy, r, markerPaint)
+      }
+
+      ListStyleType.Circle.value -> {
+        val r = markerSize / 2f
+        markerPaint.style = android.graphics.Paint.Style.STROKE
+        markerPaint.strokeWidth = max(1f, basePaint.textSize * 0.08f)
+        canvas.drawCircle(markerRight - r, cy, r, markerPaint)
+      }
+
+      ListStyleType.Square.value -> {
+        val half = markerSize / 2f
+        val cx = markerRight - half
+        canvas.drawRect(cx - half, cy - half, cx + half, cy + half, markerPaint)
+      }
+
+      ListStyleType.Decimal.value -> {
+        val text = "${position + 1}."
+        val textWidth = basePaint.measureText(text)
+        canvas.drawText(text, markerRight - textWidth, baselineY, markerPaint)
+      }
+
+      ListStyleType.Custom.value -> {
+        val text = "•"
+        val textWidth = basePaint.measureText(text)
+        canvas.drawText(text, markerRight - textWidth, baselineY, markerPaint)
+      }
     }
   }
 
@@ -175,6 +284,8 @@ open class View @JvmOverloads constructor(
 
   override fun onChange(low: Long, high: Long) {
     Node.invalidateDescendantTextViews(node, low, high)
+    // Redraw self so parent-drawn markers (list items in padding zone) are updated.
+    invalidate()
   }
 
 //  fun setStyleFromString(style: String) {
@@ -197,8 +308,16 @@ open class View @JvmOverloads constructor(
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
     if (parent !is Element) {
-      layoutFlat()
-      applyLayoutFlat(node, node.layoutTree)
+      // Only re-read the layout from Rust if we don't already have a
+      // valid cached layout tree (computeAndLayout populates it during
+      // onMeasure). Re-reading via layoutFlat() can pick up stale Rust
+      // state when spurious layout passes occur.
+      if (node.layoutTree.nodeCount == 0) {
+        layoutFlat()
+      }
+      if (node.layoutTree.nodeCount != 0) {
+        applyLayoutFlat(node, node.layoutTree)
+      }
     }
   }
 
@@ -230,7 +349,6 @@ open class View @JvmOverloads constructor(
           widthArg,
           heightArg
         )
-
         if (node.layoutTree.nodeCount == 0) {
           setMeasuredDimension(0, 0)
           return
@@ -238,11 +356,8 @@ open class View @JvmOverloads constructor(
         setMeasuredDimension(node.computedWidth.toInt(), node.computedHeight.toInt())
       } else {
         // we're currently inside a compute cycle; running computeAndLayout would
-        // deadlock, so temporarily fall back to the provided spec sizes.  post
-        // another layout for when the computation finishes so the real dimensions
-        // can be picked up.
+        // deadlock, so temporarily fall back to the provided spec sizes.
         setMeasuredDimension(specWidth, specHeight)
-        post { requestLayout() }
       }
     } else {
       setMeasuredDimension(
@@ -368,18 +483,22 @@ open class View @JvmOverloads constructor(
       node.mason.nodeForView(view)
     }
 
-    // If suppression is active we are in a platform-driven addView (from Node) — avoid mutating nodes.
+    // If suppression is active we are in a platform-driven removeView (from Node) — avoid mutating nodes.
     if (node.suppressChildOps > 0) {
       super.removeView(view)
       return
     }
 
+    // Our mason child: removeChild detaches the Rust node and invalidates layout.
+    // A raw super.removeView would orphan it, leaving stale slots / ghost backgrounds.
     if (childNode.parent == node) {
-      super.removeView(view)
+      node.removeChild(childNode)
+      onChildStructureChangedSafe()
       return
     }
 
-    node.removeChild(childNode)
+    // Not part of our mason subtree — plain android removal.
+    super.removeView(view)
 
     onChildStructureChangedSafe()
   }
@@ -393,6 +512,10 @@ open class View @JvmOverloads constructor(
     node.removeChildAt(index)
 
     onChildStructureChangedSafe()
+  }
+
+  fun removeChildren(){
+    removeAllViews()
   }
 
   override fun removeAllViews() {
@@ -1298,12 +1421,10 @@ open class View @JvmOverloads constructor(
     bottom: Float,
     bottomType: Byte
   ) {
-    style.padding = Rect(
-      LengthPercentage.fromTypeValue(leftType, left) ?: style.padding.left,
-      LengthPercentage.fromTypeValue(rightType, right) ?: style.padding.right,
-      LengthPercentage.fromTypeValue(topType, top) ?: style.padding.top,
-      LengthPercentage.fromTypeValue(bottomType, bottom) ?: style.padding.bottom
-    )
+    if (LengthPercentage.isValid(leftType, left)) style.setPaddingLeft(left, leftType)
+    if (LengthPercentage.isValid(rightType, right)) style.setPaddingRight(right, rightType)
+    if (LengthPercentage.isValid(topType, top)) style.setPaddingTop(top, topType)
+    if (LengthPercentage.isValid(bottomType, bottom)) style.setPaddingBottom(bottom, bottomType)
     checkAndUpdateStyle()
   }
 
@@ -1390,12 +1511,10 @@ open class View @JvmOverloads constructor(
     bottom: Float,
     bottomType: Byte
   ) {
-    style.borderWidth = Rect(
-      LengthPercentage.fromTypeValue(leftType, left) ?: style.borderWidth.left,
-      LengthPercentage.fromTypeValue(rightType, right) ?: style.borderWidth.right,
-      LengthPercentage.fromTypeValue(topType, top) ?: style.borderWidth.top,
-      LengthPercentage.fromTypeValue(bottomType, bottom) ?: style.borderWidth.bottom
-    )
+    if (LengthPercentage.isValid(leftType, left)) style.setBorderLeftWidth(left, leftType)
+    if (LengthPercentage.isValid(rightType, right)) style.setBorderRightWidth(right, rightType)
+    if (LengthPercentage.isValid(topType, top)) style.setBorderTopWidth(top, topType)
+    if (LengthPercentage.isValid(bottomType, bottom)) style.setBorderBottomWidth(bottom, bottomType)
     checkAndUpdateStyle()
   }
 
@@ -1484,12 +1603,10 @@ open class View @JvmOverloads constructor(
     bottom: Float,
     bottomType: Byte
   ) {
-    style.margin = Rect(
-      LengthPercentageAuto.fromTypeValue(leftType, left) ?: style.margin.left,
-      LengthPercentageAuto.fromTypeValue(rightType, right) ?: style.margin.right,
-      LengthPercentageAuto.fromTypeValue(topType, top) ?: style.margin.top,
-      LengthPercentageAuto.fromTypeValue(bottomType, bottom) ?: style.margin.bottom
-    )
+    if (LengthPercentageAuto.isValid(leftType, left)) style.setMarginLeft(left, leftType)
+    if (LengthPercentageAuto.isValid(rightType, right)) style.setMarginRight(right, rightType)
+    if (LengthPercentageAuto.isValid(topType, top)) style.setMarginTop(top, topType)
+    if (LengthPercentageAuto.isValid(bottomType, bottom)) style.setMarginBottom(bottom, bottomType)
     checkAndUpdateStyle()
   }
 
@@ -1579,12 +1696,10 @@ open class View @JvmOverloads constructor(
     bottom: Float,
     bottomType: Byte
   ) {
-    style.inset = Rect(
-      LengthPercentageAuto.fromTypeValue(leftType, left) ?: style.inset.left,
-      LengthPercentageAuto.fromTypeValue(rightType, right) ?: style.inset.right,
-      LengthPercentageAuto.fromTypeValue(topType, top) ?: style.inset.top,
-      LengthPercentageAuto.fromTypeValue(bottomType, bottom) ?: style.inset.bottom
-    )
+    if (LengthPercentageAuto.isValid(leftType, left)) style.setInsetLeft(left, leftType)
+    if (LengthPercentageAuto.isValid(rightType, right)) style.setInsetRight(right, rightType)
+    if (LengthPercentageAuto.isValid(topType, top)) style.setInsetTop(top, topType)
+    if (LengthPercentageAuto.isValid(bottomType, bottom)) style.setInsetBottom(bottom, bottomType)
     checkAndUpdateStyle()
   }
 
@@ -1655,10 +1770,8 @@ open class View @JvmOverloads constructor(
     height: Float,
     heightType: Byte,
   ) {
-    style.minSize = Size(
-      Dimension.fromTypeValue(widthType, width) ?: style.minSize.width,
-      Dimension.fromTypeValue(heightType, height) ?: style.minSize.height
-    )
+    if (Dimension.isValid(widthType, width)) style.setMinSizeWidth(width, widthType)
+    if (Dimension.isValid(heightType, height)) style.setMinSizeHeight(height, heightType)
     checkAndUpdateStyle()
   }
 
@@ -1714,10 +1827,8 @@ open class View @JvmOverloads constructor(
     height: Float,
     heightType: Byte,
   ) {
-    style.size = Size(
-      Dimension.fromTypeValue(widthType, width) ?: style.size.width,
-      Dimension.fromTypeValue(heightType, height) ?: style.size.height
-    )
+    if (Dimension.isValid(widthType, width)) style.setSizeWidth(width, widthType)
+    if (Dimension.isValid(heightType, height)) style.setSizeHeight(height, heightType)
     checkAndUpdateStyle()
   }
 
@@ -1773,10 +1884,8 @@ open class View @JvmOverloads constructor(
     height: Float,
     heightType: Byte,
   ) {
-    style.maxSize = Size(
-      Dimension.fromTypeValue(widthType, width) ?: style.size.width,
-      Dimension.fromTypeValue(heightType, height) ?: style.size.height
-    )
+    if (Dimension.isValid(widthType, width)) style.setMaxSizeWidth(width, widthType)
+    if (Dimension.isValid(heightType, height)) style.setMaxSizeHeight(height, heightType)
     checkAndUpdateStyle()
   }
 
@@ -1824,10 +1933,8 @@ open class View @JvmOverloads constructor(
     height: Float,
     heightType: Byte,
   ) {
-    style.gap = Size(
-      LengthPercentage.fromTypeValue(widthType, width) ?: style.gap.width,
-      LengthPercentage.fromTypeValue(heightType, height) ?: style.gap.height
-    )
+    if (LengthPercentage.isValid(widthType, width)) style.setGapRow(width, widthType)
+    if (LengthPercentage.isValid(heightType, height)) style.setGapColumn(height, heightType)
     checkAndUpdateStyle()
   }
 

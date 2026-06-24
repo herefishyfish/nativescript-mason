@@ -31,7 +31,7 @@ import kotlin.math.sin
 
 
 private val FILTER_REGEX = Regex("""(\w+(?:-\w+)?)\(([^()]*(?:\([^()]*\)[^()]*)*)\)""")
-private val SPLIT_REGEX = Regex("\\s+")
+internal val SPLIT_REGEX = Regex("""\s+""")
 private const val PI_FLOAT = Math.PI.toFloat()
 private const val RAD_TO_DEG = (180f / PI_FLOAT)
 
@@ -352,10 +352,13 @@ class CSSFilters {
                 view.height
               )
 
-              keyToView[view]?.add(key) ?: run {
-                keyToView[view] = HashSet<String>().apply {
-                  add(key)
-                }
+              val set = keyToView[view]
+              if (set != null) {
+                set.add(key)
+              } else {
+                val newSet = HashSet<String>()
+                newSet.add(key)
+                keyToView[view] = newSet
               }
 
               helper.shadowsOrBlurs.add(
@@ -791,8 +794,43 @@ class CSSFilters {
           }
           true
         }
+
         else -> false
       }
+    }
+
+    /**
+     * Build a chained RenderEffect from all parsed filter functions.
+     * Used by backdrop-filter to apply the same pipeline that regular
+     * `filter` uses via FilterHelperV3, but without a source bitmap.
+     * Returns null on pre-API-31 or if no applicable filters exist.
+     */
+    @RequiresApi(Build.VERSION_CODES.S)
+    internal fun buildBackdropRenderEffect(): RenderEffect? {
+      val effects = mutableListOf<RenderEffect>()
+      for (f in filters) {
+        when (f) {
+          is Filter.Blur -> {
+            if (f.radiusPx > 0) {
+              effects.add(
+                RenderEffect.createBlurEffect(
+                  f.radiusPx, f.radiusPx, Shader.TileMode.CLAMP
+                )
+              )
+            }
+          }
+          is Filter.Brightness -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(brightness(f.value))))
+          is Filter.Contrast -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(contrast(f.value))))
+          is Filter.Saturate -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(saturate(f.value))))
+          is Filter.HueRotate -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(hue(f.degrees))))
+          is Filter.Invert -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(invert(f.amount))))
+          is Filter.Opacity -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(opacity(f.amount))))
+          is Filter.Sepia -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(sepia(f.amount))))
+          is Filter.Grayscale -> effects.add(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(grayscale(f.amount))))
+          is Filter.DropShadow -> { /* drop-shadow not applicable for backdrop-filter */ }
+        }
+      }
+      return chain(*effects.toTypedArray())
     }
 
     fun renderFilters(view: View, canvas: Canvas, draw: (Canvas) -> Unit) {
@@ -864,7 +902,7 @@ class CSSFilters {
           }
 
           // draw source into temp (use recorded fallback if available)
-          val sourceBmp = filter.sourceFallback ?: run {
+          val sourceBmp: Bitmap = filter.sourceFallback ?: run {
             val bmp = pool.getSourceBitmap(view.width, view.height)
             val c = Canvas(bmp)
             view.setTag(R.id.tag_suppress_ops, true)
@@ -879,7 +917,7 @@ class CSSFilters {
           colorMatrixPaint.colorFilter = ColorMatrixColorFilter(matrix)
           canvas.drawBitmap(tmp, 0f, 0f, colorMatrixPaint)
           //  pool.putBitmap(tmp, true)
-        } ?: run {
+        } ?: {
           // no color matrix -> draw shadows/blurs + source directly
           for (node in filter.shadowsOrBlurs) {
             node.shadow?.let {
@@ -890,9 +928,10 @@ class CSSFilters {
             }
           }
 
-          filter.sourceFallback?.let { src ->
-            canvas.drawBitmap(src, 0f, 0f, null)
-          } ?: run {
+          val _fallback = filter.sourceFallback
+          if (_fallback != null) {
+            canvas.drawBitmap(_fallback, 0f, 0f, null)
+          } else {
             canvas.drawRenderNode(filter.sourceNode)
           }
         }
@@ -909,10 +948,11 @@ class CSSFilters {
         }
 
         it.source?.let { source ->
-          it.cssFilter?.let { matrix ->
+          val matrix = it.cssFilter
+          if (matrix != null) {
             colorMatrixPaint.colorFilter = ColorMatrixColorFilter(matrix)
             canvas.drawBitmap(source, 0f, 0f, colorMatrixPaint)
-          } ?: run {
+          } else {
             canvas.drawBitmap(source, 0f, 0f, null)
           }
         }

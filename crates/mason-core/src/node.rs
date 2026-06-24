@@ -2,7 +2,17 @@ use crate::style::Style;
 use crate::tree::{Id, TreeInner};
 use crate::MeasureOutput;
 use std::fmt::Debug;
-use log::warn;
+
+/// Maps `AvailableSpace` to the float sentinel encoding used at FFI boundaries.
+/// `MinContent` → `-1.0`, `MaxContent` → `-2.0`, `Definite(v)` → `v`.
+#[inline]
+fn available_space_to_f32(space: AvailableSpace) -> f32 {
+    match space {
+        AvailableSpace::MinContent => -1.0,
+        AvailableSpace::MaxContent => -2.0,
+        AvailableSpace::Definite(v) => v,
+    }
+}
 
 #[cfg(target_vendor = "apple")]
 use objc2::runtime::NSObject;
@@ -14,7 +24,7 @@ use taffy::{AvailableSpace, Cache, ClearState, Layout, Size};
 
 use crate::style::arena::{StyleArena, StyleHandle};
 use crate::style::utils::{
-    get_style_data_i8_raw, set_style_data_i8_raw, get_style_data_u32, set_style_data_u32,
+    get_style_data_i8_raw, set_style_data_i8_raw,
     get_style_data_i32, set_style_data_i32, get_style_data_u8, set_style_data_u8,
 };
 #[cfg(target_os = "android")]
@@ -49,38 +59,13 @@ pub struct AndroidNode(pub(crate) jni::sys::jint);
 impl AndroidNode {
     pub fn set_computed_size(&self, width: f32, height: f32) {
         if let Some(jvm) = crate::JVM.get() {
-            let vm = jvm.attach_current_thread();
-            let mut env = vm.unwrap();
+            let mut env = match jvm.get_env() {
+                Ok(env) => env,
+                Err(_) => return,
+            };
             if let Some(cache) = crate::JVM_CACHE.get() {
-                // Capture raw bit-patterns and subnormal status for diagnostics.
-                let width_bits = width.to_bits();
-                let height_bits = height.to_bits();
-                let is_subnormal = height.is_subnormal();
-                warn!(
-                    "AndroidNode.set_computed_size raw node={} width={} height={} width_bits=0x{:08x} height_bits=0x{:08x} is_subnormal={}",
-                    self.0,
-                    width,
-                    height,
-                    width_bits,
-                    height_bits,
-                    is_subnormal
-                );
-
-                let mut clamped_height = height;
-                // Clamp very small positive heights to zero to avoid visual
-                // glitches caused by tiny non-zero floats originating in
-                // native layout math or rounding.
-                if clamped_height > 0.0 && clamped_height.abs() < 1e-6_f32 {
-                    warn!(
-                        "AndroidNode.clamp tiny height node={} orig={} -> 0.0",
-                        self.0, clamped_height
-                    );
-                    clamped_height = 0.0;
-                }
-
                 let node = unsafe { jni::objects::JClass::from_raw(cache.node_clazz.as_raw()) };
                 let _ = unsafe {
-                    warn!("AndroidNode.set_computed_size node={} w={} h={}", self.0, width, clamped_height);
                     env.call_static_method_unchecked(
                         node,
                         cache.node_set_computed_size_id,
@@ -88,7 +73,7 @@ impl AndroidNode {
                         &[
                             jni::sys::jvalue { i: self.0 },
                             jni::sys::jvalue { f: width },
-                            jni::sys::jvalue { f: clamped_height },
+                            jni::sys::jvalue { f: height },
                         ],
                     )
                 };
@@ -137,26 +122,27 @@ impl NodeMeasure {
 
         match crate::JVM.get() {
             Some(jvm) => {
-                let vm = jvm.attach_current_thread();
-                let mut env = vm.unwrap();
+                let Ok(mut env) = jvm.get_env() else {
+                    return known_dimensions.map(|v| v.unwrap_or(0.0));
+                };
 
                 if let Some(cache) = crate::JVM_CACHE.get() {
                     let node = unsafe { jni::objects::JClass::from_raw(cache.node_clazz.as_raw()) };
                     // Trace inputs to the JVM measure call for auditing.
-                    let packed_known = MeasureOutput::make(
-                        known_dimensions.width.unwrap_or(f32::NAN),
-                        known_dimensions.height.unwrap_or(f32::NAN),
+                    let packed_known = MeasureOutput::make_bits(
+                        known_dimensions.width.unwrap_or(-3.0).to_bits(),
+                        known_dimensions.height.unwrap_or(-3.0).to_bits(),
                     );
-                    let packed_avail = MeasureOutput::make(
+                    let packed_avail = MeasureOutput::make_bits(
                         match available_space.width {
-                            AvailableSpace::MinContent => -1.,
-                            AvailableSpace::MaxContent => -2.,
-                            AvailableSpace::Definite(value) => value,
+                            AvailableSpace::MinContent => (-1f32).to_bits(),
+                            AvailableSpace::MaxContent => (-2f32).to_bits(),
+                            AvailableSpace::Definite(value) => value.to_bits(),
                         },
                         match available_space.height {
-                            AvailableSpace::MinContent => -1.,
-                            AvailableSpace::MaxContent => -2.,
-                            AvailableSpace::Definite(value) => value,
+                            AvailableSpace::MinContent => (-1f32).to_bits(),
+                            AvailableSpace::MaxContent => (-2f32).to_bits(),
+                            AvailableSpace::Definite(value) => value.to_bits(),
                         },
                     );
 
@@ -178,10 +164,11 @@ impl NodeMeasure {
                             let size = result.j().unwrap_or_default();
                             let width = MeasureOutput::get_width(size);
                             let height = MeasureOutput::get_height(size);
-                            
+
                             Size { width, height }
                         }
-                        Err(e) => {
+                        Err(_) => {
+                            let _ = env.exception_clear();
                             known_dimensions.map(|v| v.unwrap_or(0.0))
                         }
                     };
@@ -199,38 +186,23 @@ impl NodeMeasure {
         known_dimensions: Size<Option<f32>>,
         available_space: Size<AvailableSpace>,
     ) -> Size<f32> {
-        match self.measure.as_ref() {
-            None => Size {
+        let Some(measure) = self.measure.as_ref() else {
+            return Size {
                 width: known_dimensions.width.unwrap_or_default(),
                 height: known_dimensions.height.unwrap_or_default(),
-            },
-            Some(measure) => {
-                let measure_data = self.data;
-                let available_space_width = match available_space.width {
-                    AvailableSpace::MinContent => -1.,
-                    AvailableSpace::MaxContent => -2.,
-                    AvailableSpace::Definite(value) => value,
-                };
+            };
+        };
 
-                let available_space_height = match available_space.height {
-                    AvailableSpace::MinContent => -1.,
-                    AvailableSpace::MaxContent => -2.,
-                    AvailableSpace::Definite(value) => value,
-                };
-
-                let size = measure(
-                    measure_data,
-                    known_dimensions.width.unwrap_or(f32::NAN),
-                    known_dimensions.height.unwrap_or(f32::NAN),
-                    available_space_width,
-                    available_space_height,
-                );
-
-                let width = MeasureOutput::get_width(size);
-                let height = MeasureOutput::get_height(size);
-
-                Size { width, height }
-            }
+        let result = measure(
+            self.data,
+            known_dimensions.width.unwrap_or(f32::NAN),
+            known_dimensions.height.unwrap_or(f32::NAN),
+            available_space_to_f32(available_space.width),
+            available_space_to_f32(available_space.height),
+        );
+        Size {
+            width: MeasureOutput::get_width(result),
+            height: MeasureOutput::get_height(result),
         }
     }
 }
@@ -296,14 +268,12 @@ impl NodeData {
 
     #[cfg(not(target_os = "android"))]
     pub(crate) fn new() -> Self {
-        unsafe {
-            Self {
-                data: 0 as _,
-                #[cfg(target_vendor = "apple")]
-                apple_data: None,
-                measure: None,
-                inline_segments: Mutex::new(vec![]),
-            }
+        Self {
+            data: std::ptr::null_mut(),
+            #[cfg(target_vendor = "apple")]
+            apple_data: None,
+            measure: None,
+            inline_segments: Mutex::new(vec![]),
         }
     }
 
@@ -315,8 +285,9 @@ impl NodeData {
     ) -> taffy::geometry::Size<f32> {
         match crate::JVM.get() {
             Some(jvm) => {
-                let vm = jvm.attach_current_thread();
-                let mut env = vm.unwrap();
+                let Ok(mut env) = jvm.get_env() else {
+                    return known_dimensions.map(|v| v.unwrap_or(0.0));
+                };
 
                 if let Some(cache) = crate::JVM_CACHE.get() {
                     unsafe {
@@ -329,26 +300,22 @@ impl NodeData {
                             jni::signature::ReturnType::Primitive(jni::signature::Primitive::Long),
                             &[
                                 jni::sys::jvalue { i: self.measure },
-                                jni::sys::jvalue {
-                                    j: MeasureOutput::make(
-                                        known_dimensions.width.unwrap_or(f32::NAN),
-                                        known_dimensions.height.unwrap_or(f32::NAN),
-                                    ),
-                                },
-                                jni::sys::jvalue {
-                                    j: MeasureOutput::make(
-                                        match available_space.width {
-                                            AvailableSpace::MinContent => -1.,
-                                            AvailableSpace::MaxContent => -2.,
-                                            AvailableSpace::Definite(value) => value,
-                                        },
-                                        match available_space.height {
-                                            AvailableSpace::MinContent => -1.,
-                                            AvailableSpace::MaxContent => -2.,
-                                            AvailableSpace::Definite(value) => value,
-                                        },
-                                    ),
-                                },
+                                jni::sys::jvalue { j: MeasureOutput::make_bits(
+                                    known_dimensions.width.unwrap_or(-3.0).to_bits(),
+                                    known_dimensions.height.unwrap_or(-3.0).to_bits(),
+                                ) },
+                                jni::sys::jvalue { j: MeasureOutput::make_bits(
+                                    match available_space.width {
+                                        AvailableSpace::MinContent => (-1f32).to_bits(),
+                                        AvailableSpace::MaxContent => (-2f32).to_bits(),
+                                        AvailableSpace::Definite(value) => value.to_bits(),
+                                    },
+                                    match available_space.height {
+                                        AvailableSpace::MinContent => (-1f32).to_bits(),
+                                        AvailableSpace::MaxContent => (-2f32).to_bits(),
+                                        AvailableSpace::Definite(value) => value.to_bits(),
+                                    },
+                                ) },
                             ],
                         );
 
@@ -360,7 +327,10 @@ impl NodeData {
 
                                 Size { width, height }
                             }
-                            Err(_) => known_dimensions.map(|v| v.unwrap_or(0.0)),
+                            Err(_) => {
+                                let _ = env.exception_clear();
+                                known_dimensions.map(|v| v.unwrap_or(0.0))
+                            }
                         };
                     }
                 }
@@ -454,6 +424,53 @@ pub struct PseudoStyles {
     pub checked: Option<crate::style::Style>,
 }
 
+impl PseudoStyles {
+    /// Return immutable reference to the first matching pseudo style by priority.
+    pub fn resolve(&self, flags: u16) -> Option<&crate::style::Style> {
+        let bits = PseudoStates::from_bits_truncate(flags);
+        if bits.contains(PseudoStates::HOVER) { if let Some(s) = &self.hover { return Some(s); } }
+        if bits.contains(PseudoStates::ACTIVE) { if let Some(s) = &self.active { return Some(s); } }
+        if bits.contains(PseudoStates::FOCUS) { if let Some(s) = &self.focus { return Some(s); } }
+        if bits.contains(PseudoStates::DISABLED) { if let Some(s) = &self.disabled { return Some(s); } }
+        if bits.contains(PseudoStates::CHECKED) { if let Some(s) = &self.checked { return Some(s); } }
+        None
+    }
+
+    /// Return mutable reference to the first matching pseudo style by priority,
+    /// creating/cloning from `base` if missing.
+    pub fn resolve_or_create_mut(
+        &mut self,
+        flags: u16,
+        base: &crate::style::Style,
+        init: fn(&mut crate::style::Style),
+    ) -> Option<&mut crate::style::Style> {
+        let bits = PseudoStates::from_bits_truncate(flags);
+        let slot = if bits.contains(PseudoStates::HOVER) {
+            Some(&mut self.hover)
+        } else if bits.contains(PseudoStates::ACTIVE) {
+            Some(&mut self.active)
+        } else if bits.contains(PseudoStates::FOCUS) {
+            Some(&mut self.focus)
+        } else if bits.contains(PseudoStates::DISABLED) {
+            Some(&mut self.disabled)
+        } else if bits.contains(PseudoStates::CHECKED) {
+            Some(&mut self.checked)
+        } else {
+            None
+        };
+        slot.map(|opt| {
+            if opt.is_none() {
+                let mut s = base.clone();
+                init(&mut s);
+                *opt = Some(s);
+            } else {
+                opt.as_mut().unwrap().prepare_mut();
+            }
+            opt.as_mut().unwrap()
+        })
+    }
+}
+
 /*
 #[derive(Default, Debug, Clone)]
 pub struct PseudoStyles {
@@ -471,6 +488,7 @@ pub enum NodeType {
     Text,
     Image,
     LineBreak,
+    Button,
 }
 
 #[repr(usize)]
@@ -700,7 +718,7 @@ impl Node {
 
         // Merge helper: for each property with a STATE byte, if SET in src, copy to dst.
         // Also checks the pseudo set bitmask for layout properties without STATE bytes.
-        let mut merge_from = |src: &crate::style::Style, dst: &mut crate::style::Style| {
+        let merge_from = |src: &crate::style::Style, dst: &mut crate::style::Style| {
             dst.prepare_mut();
             use crate::style::StyleKeys;
 
@@ -849,7 +867,7 @@ impl Node {
             // List style type (u8)
             merge_u8!(StyleKeys::LIST_STYLE_TYPE, StyleKeys::LIST_STYLE_TYPE_STATE);
 
-            // --- Bitmask-based merge for properties without STATE bytes ---
+            // Bitmask-based merge for properties without STATE bytes
             // These use the pseudo set mask to detect explicit overrides.
             use crate::style::StateKeys as SK;
 
@@ -868,7 +886,7 @@ impl Node {
                 copy_range!(198, 202); // BORDER_LEFT_STYLE..BORDER_BOTTOM_STYLE
             }
 
-            // --- Single-byte enum properties ---
+            // Single-byte enum properties
             if is_pseudo_set!(SK::DISPLAY) {
                 copy_range!(0, 1); // DISPLAY
             }
@@ -909,7 +927,7 @@ impl Node {
                 copy_range!(12, 13); // JUSTIFY_CONTENT
             }
 
-            // --- Type+value pair properties ---
+            // Type+value pair properties
             if is_pseudo_set!(SK::INSET) {
                 copy_range!(13, 33); // INSET_LEFT through INSET_BOTTOM (4 sides x 5 bytes)
             }
@@ -1098,10 +1116,11 @@ pub(crate) fn drain_deferred_cleanup(
             .map(|children| !children.is_empty())
             .unwrap_or(false);
         if !has_parent && !has_children {
-            if let Some(node) = tree.nodes.remove(id) {
-                let _ = id;
-                tree.style_arena.release(node.style.handle);
-            }
+            // Remove the node; Style::drop will release the arena handle
+            tree.nodes.remove(id);
+            tree.parents.remove(id);
+            tree.children.remove(id);
+            tree.float_context.remove(id);
             nd.remove(id);
         }
     }
@@ -1125,17 +1144,23 @@ impl Drop for NodeRef {
                     .map(|children| !children.is_empty())
                     .unwrap_or(false);
                 if !has_parent && !has_children {
-                    if let Some(node) = tree.nodes.remove(self.id) {
-                            let _ = self.id;
-                            tree.style_arena.release(node.style.handle);
-                    }
+                    // Remove the node; Style::drop will release the arena handle
+                    tree.nodes.remove(self.id);
+                    tree.parents.remove(self.id);
+                    tree.children.remove(self.id);
+                    tree.float_context.remove(self.id);
                     if let Some(mut nd) = self.node_data.try_write() {
                         nd.remove(self.id);
+                    } else {
+                        // node_data lock is contended — defer so the data
+                        // (and any measure-func context it holds) is still
+                        // released on the next drain instead of leaking.
+                        self.deferred_cleanup.lock().push(self.id);
                     }
                 }
             } else {
                 // Lock is contended — defer cleanup to avoid deadlock.
-                    self.deferred_cleanup.lock().push(self.id);
+                self.deferred_cleanup.lock().push(self.id);
             }
         }
     }

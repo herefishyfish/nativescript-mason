@@ -5,12 +5,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import org.nativescript.mason.masonkit.Mason
-import org.nativescript.mason.masonkit.NativeHelpers
 import org.nativescript.mason.masonkit.Node
 import org.nativescript.mason.masonkit.MeasureFunc
+import org.nativescript.mason.masonkit.MeasureOutput
 import org.nativescript.mason.masonkit.Size
 import org.nativescript.mason.masonkit.TextNode
 
@@ -24,8 +22,8 @@ class WritebackDetectorInstrumentedTest {
     val mason = Mason()
 
     val child = mason.createNode(object : MeasureFunc {
-      override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>): Size<Float> {
-        return Size(0f, 0f)
+      override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float): Long {
+        return MeasureOutput.make(0f, 0f)
       }
     })
 
@@ -35,14 +33,13 @@ class WritebackDetectorInstrumentedTest {
     val events = mutableListOf<Triple<Int, Float, Float>>()
 
     Node.setComputedSizeTestCallback { id, w, h ->
-      android.util.Log.i("WritebackDetectorTest", "writeback -> id=$id w=$w h=$h")
       synchronized(events) { events.add(Triple(id, w, h)) }
     }
 
     val measures = listOf<MeasureFunc>(
-      object : MeasureFunc { override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>) = Size(0f, 0f) },
-      object : MeasureFunc { override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>) = Size(10f, 10f) },
-      object : MeasureFunc { override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>) = Size(0f, 8f) }
+      object : MeasureFunc { override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float) = MeasureOutput.make(0f, 0f) },
+      object : MeasureFunc { override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float) = MeasureOutput.make(10f, 10f) },
+      object : MeasureFunc { override fun measure(knownWidth: Float, knownHeight: Float, availableWidth: Float, availableHeight: Float) = MeasureOutput.make(0f, 8f) }
     )
 
     for (m in measures) {
@@ -51,16 +48,15 @@ class WritebackDetectorInstrumentedTest {
     }
 
     for (i in 0 until 5) {
-      try { parentTv.compute() } catch (_: Throwable) {}
-      try { Thread.sleep(150) } catch (_: InterruptedException) {}
+      parentTv.computeAndLayout(400f, -1f)
+      Thread.sleep(150)
     }
 
-    try { Thread.sleep(1000) } catch (_: InterruptedException) {}
+    Thread.sleep(1000)
 
     Node.setComputedSizeTestCallback(null)
 
     val captured: List<Triple<Int, Float, Float>> = synchronized(events) { events.toList() }
-    android.util.Log.i("WritebackDetectorTest", "Captured events (count=${captured.size}): $captured")
 
     val textEvents = mutableListOf<Triple<Int, Float, Float>>()
 
@@ -73,13 +69,12 @@ class WritebackDetectorInstrumentedTest {
     tv.append(tnode)
 
     for (i in 0 until 10) {
-      try { tv.compute() } catch (_: Throwable) {}
-      try { Thread.sleep(100) } catch (_: InterruptedException) {}
+      tv.computeAndLayout(400f, -1f)
+      Thread.sleep(100)
     }
 
     Node.setComputedSizeTestCallback(null)
     val capturedText: List<Triple<Int, Float, Float>> = synchronized(textEvents) { textEvents.toList() }
-    android.util.Log.i("WritebackDetectorTest", "Text-phase captured (count=${capturedText.size}): $capturedText")
 
     fun findNodeByObjectId(root: org.nativescript.mason.masonkit.Node, targetId: Int): org.nativescript.mason.masonkit.Node? {
       if (root.objectId() == targetId) return root
@@ -92,15 +87,10 @@ class WritebackDetectorInstrumentedTest {
     }
 
     val suspicious = mutableListOf<Triple<Int, Float, Float>>()
-    for ((id, w, h) in events) {
-      try {
-        val node = findNodeByObjectId(parentTv.node, id)
-        if (node != null) {
-          if (node.computedLayout.height == 0f && h > 0f) {
-            suspicious.add(Triple(id, w, h))
-          }
-        }
-      } catch (e: Exception) {
+    for ((id, w, h) in captured) {
+      val node = findNodeByObjectId(parentTv.node, id)
+      if (node != null && node.computedLayout.height == 0f && h > 0f) {
+        suspicious.add(Triple(id, w, h))
       }
     }
 
@@ -108,14 +98,9 @@ class WritebackDetectorInstrumentedTest {
 
     val suspiciousText = mutableListOf<Triple<Int, Float, Float>>()
     for ((id, w, h) in capturedText) {
-      try {
-        val node = findNodeByObjectId(tv.node, id)
-        if (node != null) {
-          if (node.computedLayout.height == 0f && h > 0f) {
-            suspiciousText.add(Triple(id, w, h))
-          }
-        }
-      } catch (e: Exception) {
+      val node = findNodeByObjectId(tv.node, id)
+      if (node != null && node.computedLayout.height == 0f && h > 0f) {
+        suspiciousText.add(Triple(id, w, h))
       }
     }
 

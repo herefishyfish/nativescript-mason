@@ -266,7 +266,19 @@ public class MasonTextLayer: CALayer {
     }
     // Ensure the context starts clear (transparent)
     context.clear(bounds)
-    
+
+    // Clip background and text content to border-radius, matching the pattern in
+    // MasonUIView.draw: saveGState → clip to rounded path → draw content → restoreGState
+    // → draw border (border uses its own rounded paths and must not be clipped).
+    textView.style.mBorderRender.resolve(for: bounds)
+    let hasRadii = textView.style.mBorderRender.hasRadii()
+    if hasRadii {
+      context.saveGState()
+      let clipPath = textView.style.mBorderRender.getClipPath(rect: bounds, radius: textView.style.mBorderRender.radius)
+      context.addPath(clipPath.cgPath)
+      context.clip()
+    }
+
     // Draw background first — but skip for paragraph text nodes or when a
     // parent container supplies a CSS `background` string. This avoids
     // the text layer filling the whole paragraph when the visual background
@@ -278,11 +290,11 @@ public class MasonTextLayer: CALayer {
       let parentBg = tv.node.parent?.style.background.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       if !parentBg.isEmpty && !hasOwnBg { skipBackground = true }
     }
-    
+
     if !skipBackground {
       textView.style.mBackground.draw(on: self, in: context, rect: bounds)
     }
-    
+
     // If this is a flattened blockquote, draw an inline left bar (on top of background)
     var flattenedBlockquote = false
     if let tv = textView as? MasonText, tv.type == .Blockquote {
@@ -301,15 +313,21 @@ public class MasonTextLayer: CALayer {
         }
       }
     }
-    
+
     // Draw text
     textView.engine.drawText(context: context, rect: bounds)
-    
+
+    // Restore pre-clip state before drawing border — border uses its own rounded path
+    // and must not be constrained by the content clip set above.
+    if hasRadii {
+      context.restoreGState()
+    }
+
     // Draw full border only when not flattened (flattened blockquote uses inline bar above)
     if !flattenedBlockquote {
       textView.style.mBorderRender.draw(in: context, rect: bounds)
     }
-    
+
     textView.style.applyResolvedFilter(in: context, rect: bounds, view: textView)
   }
 }
@@ -328,7 +346,12 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
   }()
   
   private var frameCache: [Int: CTFrame] = [:] // keyed by hash of attributed string + width
-  
+
+  // Last laid-out size; used to force a text redraw on resize (e.g. rotation).
+  // needsDisplayOnBoundsChange alone leaves offscreen views with a stale bitmap
+  // that CoreAnimation rescales into the new bounds, squishing the glyphs.
+  private var lastLaidOutSize: CGSize = .zero
+
   private func cachedFrame(for text: NSAttributedString, width: CGFloat) -> CTFrame {
     let key = text.hash ^ width.hashValue
     if let cached = frameCache[key] {
@@ -472,6 +495,14 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
   
   public override func layoutSubviews() {
     super.layoutSubviews()
+
+    // On a size change, redraw the text layer at the new width rather than
+    // letting CoreAnimation rescale a stale bitmap.
+    if !bounds.size.equalTo(lastLaidOutSize) {
+      lastLaidOutSize = bounds.size
+      textLayer.setNeedsDisplay()
+    }
+
     // Ensure engine layout has been computed for the containing layout so float rects are available
     let containerNode = node.parent ?? node
     
@@ -524,12 +555,31 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
     if(view.superview == self){
       return
     }
-    
+
     if(view is MasonElement){
       node.addChildAt((view as! MasonElement).node, at)
     }else {
       node.addChildAt(node.mason.nodeForView(view), at)
     }
+  }
+
+  public func removeView(_ view: UIView) {
+    let childNode = (view as? MasonElement)?.node ?? node.mason.nodeForView(view)
+    node.removeChild(childNode)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeView(at index: Int) {
+    _ = node.removeChildAt(index: index)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeAllViews() {
+    if let ptr = node.nativePtr {
+      mason_node_remove_children(node.mason.nativePtr, ptr)
+    }
+    node.children.removeAll()
+    engine.invalidateInlineSegments()
   }
   
   
@@ -537,7 +587,7 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
     isOpaque = false
     backgroundColor = .clear
     textLayer.textView = self
-    textLayer.contentsScale = UIScreen.main.scale
+    textLayer.contentsScale = CGFloat(NSCMason.scale)
     style.setStyleChangeListener(listener: self)
     node.view = self
     node.measureFunc = { [weak self] known, available in
@@ -553,58 +603,63 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
     switch(type){
     case .None:
       break
+    // Web user-agent defaults (16px base). Margins are the browser em values
+    // resolved to CSS px, then × scale to mason's device-pixel space. Must stay
+    // in sync with Android TextView.kt.
     case .P:
       style.display = .Block
-      style.margin = MasonRect(.Points(16), .Points(0), .Points(16), .Points(0))
+      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0)) // 1em
       break
     case .Span:
       style.display = .Inline
       break
     case .Code:
       style.display = .Inline
-      style.fontFamily = "monospace"
+      // ui-monospace → Menlo; the `monospace` generic maps to Courier, which looks
+    // wide/loose next to Android's clean mono.
+    style.fontFamily = "ui-monospace"
       break
     case .H1:
-      fontSize = 32
+      fontSize = 32 // 2em
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0))
+      style.margin = MasonRect(.Points(21.44 * scale), .Points(0), .Points(21.44 * scale), .Points(0)) // 0.67em
       break
     case .H2:
-      fontSize = 24
+      fontSize = 24 // 1.5em
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(14 * scale), .Points(0), .Points(14 * scale), .Points(0))
+      style.margin = MasonRect(.Points(19.92 * scale), .Points(0), .Points(19.92 * scale), .Points(0)) // 0.83em
       break
     case .H3:
-      fontSize = 20
+      fontSize = 19 // 1.17em ≈ 18.72
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(12 * scale), .Points(0), .Points(8 * scale), .Points(0))
+      style.margin = MasonRect(.Points(18.72 * scale), .Points(0), .Points(18.72 * scale), .Points(0)) // 1em
       break
     case .H4:
-      fontSize = 16
+      fontSize = 16 // 1em
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(10 * scale), .Points(0), .Points(10 * scale), .Points(0))
+      style.margin = MasonRect(.Points(21.28 * scale), .Points(0), .Points(21.28 * scale), .Points(0)) // 1.33em
       break
     case .H5:
-      fontSize = 13
+      fontSize = 13 // 0.83em ≈ 13.28
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(8 * scale), .Points(0), .Points(8 * scale), .Points(0))
+      style.margin = MasonRect(.Points(22.18 * scale), .Points(0), .Points(22.18 * scale), .Points(0)) // 1.67em
       break
     case .H6:
-      fontSize = 10
+      fontSize = 11 // 0.67em ≈ 10.72
       style.display = .Block
       style.fontWeight = "bold"
-      style.margin = MasonRect(.Points(6 * scale), .Points(0), .Points(6 * scale), .Points(0))
+      style.margin = MasonRect(.Points(24.98 * scale), .Points(0), .Points(24.98 * scale), .Points(0)) // 2.33em
       break
     case .Li:
       break
     case .Blockquote:
       style.display = .Block
-      style.margin = MasonRect(.Points(16 * scale), .Points(40 * scale), .Points(16 * scale), .Points(40 * scale))
+      style.margin = MasonRect(.Points(16 * scale), .Points(40 * scale), .Points(16 * scale), .Points(40 * scale)) // 1em 40px
       break
     case .B, .Strong:
       style.display = .Inline
@@ -612,9 +667,11 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       break
     case .Pre:
       style.display = .Block
-      style.fontFamily = "monospace"
+      // ui-monospace → Menlo; the `monospace` generic maps to Courier, which looks
+    // wide/loose next to Android's clean mono.
+    style.fontFamily = "ui-monospace"
       whiteSpace = .Pre
-      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0))
+      style.margin = MasonRect(.Points(16 * scale), .Points(0), .Points(16 * scale), .Points(0)) // 1em
       break
     case .I, .Em:
       style.display = .Inline
@@ -622,14 +679,15 @@ public class MasonText: UIView, MasonEventTarget, MasonElement, MasonElementObjc
       break
     case .A:
       node.style.display = Display.Inline
-      node.style.decorationLine = DecorationLine.Underline
+      // No forced underline — match web (CSS resets links); honor text-decoration.
+      node.hasClickGesture = true
       let recognizer = MasonGestureRecognizer(targetView: self)
       recognizer.owner = self
       addGestureRecognizer(recognizer)
       break
     }
     
-    style.font.loadSync { _ in }
+    style.font.loadSync(nil)
     node.inBatch = false
   }
   

@@ -61,9 +61,14 @@ export class Button extends ButtonBase {
       layout = children.objectAtIndex(i);
       const x = layout.x;
       const y = layout.y;
-      const width = layout.width;
-      const height = layout.height;
-      View.layoutChild(this as never, child as never, x, y, width, height);
+      const w = layout.width;
+      const h = layout.height;
+
+      const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      View.measureChild(this as never, child as never, wSpec, hSpec);
+
+      (child as any).layout(x, y, x + w, y + h);
       i++;
     }
   }

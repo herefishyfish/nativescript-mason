@@ -1,4 +1,4 @@
-import { CoreTypes } from '@nativescript/core';
+import { Color, CoreTypes } from '@nativescript/core';
 
 import { TextBase, ViewBase } from './common';
 import { LengthPercentage } from '@nativescript/core/css/parser';
@@ -92,11 +92,35 @@ declare module '@nativescript/core/ui/styling/style' {
     gridRowEnd: string;
     gridTemplateRows: string;
     gridTemplateColumns: string;
+    gridTemplateAreas: string;
+    textOverflow: 'clip' | 'ellipsis' | string;
+    textWrap: 'nowrap' | 'wrap' | 'balance';
+    textTransform: 'none' | 'capitalize' | 'uppercase' | 'lowercase';
     overflow: Overflow | `${Overflow} ${Overflow}`;
     overflowX: Overflow;
     overflowY: Overflow;
     scrollBarWidth: Length;
     verticalAlign: VerticalAlign;
+    cornerShape: string;
+    cornerShapeTopLeft: string;
+    cornerShapeTopRight: string;
+    cornerShapeBottomRight: string;
+    cornerShapeBottomLeft: string;
+    objectPosition: string;
+    borderStyle: string;
+    borderLeftStyle: string;
+    borderRightStyle: string;
+    borderTopStyle: string;
+    borderBottomStyle: string;
+    borderImage: string;
+    fontStretch: string;
+    fontFeatureSettings: string;
+    wordSpacing: string;
+    hyphens: 'none' | 'manual' | 'auto';
+    writingMode: 'horizontal-tb' | 'horizontal-lr' | 'vertical-rl' | 'vertical-lr';
+    unicodeBidi: 'normal' | 'embed' | 'bidi-override';
+    backdropFilter: string;
+    caretColor: string | Color;
   }
 }
 
@@ -144,11 +168,35 @@ interface Style {
   gridRowEnd: string;
   gridTemplateRows: string;
   gridTemplateColumns: string;
+  gridTemplateAreas: string;
+  textOverflow: 'clip' | 'ellipsis' | string;
+  textWrap: 'nowrap' | 'wrap' | 'balance';
+  textTransform: 'none' | 'capitalize' | 'uppercase' | 'lowercase';
   overflow: Overflow | `${Overflow} ${Overflow}`;
   overflowX: Overflow;
   overflowY: Overflow;
   scrollBarWidth: Length;
   verticalAlign: VerticalAlign;
+  cornerShape: string;
+  cornerShapeTopLeft: string;
+  cornerShapeTopRight: string;
+  cornerShapeBottomRight: string;
+  cornerShapeBottomLeft: string;
+  objectPosition: string;
+  borderStyle: string;
+  borderLeftStyle: string;
+  borderRightStyle: string;
+  borderTopStyle: string;
+  borderBottomStyle: string;
+  borderImage: string;
+  fontStretch: string;
+  fontFeatureSettings: string;
+  wordSpacing: string;
+  hyphens: 'none' | 'manual' | 'auto';
+  writingMode: 'horizontal-tb' | 'horizontal-lr' | 'vertical-rl' | 'vertical-lr';
+  unicodeBidi: 'normal' | 'embed' | 'bidi-override';
+  backdropFilter: string;
+  caretColor: string | Color;
 }
 
 interface IViewBase {
@@ -194,15 +242,61 @@ interface IViewBase {
   gridRowEnd: string;
   gridTemplateRows: string;
   gridTemplateColumns: string;
+  gridTemplateAreas: string;
+  textOverflow: 'clip' | 'ellipsis' | string;
+  textWrap: 'nowrap' | 'wrap' | 'balance';
+  textTransform: 'none' | 'capitalize' | 'uppercase' | 'lowercase';
   overflow: Overflow;
   overflowX: Overflow;
   overflowY: Overflow;
   scrollBarWidth: number | CoreTypes.LengthType;
   verticalAlign: VerticalAlign;
+  cornerShape: string;
+  cornerShapeTopLeft: string;
+  cornerShapeTopRight: string;
+  cornerShapeBottomRight: string;
+  cornerShapeBottomLeft: string;
+  objectPosition: string;
+  borderStyle: string;
+  borderLeftStyle: string;
+  borderRightStyle: string;
+  borderTopStyle: string;
+  borderBottomStyle: string;
+  borderImage: string;
+  fontStretch: string;
+  fontFeatureSettings: string;
+  wordSpacing: string;
+  hyphens: 'none' | 'manual' | 'auto';
+  writingMode: 'horizontal-tb' | 'horizontal-lr' | 'vertical-rl' | 'vertical-lr';
+  unicodeBidi: 'normal' | 'embed' | 'bidi-override';
+  backdropFilter: string;
+  caretColor: string | Color;
 }
 
 class VBase extends ViewBase implements IViewBase {
   style: Style;
+
+  /**
+   * Enable or disable CSS defaults
+   * for the entire Mason tree.
+   *
+   * When `true` every element starts from a clean, browser-normalised slate:
+   *  - `box-sizing: border-box`
+   *  - `margin: 0`, `padding: 0`, `border-width: 0`
+   *  - `background: transparent`
+   *  - `list-style: none` on lists
+   *  - `display: block` on `<img>`
+   *
+   * This is a **tree-global** flag; set it **before** creating views for the
+   * cleanest result.
+   *
+   * @example
+   * ```ts
+   * import { View } from '@triniwiz/nativescript-masonkit';
+   * View.preflight = true; // enable at app startup
+   * ```
+   */
+  static preflight: boolean;
 }
 
 export class View extends VBase {}
@@ -223,7 +317,9 @@ export class Button extends TextBase {}
 
 export class Br extends TextBase {}
 
-export class Input extends VBase {}
+export class InputBase extends VBase {}
+
+export class Input extends InputBase {}
 
 export class TextNode {
   data: string;
@@ -244,3 +340,7 @@ export class Ul extends VBase {}
 export class Ol extends VBase {}
 
 export class Li extends VBase {}
+
+export class TextAreaBase extends InputBase {}
+
+export class TextArea extends TextAreaBase {}

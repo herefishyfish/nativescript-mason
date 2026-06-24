@@ -9,7 +9,7 @@ use jni::sys::{
     JNI_TRUE,
 };
 use jni::JNIEnv;
-use mason_core::{AvailableSpace, Id, InlineSegment, Mason, MeasureOutput, NodeRef, Size};
+use mason_core::{AvailableSpace, Id, InlineSegment, Mason, NodeRef, Size};
 
 #[no_mangle]
 pub extern "system" fn NodeNativeDestroy(node: jlong) {
@@ -1317,7 +1317,7 @@ pub extern "system" fn NodeNativeSetSegmentsPacked(
 
                 1 => {
                     let idraw = *lvec.get(i).unwrap_or(&0);
-                    let baseline = *fvec.get(i.checked_mul(3).unwrap_or(0)).unwrap_or(&0.0);
+                    let baseline = *fvec.get(i.checked_mul(4).unwrap_or(0)).unwrap_or(&0.0);
                     let mut child_id: Option<Id> = None;
                     if idraw != 0 {
                         let node_ptr = &*(idraw as *mut NodeRef);
@@ -1359,6 +1359,61 @@ pub extern "system" fn NodeNativeNewImageNode(taffy: jlong) -> jlong {
         let mason = &mut *(taffy as *mut Mason);
         Box::into_raw(Box::new(mason.create_image_node())) as jlong
     }
+}
+
+#[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNode(taffy: jlong) -> jlong {
+    if taffy == 0 {
+        return 0;
+    }
+
+    unsafe {
+        let mason = &mut *(taffy as *mut Mason);
+        Box::into_raw(Box::new(mason.create_button_node())) as jlong
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNodeNormal(_: JNIEnv, _: JClass, taffy: jlong) -> jlong {
+    if taffy == 0 {
+        return 0;
+    }
+
+    unsafe {
+        let mason = &mut *(taffy as *mut Mason);
+        Box::into_raw(Box::new(mason.create_button_node())) as jlong
+    }
+}
+
+fn native_new_button_node_with_context(taffy: jlong, measure: jint) -> jlong {
+    if taffy == 0 {
+        return 0;
+    }
+
+    unsafe {
+        let mason = &mut *(taffy as *mut Mason);
+
+        let node = mason.create_button_node();
+
+        mason.setup(node.id(), measure);
+
+        Box::into_raw(Box::new(node)) as jlong
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNodeWithContext(taffy: jlong, measure: jint) -> jlong {
+    native_new_button_node_with_context(taffy, measure)
+}
+
+#[no_mangle]
+pub extern "system" fn NodeNativeNewButtonNodeWithContextNormal(
+    _: JNIEnv,
+    _: JClass,
+    taffy: jlong,
+    measure: jint,
+) -> jlong {
+    native_new_button_node_with_context(taffy, measure)
 }
 
 #[no_mangle]
@@ -1577,37 +1632,61 @@ pub extern "system" fn NodeNativeGetPseudoStyleBuffer(
                 return data;
             }
 
-            // Fall back to raw pointer -> create a direct ByteBuffer
-            let (ptr, len) = mason.pseudo_style_data_raw(node.id(), flags as u16);
+            // Prefer obtaining a stable style handle for this pseudo and reusing
+            // any existing platform buffer id. If none exists, create a JVM
+            // DirectByteBuffer from the arena pointer, register it with
+            // ObjectManager, and persist the buffer id onto the handle so
+            // subsequent calls can reuse it.
+            if let Some(handle) = mason.pseudo_style_handle(node.id(), flags as u16) {
+                // If arena already has a platform buffer id, return it
+                if let Some(existing) = mason.buffer_from(handle) {
+                    return existing;
+                }
 
-            if ptr.is_null() || len == 0 {
-                return -1;
-            }
+                // Otherwise get raw pointer from arena and register a ByteBuffer
+                if let Some((ptr, len)) = mason.buffer_raw_from(handle) {
+                    if !ptr.is_null() && len > 0 {
+                        match env.new_direct_byte_buffer(ptr as _, len) {
+                            Ok(buffer) => match mason_core::JVM_CACHE.get() {
+                                Some(cache) => {
+                                    let manager = unsafe {
+                                        JClass::from_raw(cache.object_manager_clazz.as_raw())
+                                    };
+                                    let result = unsafe {
+                                        env.call_static_method_unchecked(
+                                            manager,
+                                            cache.object_manager_add_id,
+                                            ReturnType::Primitive(jni::signature::Primitive::Int),
+                                            &[jni::sys::jvalue {
+                                                l: buffer.into_raw(),
+                                            }],
+                                        )
+                                    };
 
-            match env.new_direct_byte_buffer(ptr as _, len) {
-                Ok(buffer) => match mason_core::JVM_CACHE.get() {
-                    Some(cache) => {
-                        let manager =
-                            unsafe { JClass::from_raw(cache.object_manager_clazz.as_raw()) };
-                        let result = unsafe {
-                            env.call_static_method_unchecked(
-                                manager,
-                                cache.object_manager_add_id,
-                                ReturnType::Primitive(jni::signature::Primitive::Int),
-                                &[jni::sys::jvalue {
-                                    l: buffer.into_raw(),
-                                }],
-                            )
-                        };
-
-                        match result {
-                            Ok(result) => result.i().unwrap_or(-1),
+                                    match result {
+                                        Ok(result) => {
+                                            let id = result.i().unwrap_or(-1);
+                                            if id != -1 {
+                                                // persist mapping on native side
+                                                mason.set_handle_buffer(handle, id);
+                                            }
+                                            id
+                                        }
+                                        Err(_) => -1,
+                                    }
+                                }
+                                None => -1,
+                            },
                             Err(_) => -1,
                         }
+                    } else {
+                        -1
                     }
-                    None => -1,
-                },
-                Err(_) => -1,
+                } else {
+                    -1
+                }
+            } else {
+                -1
             }
         }
     }
@@ -1642,37 +1721,55 @@ pub extern "system" fn NodeNativePreparePseudoMut(
                 return data;
             }
 
-            // Fall back to raw mutable pointer -> create direct ByteBuffer
-            let (ptr, len) = mason.pseudo_style_data_raw_mut(node.id(), flags as u16);
+            // Prefer obtaining a stable style handle for the prepared pseudo,
+            // then register a JVM ByteBuffer and persist the mapping.
+            if let Some(handle) = mason.pseudo_style_handle_mut(node.id(), flags as u16) {
+                if let Some(existing) = mason.buffer_from(handle) {
+                    return existing;
+                }
 
-            if ptr.is_null() || len == 0 {
-                return -1;
-            }
+                if let Some((ptr, len)) = mason.buffer_raw_mut_from(handle) {
+                    if !ptr.is_null() && len > 0 {
+                        match env.new_direct_byte_buffer(ptr as _, len) {
+                            Ok(buffer) => match mason_core::JVM_CACHE.get() {
+                                Some(cache) => {
+                                    let manager = unsafe {
+                                        JClass::from_raw(cache.object_manager_clazz.as_raw())
+                                    };
+                                    let result = unsafe {
+                                        env.call_static_method_unchecked(
+                                            manager,
+                                            cache.object_manager_add_id,
+                                            ReturnType::Primitive(jni::signature::Primitive::Int),
+                                            &[jni::sys::jvalue {
+                                                l: buffer.into_raw(),
+                                            }],
+                                        )
+                                    };
 
-            match env.new_direct_byte_buffer(ptr as _, len) {
-                Ok(buffer) => match mason_core::JVM_CACHE.get() {
-                    Some(cache) => {
-                        let manager =
-                            unsafe { JClass::from_raw(cache.object_manager_clazz.as_raw()) };
-                        let result = unsafe {
-                            env.call_static_method_unchecked(
-                                manager,
-                                cache.object_manager_add_id,
-                                ReturnType::Primitive(jni::signature::Primitive::Int),
-                                &[jni::sys::jvalue {
-                                    l: buffer.into_raw(),
-                                }],
-                            )
-                        };
-
-                        match result {
-                            Ok(result) => result.i().unwrap_or(-1),
+                                    match result {
+                                        Ok(result) => {
+                                            let id = result.i().unwrap_or(-1);
+                                            if id != -1 {
+                                                mason.set_handle_buffer(handle, id);
+                                            }
+                                            id
+                                        }
+                                        Err(_) => -1,
+                                    }
+                                }
+                                None => -1,
+                            },
                             Err(_) => -1,
                         }
+                    } else {
+                        -1
                     }
-                    None => -1,
-                },
-                Err(_) => -1,
+                } else {
+                    -1
+                }
+            } else {
+                -1
             }
         }
     }

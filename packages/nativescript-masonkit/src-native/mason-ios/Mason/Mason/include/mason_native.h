@@ -84,6 +84,10 @@ void mason_print_tree(struct CMason *mason, struct CMasonNode *node);
 
 void mason_set_device_scale(struct CMason *mason, float scale);
 
+void mason_set_preflight(struct CMason *mason, bool enabled);
+
+bool mason_get_preflight(void);
+
 void *mason_get_buffer(struct CMason *mason, int handle);
 
 void mason_node_set_segments(struct CMason *mason,
@@ -100,6 +104,18 @@ void mason_node_array_destroy(struct NodeArray *array);
 void mason_node_destroy(struct CMasonNode *node);
 
 struct CMasonNode *mason_node_new_image_node(struct CMason *mason);
+
+struct CMasonNode *mason_node_new_button_node(struct CMason *mason);
+
+#if !defined(TARGET_OS_ANDROID)
+struct CMasonNode *mason_node_new_button_node_with_context(struct CMason *mason,
+                                                           void *measure_data,
+                                                           long long (*measure)(const void*,
+                                                                                float,
+                                                                                float,
+                                                                                float,
+                                                                                float));
+#endif
 
 struct CMasonNode *mason_node_new_node(struct CMason *mason, bool anonymous);
 
@@ -185,6 +201,36 @@ void mason_node_compute_min_content(struct CMason *mason, struct CMasonNode *nod
 
 void mason_node_compute(struct CMason *mason, struct CMasonNode *node);
 
+/**
+ * Combined compute-with-size + layout in a single FFI crossing.
+ */
+void *mason_node_compute_wh_and_layout(struct CMason *mason,
+                                       struct CMasonNode *node,
+                                       float width,
+                                       float height,
+                                       void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute (auto size) + layout in a single FFI crossing.
+ */
+void *mason_node_compute_and_layout(struct CMason *mason,
+                                    struct CMasonNode *node,
+                                    void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute-max-content + layout in a single FFI crossing.
+ */
+void *mason_node_compute_max_content_and_layout(struct CMason *mason,
+                                                struct CMasonNode *node,
+                                                void *(*layout)(const float*, uintptr_t));
+
+/**
+ * Combined compute-min-content + layout in a single FFI crossing.
+ */
+void *mason_node_compute_min_content_and_layout(struct CMason *mason,
+                                                struct CMasonNode *node,
+                                                void *(*layout)(const float*, uintptr_t));
+
 struct CMasonNode *mason_node_get_child_at(struct CMason *mason,
                                            struct CMasonNode *node,
                                            uintptr_t index);
@@ -262,6 +308,10 @@ const uint8_t *mason_node_get_pseudo_style_buffer(struct CMason *mason,
                                                   uint16_t flags,
                                                   uintptr_t *out_len);
 
+void *mason_node_get_pseudo_style_buffer_apple(struct CMason *mason,
+                                               struct CMasonNode *node,
+                                               uint16_t flags);
+
 /**
  * Prepare (create if needed) and return a mutable pseudo style buffer.
  * Clones from the base style if this is the first call for the given pseudo state.
@@ -271,6 +321,10 @@ uint8_t *mason_node_prepare_pseudo_style_buffer(struct CMason *mason,
                                                 struct CMasonNode *node,
                                                 uint16_t flags,
                                                 uintptr_t *out_len);
+
+void *mason_node_prepare_pseudo_style_buffer_apple(struct CMason *mason,
+                                                   struct CMasonNode *node,
+                                                   uint16_t flags);
 
 bool mason_node_is_children_same(struct CMason *mason,
                                  struct CMasonNode *node,

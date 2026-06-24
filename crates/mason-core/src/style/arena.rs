@@ -2,15 +2,16 @@ use crate::style::utils::{set_style_data_i32, set_style_data_u32};
 use crate::style::{DisplayMode, StyleKeys};
 use crate::utils::{display_mode_to_enum, display_to_enum};
 use crate::Style;
-#[cfg(target_vendor = "apple")]
-use objc2::AllocAnyThread;
+use crate::PREFLIGHT_ENABLED;
 #[cfg(target_vendor = "apple")]
 use objc2_foundation::NSMutableData;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::Ordering;
 use taffy::Display;
 
-pub const STYLE_BUFFER_SIZE: usize = 424;
+// always keep aligned 4
+pub const STYLE_BUFFER_SIZE: usize = 596;
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -22,6 +23,7 @@ pub enum Handle {
     Grid,
     List,
     ListItem,
+    Button,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -44,6 +46,7 @@ impl StyleHandle {
     pub const DEFAULT_GRID: Self = StyleHandle::new(Handle::Grid);
     pub const DEFAULT_LIST: Self = StyleHandle::new(Handle::List);
     pub const DEFAULT_LIST_ITEM: Self = StyleHandle::new(Handle::ListItem);
+    pub const DEFAULT_BUTTON: Self = StyleHandle::new(Handle::Button);
 
     #[inline]
     pub fn index(self) -> usize {
@@ -121,10 +124,18 @@ impl StyleBuffer {
     }
 }
 
+/// Number of built-in default handles (Default, Inline, Img, Flex, Grid, List, ListItem, Button).
+const NUM_DEFAULTS: usize = 8;
+
 #[derive(Debug)]
 pub struct StyleArena {
     buffers: Vec<StyleBuffer>,
     free_list: Vec<u32>,
+    /// Hash index from buffer content hash → buffer indices for O(1) intern lookup
+    hash_index: std::collections::HashMap<u64, Vec<u32>>,
+    /// Pristine copies of each default buffer, used to restore them after COW
+    /// when JS writes may have corrupted the shared buffer before prepare_mut.
+    default_snapshots: [[u8; STYLE_BUFFER_SIZE]; NUM_DEFAULTS],
 }
 
 impl Default for StyleArena {
@@ -215,10 +226,60 @@ impl StyleArena {
         }
         list_item.ref_count = 1;
 
-        Self {
-            buffers: vec![default_buffer, inline, img, flex, grid, list, list_item],
-            free_list: Vec::new(),
+        let mut button = StyleBuffer::new(default_data);
+        {
+            let data = button.mut_bytes();
+            Style::init_default_data(data);
+            // CSS spec: button { display: inline-block; text-align: center; box-sizing: border-box }
+            crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN_STATE, 1);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY_MODE,
+                display_mode_to_enum(DisplayMode::Box),
+            );
+            set_style_data_i32(data, StyleKeys::REF_COUNT, 1);
         }
+        button.ref_count = 1;
+
+        // Capture pristine snapshots of each default buffer before any JS writes
+        let mut default_snapshots = [[0u8; STYLE_BUFFER_SIZE]; NUM_DEFAULTS];
+        default_snapshots[Handle::Default as usize].copy_from_slice(default_buffer.bytes());
+        default_snapshots[Handle::Inline as usize].copy_from_slice(inline.bytes());
+        default_snapshots[Handle::Img as usize].copy_from_slice(img.bytes());
+        default_snapshots[Handle::Flex as usize].copy_from_slice(flex.bytes());
+        default_snapshots[Handle::Grid as usize].copy_from_slice(grid.bytes());
+        default_snapshots[Handle::List as usize].copy_from_slice(list.bytes());
+        default_snapshots[Handle::ListItem as usize].copy_from_slice(list_item.bytes());
+        default_snapshots[Handle::Button as usize].copy_from_slice(button.bytes());
+
+        let mut arena = Self {
+            buffers: vec![default_buffer, inline, img, flex, grid, list, list_item, button],
+            free_list: Vec::new(),
+            hash_index: std::collections::HashMap::new(),
+            default_snapshots,
+        };
+
+        if PREFLIGHT_ENABLED.load(Ordering::Relaxed) {
+            arena.reset_defaults(true);
+        }
+
+        arena
+    }
+    #[inline]
+    fn is_default_index(idx: usize) -> bool {
+        idx < NUM_DEFAULTS
+    }
+
+    /// Restore a default buffer to its pristine state.
+    /// Called after COW to undo any JS writes that leaked into the shared buffer.
+    fn restore_default(&mut self, idx: usize) {
+        let snapshot = &self.default_snapshots[idx];
+        let buf = &mut self.buffers[idx];
+        let ref_count = buf.ref_count;
+        buf.mut_bytes().copy_from_slice(snapshot);
+        // Re-stamp the current (decremented) ref_count
+        set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
     }
 
     /// Get a handle to the default style (shared by all unstyled nodes)
@@ -243,6 +304,7 @@ impl StyleArena {
             Handle::Grid => StyleHandle::DEFAULT_GRID,
             Handle::List => StyleHandle::DEFAULT_LIST,
             Handle::ListItem => StyleHandle::DEFAULT_LIST_ITEM,
+            Handle::Button => StyleHandle::DEFAULT_BUTTON,
         }
     }
 
@@ -282,12 +344,30 @@ impl StyleArena {
         }
         let idx = handle.index();
         let buf = &mut self.buffers[idx];
-        buf.ref_count = buf.ref_count.saturating_sub(1);
+        if buf.ref_count == 0 {
+            // Already freed — guard against double-release
+            return;
+        }
+        buf.ref_count -= 1;
         let ref_count = buf.ref_count;
 
         set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
 
         if buf.ref_count == 0 {
+            // Remove from hash index before clearing buffer data
+            let hash = Self::hash_buffer(<&[u8; STYLE_BUFFER_SIZE]>::try_from(buf.bytes()).unwrap());
+            if let Some(indices) = self.hash_index.get_mut(&hash) {
+                indices.retain(|&i| i != idx as u32);
+                if indices.is_empty() {
+                    self.hash_index.remove(&hash);
+                }
+            }
+            // Clear stale data from the freed buffer
+            buf.mut_bytes().fill(0);
+            #[cfg(target_os = "android")]
+            {
+                buf.buffer = -1;
+            }
             self.free_list.push(idx as u32);
         }
     }
@@ -311,6 +391,149 @@ impl StyleArena {
             total_refs: total_refs as usize,
             free_slots: self.free_list.len(),
             buffer_memory: active * STYLE_BUFFER_SIZE,
+        }
+    }
+
+    pub fn apply_preflight(&mut self) {
+        self.reset_defaults(true);
+    }
+
+    pub fn remove_preflight(&mut self) {
+        self.reset_defaults(false);
+    }
+
+    fn reset_defaults(&mut self, preflight: bool) {
+        let zero = [0u8; STYLE_BUFFER_SIZE];
+
+        let init_base: fn(&mut [u8]) = if preflight {
+            Style::init_preflight_base_data
+        } else {
+            Style::init_default_data
+        };
+
+        {
+            let ref_count = self.buffers[Handle::Default as usize].ref_count;
+            let data = self.buffers[Handle::Default as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Default as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Inline as usize].ref_count;
+            let data = self.buffers[Handle::Inline as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::DISPLAY_MODE, 1);
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Inline as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Img as usize].ref_count;
+            let data = self.buffers[Handle::Img as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_REPLACED, 1);
+            if preflight {
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY,
+                    display_to_enum(Display::Block),
+                );
+                crate::style::utils::set_style_data_i8(data, StyleKeys::DISPLAY_MODE, 0);
+            } else {
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY_MODE,
+                    display_mode_to_enum(DisplayMode::Inline),
+                );
+            }
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Img as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Flex as usize].ref_count;
+            let data = self.buffers[Handle::Flex as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY,
+                display_to_enum(Display::Flex),
+            );
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Flex as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Grid as usize].ref_count;
+            let data = self.buffers[Handle::Grid as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY,
+                display_to_enum(Display::Grid),
+            );
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Grid as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::List as usize].ref_count;
+            let data = self.buffers[Handle::List as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_LIST, 1);
+            if preflight {
+                crate::style::utils::set_style_data_u8(data, StyleKeys::LIST_STYLE_TYPE, 0);
+            }
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::List as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::ListItem as usize].ref_count;
+            let data = self.buffers[Handle::ListItem as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            crate::style::utils::set_style_data_i8(
+                data,
+                StyleKeys::DISPLAY_MODE,
+                display_mode_to_enum(DisplayMode::ListItem),
+            );
+            crate::style::utils::set_style_data_i8(data, StyleKeys::ITEM_IS_LIST_ITEM, 1);
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::ListItem as usize].copy_from_slice(data);
+        }
+
+        {
+            let ref_count = self.buffers[Handle::Button as usize].ref_count;
+            let data = self.buffers[Handle::Button as usize].mut_bytes();
+            data.copy_from_slice(&zero);
+            init_base(data);
+            if preflight {
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY_MODE,
+                    display_mode_to_enum(DisplayMode::Box),
+                );
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN_STATE, 1);
+            } else {
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN, 3);
+                crate::style::utils::set_style_data_i8(data, StyleKeys::TEXT_ALIGN_STATE, 1);
+                crate::style::utils::set_style_data_i8(
+                    data,
+                    StyleKeys::DISPLAY_MODE,
+                    display_mode_to_enum(DisplayMode::Box),
+                );
+            }
+            set_style_data_u32(data, StyleKeys::REF_COUNT, ref_count);
+            self.default_snapshots[Handle::Button as usize].copy_from_slice(data);
         }
     }
 }
@@ -353,21 +576,22 @@ impl StyleArena {
     pub fn intern(&mut self, data: &[u8; STYLE_BUFFER_SIZE]) -> StyleHandle {
         let hash = Self::hash_buffer(data);
 
-        for (idx, buf) in self.buffers.iter_mut().enumerate() {
-            if buf.ref_count > 0
-                && Self::hash_buffer(<&[u8; STYLE_BUFFER_SIZE]>::try_from(buf.bytes()).unwrap()) == hash
-                && buf.bytes() == data
-            {
-                buf.ref_count += 1;
-                let ref_count = buf.ref_count;
-
-                set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
-
-                return StyleHandle(idx as u32);
+        // O(1) lookup via hash index instead of O(n) linear scan
+        if let Some(indices) = self.hash_index.get(&hash) {
+            for &idx in indices {
+                let buf = &mut self.buffers[idx as usize];
+                if buf.ref_count > 0 && buf.bytes() == data {
+                    buf.ref_count += 1;
+                    let ref_count = buf.ref_count;
+                    set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
+                    return StyleHandle(idx);
+                }
             }
         }
 
-        self.alloc(data)
+        let handle = self.alloc(data);
+        self.hash_index.entry(hash).or_insert_with(Vec::new).push(handle.index() as u32);
+        handle
     }
 
     /// Prepare for mutation - COW if shared, returns (new_handle, ptr)
@@ -379,6 +603,8 @@ impl StyleArena {
             return (handle, ptr);
         }
 
+        // COW: capture current data (may include JS writes — correct for new buffer)
+        let data = self.buffers[idx].bytes().to_vec();
 
         {
             let current = &mut self.buffers[idx];
@@ -387,13 +613,13 @@ impl StyleArena {
             set_style_data_u32(current.mut_bytes(), StyleKeys::REF_COUNT, ref_count);
         }
 
-        // todo clean up
+        // Restore the default buffer to its pristine state so future views
+        // sharing this handle don't inherit stale JS writes.
+        if Self::is_default_index(idx) {
+            self.restore_default(idx);
+        }
 
-        let new_handle = {
-            // COW: clone to new buffer
-            let data = self.buffers[idx].bytes().to_vec();
-            self.alloc(<&[u8; STYLE_BUFFER_SIZE]>::try_from(data.as_slice()).unwrap())
-        };
+        let new_handle = self.alloc(<&[u8; STYLE_BUFFER_SIZE]>::try_from(data.as_slice()).unwrap());
         let ptr = self.buffers[new_handle.index()].mut_bytes().as_mut_ptr();
         (new_handle, ptr)
     }
@@ -435,7 +661,10 @@ impl StyleArena {
 
     #[track_caller]
     pub fn buffer_opt(&self, handle: StyleHandle) -> Option<jni::sys::jint> {
-        self.buffers.get(handle.index()).map(|b| b.buffer())
+        self.buffers.get(handle.index()).and_then(|b| {
+            let id = b.buffer();
+            if id >= 0 { Some(id) } else { None }
+        })
     }
 
     /// Allocate a new buffer with the given data
@@ -463,20 +692,21 @@ impl StyleArena {
     pub fn intern(&mut self, data: &[u8; STYLE_BUFFER_SIZE]) -> StyleHandle {
         let hash = Self::hash_buffer(data);
 
-        for (idx, buf) in self.buffers.iter_mut().enumerate() {
-            if buf.ref_count > 0
-                && Self::hash_buffer(&buf.data) == hash
-                && buf.data.as_ref() == data
-            {
-                buf.ref_count += 1;
-
-                set_style_data_u32(buf.data.as_mut_slice(), StyleKeys::REF_COUNT, buf.ref_count);
-
-                return StyleHandle(idx as u32);
+        // O(1) lookup via hash index instead of O(n) linear scan
+        if let Some(indices) = self.hash_index.get(&hash) {
+            for &idx in indices {
+                let buf = &mut self.buffers[idx as usize];
+                if buf.ref_count > 0 && buf.data.as_ref() == data {
+                    buf.ref_count += 1;
+                    set_style_data_u32(buf.data.as_mut_slice(), StyleKeys::REF_COUNT, buf.ref_count);
+                    return StyleHandle(idx);
+                }
             }
         }
 
-        self.alloc(data)
+        let handle = self.alloc(data);
+        self.hash_index.entry(hash).or_insert_with(Vec::new).push(handle.index() as u32);
+        handle
     }
 
 
@@ -489,7 +719,7 @@ impl StyleArena {
             return (handle, ptr);
         }
 
-        // COW: clone to new buffer
+        // COW: capture current data (may include JS writes — correct for new buffer)
         let data = *self.buffers[idx].data;
 
         {
@@ -497,6 +727,12 @@ impl StyleArena {
             current.ref_count -= 1;
             let ref_count = current.ref_count;
             set_style_data_u32(current.data.as_mut_slice(), StyleKeys::REF_COUNT, ref_count);
+        }
+
+        // Restore the default buffer to its pristine state so future views
+        // sharing this handle don't inherit stale JS writes.
+        if Self::is_default_index(idx) {
+            self.restore_default(idx);
         }
 
         let new_handle = self.alloc(&data);

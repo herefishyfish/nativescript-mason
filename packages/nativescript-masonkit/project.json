@@ -88,7 +88,7 @@
       },
       "executor": "nx:run-commands"
     },
-    "build.native.anndroid.release": {
+    "build.native.android.release": {
       "outputs": ["{workspaceRoot}/dist/packages"],
       "options": {
         "commands": ["sh masonkit-build-android-aar.sh"],

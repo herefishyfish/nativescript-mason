@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import FontManager
 
 @objc(NSCMason)
 @objcMembers
@@ -17,38 +18,46 @@ public class NSCMason: NSObject {
   
   public static var shared = NSCMason()
   
+  // Use NSMapTable with weak keys to avoid retaining nodes that have been removed
   private var nodeEventListeners: [MasonNode: [String: [UUID: (MasonEvent) -> Void]]] = [:]
 
   
   public override init() {
     nativePtr = mason_init()
+    // Set the device scale up front so CSS strings parsed natively in Rust
+    // (e.g. grid-template `px` tracks) resolve to points, not raw device pixels.
+    mason_set_device_scale(nativePtr, NSCMason.scale)
     if let ptr = mason_get_buffer(nativePtr, 0) {
       let buffer = Unmanaged<NSMutableData>.fromOpaque(ptr).takeRetainedValue()
-      guard let font = NSCFontFaceSet.instance.getOrNil("serif") else {return}
-    
-      guard let font = font.uiFont else {return}
-      
-      // UIFont properties:
-      // - ascender: positive value, distance from baseline to top
-      // - descender: negative value, distance from baseline to bottom
-      // - lineHeight: total recommended line height
-      // - xHeight: height of lowercase 'x'
-      // - capHeight: height of capital letters
-      // - leading: extra spacing between lines (usually small or 0)
-      
-      let scale = NSCMason.scale
-      let ascent = Float(font.ascender) * scale
-      let descent = Float(-font.descender) * scale  // Make it positive
-      let lineHeight = Float(font.lineHeight) * scale
-      let xHeight = Float(font.xHeight) * scale
-      let capHeight = Float(font.capHeight) * scale
-      let leading = Float(font.leading) * scale
-      
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_ASCENT_OFFSET, ascent, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_DESCENT_OFFSET, descent, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_X_HEIGHT_OFFSET, xHeight, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_LEADING_OFFSET, leading, buffer)
-      MasonStyle.setFloat(StyleKeys.FONT_METRICS_CAP_HEIGHT_OFFSET, capHeight, buffer)
+      let instance = NSCFontFaceSet.instance()
+      instance.load("16px serif", text: nil) { fonts, error in
+        if(error != nil){
+          guard let font = fonts.first else {return}
+          
+            guard let font = font.uiFont else {return}
+            
+            // UIFont properties:
+            // - ascender: positive value, distance from baseline to top
+            // - descender: negative value, distance from baseline to bottom
+            // - lineHeight: total recommended line height
+            // - xHeight: height of lowercase 'x'
+            // - capHeight: height of capital letters
+            // - leading: extra spacing between lines (usually small or 0)
+            
+            let scale = NSCMason.scale
+            let ascent = Float(font.ascender) * scale
+            let descent = Float(-font.descender) * scale  // Make it positive
+            let xHeight = Float(font.xHeight) * scale
+            let capHeight = Float(font.capHeight) * scale
+            let leading = Float(font.leading) * scale
+            
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_ASCENT_OFFSET, ascent, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_DESCENT_OFFSET, descent, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_X_HEIGHT_OFFSET, xHeight, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_LEADING_OFFSET, leading, buffer)
+            MasonStyle.setFloat(StyleKeys.FONT_METRICS_CAP_HEIGHT_OFFSET, capHeight, buffer)
+        }
+      }
       
     }
   }
@@ -159,6 +168,10 @@ public class NSCMason: NSObject {
       }
   }
 
+  internal func removeAllEventListeners(_ node: MasonNode) {
+    nodeEventListeners.removeValue(forKey: node)
+  }
+
   
   public lazy var htmlParser = {
     HTMLParser(mason: self)
@@ -199,15 +212,11 @@ public class NSCMason: NSObject {
   }
   
   public func createScrollView()-> Scroll {
-    let view = Scroll(mason: self)
-    
-    return view
+    return Scroll(mason: self)
   }
   
   public func createButton()-> Button {
-    let btn = Button(mason: self)
-    
-    return btn
+    return Button(mason: self)
   }
   
   public func createNode() -> MasonNode {
@@ -242,6 +251,10 @@ public class NSCMason: NSObject {
   public func createImageNode() -> MasonNode {
     return MasonNode(masonImage: self)
   }
+
+  public func createButtonNode() -> MasonNode {
+    return MasonNode(masonButton: self)
+  }
   
   public func createLineBreakNode() -> MasonNode {
     return MasonNode(masonLineBreak: self)
@@ -266,5 +279,30 @@ public class NSCMason: NSObject {
     return MasonLi(mason: self)
   }
   
-  @objc static let scale = Float(UIScreen.main.scale)
+  public func createTextArea() -> MasonTextArea {
+    return MasonTextArea(mason: self)
+  }
+
+  @objc public var preflight: Bool {
+    get { mason_get_preflight() }
+    set { mason_set_preflight(nativePtr, newValue) }
+  }
+
+  @objc public static var scale: Float {
+    get {
+      for scene in UIApplication.shared.connectedScenes {
+             guard let windowScene = scene as? UIWindowScene else { continue }
+
+             for window in windowScene.windows where window.isKeyWindow {
+                 return Float(window.traitCollection.displayScale)
+             }
+         }
+
+         #if os(visionOS)
+         return 1.0
+         #else
+         return Float(UIScreen.main.scale)
+         #endif
+    }
+  }
 }

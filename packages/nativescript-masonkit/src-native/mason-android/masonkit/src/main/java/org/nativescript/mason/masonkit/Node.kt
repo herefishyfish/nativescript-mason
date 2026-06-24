@@ -1,8 +1,7 @@
 package org.nativescript.mason.masonkit
 
+
 import android.util.SizeF
-import android.util.Log
-import kotlin.math.abs
 import android.view.View
 import android.view.View.MeasureSpec
 import android.view.ViewGroup
@@ -10,6 +9,8 @@ import org.nativescript.mason.masonkit.enums.TextType
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Collections
+import java.util.WeakHashMap
 
 object NodeStateKeys {
   const val IS_NODE_DIRTY = 0
@@ -39,6 +40,7 @@ open class Node internal constructor(
 
   internal var computeCacheDirty = false
   internal var computeScheduled = false
+  internal var hasNativeClickDispatch = false
   internal var isPlaceholder = false
   internal var isImage = false
   var computeCache: SizeF = SizeF(Float.MIN_VALUE, Float.MIN_VALUE)
@@ -101,7 +103,14 @@ open class Node internal constructor(
     val w = computedContentWidth
     if (w > 0f && w.isFinite()) return w
     if (cachedWidth > 0f && cachedWidth.isFinite()) return cachedWidth
-    if (!computeCache.width.isNaN() && computeCache.width > 0f && computeCache.width.isFinite()) return computeCache.width
+    if (
+      !computeCache.width.isNaN()
+      && computeCache.width != Float.MIN_VALUE
+      && computeCache.width > 0f
+      && computeCache.width.isFinite()
+    ) {
+      return computeCache.width
+    }
     return computedWidth
   }
 
@@ -200,7 +209,6 @@ open class Node internal constructor(
   fun setComputedSize(width: Float, height: Float) {
     cachedWidth = width
     cachedHeight = height
-    android.util.Log.d("Node.setComputedSize", "nodePtr=${nativePtr} cached=${cachedWidth}x${cachedHeight}")
 
     // Update compute cache so `invalidateLayout()` can observe the new size
     // immediately and avoid scheduling further native computes for max-content.
@@ -224,108 +232,86 @@ open class Node internal constructor(
 
   internal var measureFunc: MeasureFunc = object : MeasureFunc {
     override fun measure(
-      knownDimensions: Size<Float?>, availableSpace: Size<Float?>
-    ): Size<Float> {
-      knownWidth = knownDimensions.width
-      knownHeight = knownDimensions.height
-      availableWidth = availableSpace.width
-      availableHeight = availableSpace.height
+      knownWidth: Float, knownHeight: Float,
+      availableWidth: Float, availableHeight: Float
+    ): Long {
       val view = this@Node.view as? View
-      if (knownDimensions.width != null && knownDimensions.height != null) {
-        return Size(knownDimensions.width!!, knownDimensions.height!!)
+      if (knownWidth > -1f && knownHeight > -1f) {
+        return MeasureOutput.make(knownWidth, knownHeight)
       }
       if (view !is Element) {
         var width = 0
         var height = 0
         val layoutParams = view?.layoutParams
-        val widthSpec = if (knownWidth != null) {
-          if (knownWidth!!.isNaN() || knownWidth!!.isInfinite()) {
-            width = Int.MAX_VALUE
-            MeasureSpec.UNSPECIFIED
-          } else {
-            width = knownWidth!!.toInt()
-            MeasureSpec.EXACTLY
-          }
-        } else if (layoutParams != null) {
-          val paramsWidth = layoutParams.width
-          when (paramsWidth) {
-            ViewGroup.LayoutParams.MATCH_PARENT -> {
-              if (availableWidth != null && availableWidth!!.isFinite()) {
-                if (availableWidth == -2f) {
+        val widthSpec = if (knownWidth > -1f) {
+          width = knownWidth.toInt()
+          MeasureSpec.EXACTLY
+        } else {
+          if (layoutParams != null) {
+            val paramsWidth = layoutParams.width
+            when (paramsWidth) {
+              ViewGroup.LayoutParams.MATCH_PARENT -> {
+                if (availableWidth < -1) {
                   width = Int.MAX_VALUE
                   MeasureSpec.UNSPECIFIED
                 } else {
-                  width = availableWidth!!.toInt()
+                  width = availableWidth.toInt()
                   MeasureSpec.AT_MOST
                 }
-              } else {
+              }
+
+              ViewGroup.LayoutParams.WRAP_CONTENT -> {
+                MeasureSpec.UNSPECIFIED
+              }
+
+              else -> {
+                if (paramsWidth >= 0) {
+                  width = paramsWidth
+                }
                 MeasureSpec.EXACTLY
               }
             }
-
-            ViewGroup.LayoutParams.WRAP_CONTENT -> {
-              MeasureSpec.UNSPECIFIED
-            }
-
-            else -> {
-              if (paramsWidth >= 0) {
-                width = paramsWidth
-              }
-              MeasureSpec.EXACTLY
-            }
+          } else {
+            width = Int.MAX_VALUE
+            MeasureSpec.UNSPECIFIED
           }
-        } else {
-          MeasureSpec.UNSPECIFIED
         }
 
-        val heightSpec = if (knownHeight != null) {
-          if (knownHeight!!.isNaN() || knownHeight!!.isInfinite()) {
+
+        val heightSpec = if (knownHeight > -1f) {
+          height = knownHeight.toInt()
+          MeasureSpec.EXACTLY
+        } else {
+          if (layoutParams != null) {
+            val paramsheight = layoutParams.height
+            when (paramsheight) {
+              ViewGroup.LayoutParams.MATCH_PARENT -> {
+                if (availableHeight < -1) {
+                  height = Int.MAX_VALUE
+                  MeasureSpec.UNSPECIFIED
+                } else {
+                  height = availableHeight.toInt()
+                  MeasureSpec.AT_MOST
+                }
+              }
+
+              ViewGroup.LayoutParams.WRAP_CONTENT -> {
+                MeasureSpec.UNSPECIFIED
+              }
+
+              else -> {
+                if (paramsheight >= 0) {
+                  height = paramsheight
+                }
+                MeasureSpec.EXACTLY
+              }
+            }
+          } else {
             height = Int.MAX_VALUE
             MeasureSpec.UNSPECIFIED
-          } else {
-            height = knownHeight!!.toInt()
-            MeasureSpec.EXACTLY
           }
-        } else if (layoutParams != null) {
-          val paramsHeight = layoutParams.height
-          when (paramsHeight) {
-            ViewGroup.LayoutParams.MATCH_PARENT -> {
-              if (availableHeight != null && availableHeight!!.isFinite()) {
-                when (availableHeight) {
-                  -2f -> {
-                    height = Int.MAX_VALUE
-                    MeasureSpec.UNSPECIFIED
-                  }
-
-                  -1f -> {
-                    height = Int.MAX_VALUE
-                    MeasureSpec.UNSPECIFIED
-                  }
-
-                  else -> {
-                    height = availableHeight!!.toInt()
-                    MeasureSpec.AT_MOST
-                  }
-                }
-              } else {
-                MeasureSpec.EXACTLY
-              }
-            }
-
-            ViewGroup.LayoutParams.WRAP_CONTENT -> {
-              MeasureSpec.UNSPECIFIED
-            }
-
-            else -> {
-              if (paramsHeight >= 0) {
-                height = paramsHeight
-              }
-              MeasureSpec.EXACTLY
-            }
-          }
-        } else {
-          MeasureSpec.UNSPECIFIED
         }
+
 
         view?.measure(
           MeasureSpec.makeMeasureSpec(
@@ -336,26 +322,11 @@ open class Node internal constructor(
         )
       }
 
-      val width = knownDimensions.width ?: view?.measuredWidth?.toFloat() ?: 0f
+      val width = knownWidth.takeIf { it > 0 } ?: view?.measuredWidth?.toFloat() ?: 0f
 
-      val height = knownDimensions.height ?: view?.measuredHeight?.toFloat() ?: 0f
+      val height = knownHeight.takeIf { it > 0 } ?: view?.measuredHeight?.toFloat() ?: 0f
 
-      try {
-        val nodePtr = this@Node.nativePtr
-        Log.d(
-          "Node.measure",
-          "nodePtr=${nodePtr} known=${knownDimensions.width}x${knownDimensions.height} available=${availableSpace.width}x${availableSpace.height} measured=${width}x${height}"
-        )
-        if (height != 0f && abs(height) < 1e-6f) {
-          Log.w("Node.measure", "tiny measured height on nodePtr=${nodePtr} -> ${height}")
-        }
-        if (width != 0f && abs(width) < 1e-6f) {
-          Log.w("Node.measure", "tiny measured width on nodePtr=${nodePtr} -> ${width}")
-        }
-      } catch (_: Throwable) {
-      }
-
-      return Size(width, height)
+      return MeasureOutput.make(width, height)
     }
   }
 
@@ -364,7 +335,7 @@ open class Node internal constructor(
 
   var view: Any? = null
 
-  internal var children = arrayListOf<Node>()
+  internal var children = ArrayList<Node>(4)
   internal val style = Style(this)
 
   internal var suppressChildOps = 0
@@ -488,20 +459,19 @@ open class Node internal constructor(
     }
   }
 
+  // Cached pseudo mask to avoid unsafe direct-buffer reads on hot paths
+  @Volatile
+  internal var pseudoMaskCache: Int = 0
+
   /**
    * Pseudo-state mask read from the native state buffer (u16).
    */
   val pseudoMask: Int
     get() {
-      if (nativePtr == 0L) return 0
-
-      val buf = stateValue
-      if (buf.capacity() >= NodeStateKeys.NODE_STATE_BUFFER_SIZE) {
-        buf.order(ByteOrder.nativeOrder())
-        return buf.getShort(NodeStateKeys.PSEUDO_FLAGS_INDEX).toInt() and 0xFFFF
-      }
-
-      return 0
+      // Prefer the cached mask to avoid reading from a possibly-invalid
+      // native DirectByteBuffer during tight UI paths (sorting, layout).
+      // The cache is updated whenever `setPseudo` mutates the buffer.
+      return pseudoMaskCache
     }
 
   val pseudoStates: Set<PseudoState>
@@ -515,6 +485,49 @@ open class Node internal constructor(
     return if (state.mask == 0) pseudoMask == 0 else (pseudoMask and state.mask) != 0
   }
 
+  /**
+   * Returns true when any active pseudo buffer explicitly set the given StateKeys.
+   * This checks the PSEUDO_SET_MASK bits stored inside each pseudo style buffer.
+   */
+  fun hasPseudoSetFor(key: StateKeys): Boolean {
+    val mask = pseudoMask
+    if (mask == 0) return false
+    for (state in PseudoState.entries) {
+      if (state.mask == 0) continue
+      if (mask and state.mask != 0) {
+        if (hasPseudoSetInBuffer(state.mask, key)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  /**
+   * Returns true when the specified pseudo buffer explicitly set the given StateKeys,
+   * regardless of whether that pseudo-state is currently active.
+   */
+  fun hasPseudoSetInBuffer(flags: Int, key: StateKeys): Boolean {
+    val buf = getPseudoBuffer(flags)
+    if (buf.capacity() < StyleKeys.PSEUDO_SET_MASK_HIGH + 8) {
+      return false
+    }
+    val setLow = buf.getLong(StyleKeys.PSEUDO_SET_MASK_LOW)
+    val setHigh = buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH)
+    return (setLow and key.low) != 0L || (setHigh and key.high) != 0L
+  }
+
+  fun getPseudoSetFlags(flags: Int): StateKeys {
+    val buf = getPseudoBuffer(flags)
+    if (buf.capacity() < StyleKeys.PSEUDO_SET_MASK_HIGH + 8) {
+      return StateKeys.NONE
+    }
+    return StateKeys(
+      buf.getLong(StyleKeys.PSEUDO_SET_MASK_LOW),
+      buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH)
+    )
+  }
+
   fun setPseudo(state: PseudoState, enabled: Boolean) {
     setPseudo(state, enabled, true)
   }
@@ -523,10 +536,12 @@ open class Node internal constructor(
     if (nativePtr == 0L) return
     val buf = stateValue
     if (buf.capacity() >= NodeStateKeys.NODE_STATE_BUFFER_SIZE) {
-      buf.order(ByteOrder.nativeOrder())
       val orig = buf.getShort(NodeStateKeys.PSEUDO_FLAGS_INDEX).toInt() and 0xFFFF
       val updated = if (enabled) orig or state.mask else orig and state.mask.inv()
       buf.putShort(NodeStateKeys.PSEUDO_FLAGS_INDEX, updated.toShort())
+      // Keep a JVM-side cached copy of the pseudo-mask to avoid unsafe
+      // direct-buffer reads on hot paths (see pseudoMask getter).
+      pseudoMaskCache = updated and 0xFFFF
       if (autoDirty) {
         dirty()
       }
@@ -557,10 +572,10 @@ open class Node internal constructor(
 
   fun getPseudoBuffer(flags: Int): ByteBuffer {
     try {
-      val cachedValue = cache[flags]
-      if (cachedValue != null) {
-        return cachedValue
+      cache[flags]?.let {
+        return it
       }
+
       val id = NativeHelpers.nativeGetPseudoStyleBuffer(mason.nativePtr, nativePtr, flags)
       if (id < 0) {
         val empty = ByteBuffer.allocateDirect(0)
@@ -572,7 +587,10 @@ open class Node internal constructor(
       buffer.apply {
         order(ByteOrder.nativeOrder())
       }
+
       cache[flags] = buffer
+
+      registerPseudoBufferOwner(buffer, this@Node, flags)
       return buffer
     } catch (_: Throwable) {
       val empty = ByteBuffer.allocateDirect(0)
@@ -583,10 +601,10 @@ open class Node internal constructor(
 
   fun preparePseudoBuffer(flags: Int): ByteBuffer {
     try {
-      val cachedValue = cache[flags]
-      if (cachedValue != null) {
-        return cachedValue
+      cache[flags]?.let {
+        return it
       }
+
       val id = NativeHelpers.nativePreparePseudoMut(mason.nativePtr, nativePtr, flags)
       if (id < 0) {
         val empty = ByteBuffer.allocateDirect(0)
@@ -599,6 +617,7 @@ open class Node internal constructor(
         order(ByteOrder.nativeOrder())
       }
       cache[flags] = buffer
+      registerPseudoBufferOwner(buffer, this@Node, flags)
       return buffer
     } catch (_: Throwable) {
       val empty = ByteBuffer.allocateDirect(0)
@@ -632,7 +651,39 @@ open class Node internal constructor(
     fun measure(id: Int, knownDimensionsSpec: Long, availableSpaceSpec: Long): Long {
       return (ObjectManager.shared[id] as? MeasureFuncImpl)?.measure(
         knownDimensionsSpec, availableSpaceSpec
-      ) ?: MeasureOutput.make(0f, 0f)
+      ) ?: MeasureOutput.ZERO
+    }
+
+    // Lightweight registry mapping pseudo-style ByteBuffers to their owning nodes
+    // We store weak references to nodes so this map doesn't prevent GC.
+    private val pseudoBufferOwners: MutableMap<ByteBuffer, MutableList<Pair<WeakReference<Node>, Int>>> =
+      Collections.synchronizedMap(WeakHashMap())
+
+    internal fun registerPseudoBufferOwner(buf: ByteBuffer, node: Node, flags: Int) {
+      val list = pseudoBufferOwners.getOrPut(buf) { ArrayList() }
+      synchronized(list) {
+        if (list.none { it.first.get() === node && it.second == flags }) {
+          list.add(Pair(WeakReference(node), flags))
+        }
+      }
+    }
+
+    internal fun lookupOwnersForBuffer(buf: ByteBuffer): List<Pair<Node, Int>>? {
+      val list = pseudoBufferOwners[buf] ?: return null
+      val out = ArrayList<Pair<Node, Int>>()
+      synchronized(list) {
+        val itr = list.iterator()
+        while (itr.hasNext()) {
+          val (ref, flags) = itr.next()
+          val n = ref.get()
+          if (n == null) {
+            itr.remove()
+          } else {
+            out.add(Pair(n, flags))
+          }
+        }
+      }
+      return out
     }
 
     // Test hook: optional callback to observe engine write-backs during testing.
@@ -645,6 +696,9 @@ open class Node internal constructor(
 
     @JvmStatic
     fun setComputedSize(node: Int, width: Float, height: Float) {
+      // Invoke optional test callback for instrumentation hooks
+      testComputedSizeCallback?.invoke(node, width, height)
+
       val n = (getObject(node) as? Node)
 
       n?.setComputedSize(width, height)
@@ -658,7 +712,7 @@ open class Node internal constructor(
           it.cachedWidth,
           it.cachedHeight
         )
-      } ?: MeasureOutput.make(0f, 0f)
+      } ?: MeasureOutput.ZERO
     }
 
     // Efficient single-pass invalidation that only walks each TextView once
@@ -692,6 +746,7 @@ open class Node internal constructor(
      */
 
 
+    @JvmStatic
     fun markPseudoSet(buf: ByteBuffer, key: StateKeys) {
       if (buf.capacity() < StyleKeys.PSEUDO_SET_MASK_HIGH + 8) return
       buf.putLong(
@@ -703,7 +758,6 @@ open class Node internal constructor(
         buf.getLong(StyleKeys.PSEUDO_SET_MASK_HIGH) or key.high
       )
     }
-
   }
 
   @JvmOverloads
@@ -987,6 +1041,10 @@ open class Node internal constructor(
       NodeUtils.removeView(this, reference.view as? View)
       NodeUtils.addView(this, child.view as? View)
 
+      // Swapping a non-text child changes the parent's composed text —
+      // rebuild the inline segment cache when the parent renders text.
+      (view as? TextContainer)?.engine?.invalidateInlineSegments()
+
       // Single invalidation pass for the newly inserted child
       invalidateDescendantTextViews(child, StateKeys.INVALIDATE_TEXT)
 
@@ -1201,6 +1259,10 @@ open class Node internal constructor(
       }
     }
 
+    // A non-text child (e.g. a Br) changes the parent's composed text —
+    // rebuild the inline segment cache when the parent renders text.
+    (view as? TextContainer)?.engine?.invalidateInlineSegments()
+
     // Single invalidation pass
     invalidateDescendantTextViews(child, StateKeys.INVALIDATE_TEXT)
 
@@ -1247,6 +1309,9 @@ open class Node internal constructor(
         NativeHelpers.nativeNodeRemoveChild(mason.nativePtr, nativePtr, removed.nativePtr)
       }
       removed.parent = null
+      // Removing a non-text child (e.g. a Br) changes the parent's composed
+      // text — rebuild the inline segment cache when the parent renders text.
+      (view as? TextContainer)?.engine?.invalidateInlineSegments()
       NodeUtils.invalidateLayout(this, true)
     }
     return removed
@@ -1286,12 +1351,13 @@ open class Node internal constructor(
     NativeHelpers.nativeNodeRemoveContext(mason.nativePtr, nativePtr)
     measureFunc = object : MeasureFunc {
       override fun measure(
-        knownDimensions: Size<Float?>, availableSpace: Size<Float?>
-      ): Size<Float> {
+        knownWidth: Float, knownHeight: Float,
+        availableWidth: Float, availableHeight: Float
+      ): Long {
         val view = this@Node.view as? View
-        val width = knownDimensions.width ?: view?.measuredWidth?.toFloat() ?: 0f
-        val height = knownDimensions.height ?: view?.measuredHeight?.toFloat() ?: 0f
-        return Size(width, height)
+        val width = knownWidth.takeIf { it > 0 } ?: view?.measuredWidth?.toFloat() ?: 0f
+        val height = knownHeight.takeIf { it > 0 } ?: view?.measuredHeight?.toFloat() ?: 0f
+        return MeasureOutput.make(width, height)
       }
     }
 
@@ -1313,6 +1379,10 @@ open class Node internal constructor(
 
   fun removeChildren() {
     children.forEach {
+      // Recursively clean up the entire subtree first so Rust-side
+      // grandchild nodes are properly detached and eligible for cleanup.
+      it.removeChildren()
+
       it.parent = null
       (it.view as? Element)?.onNodeDetached()
       (it.view as? View)?.let { view ->
@@ -1331,11 +1401,14 @@ open class Node internal constructor(
         }
       }
     }
-    children.clear()
 
+    // Detach children on the Rust side BEFORE clearing the list,
+    // so that node cleanup sees has_parent=false and can release styles.
     if (nativePtr != 0L) {
       NativeHelpers.nativeNodeRemoveChildren(mason.nativePtr, nativePtr)
     }
+
+    children.clear()
     dirty()
   }
 

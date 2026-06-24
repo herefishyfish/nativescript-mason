@@ -8,8 +8,12 @@ import org.nativescript.mason.masonkit.enums.Float as MasonFloat
  */
 fun makeBox(m: Mason, w: Float, h: Float, fl: MasonFloat?): Node {
   val meas = object : MeasureFunc {
-    override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>): Size<Float> {
-      return Size(w, h)
+    override fun measure(
+      knownWidth: Float, knownHeight: Float,
+      availableWidth: Float, availableHeight: Float
+    ): Long {
+      // Return packed MeasureOutput per native expectations
+      return MeasureOutput.make(w, h)
     }
   }
   val n = m.createNode(meas)

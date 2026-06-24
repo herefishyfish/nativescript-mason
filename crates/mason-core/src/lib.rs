@@ -4,10 +4,12 @@ use objc2_foundation::NSMutableData;
 
 use parking_lot::lock_api::MappedRwLockReadGuard;
 use parking_lot::{RawRwLock, RwLockReadGuard};
-use slotmap::{Key, KeyData, SlotMap};
+use slotmap::Key;
 use std::ffi::{c_float, c_longlong, c_void};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 pub use style_atoms::Atom;
+
+pub static PREFLIGHT_ENABLED: AtomicBool = AtomicBool::new(false);
 pub use taffy::geometry::{Line, Point, Rect, Size};
 pub use taffy::style::{
     AlignContent, AlignItems, AlignSelf, AvailableSpace, BoxSizing, CompactLength, Dimension,
@@ -71,7 +73,38 @@ pub static JVM_CACHE: std::sync::OnceLock<JVMCache> = std::sync::OnceLock::new()
 #[cfg(target_os = "android")]
 use jni::sys::jint;
 
+#[inline]
+fn initialize_pseudo_style_from_base(style: &mut Style) {
+    style.prepare_mut();
+    let data = style.data_mut();
+    data[style::StyleKeys::PSEUDO_SET_MASK_LOW as usize..style::StyleKeys::PSEUDO_SET_MASK_HIGH as usize + 8]
+        .fill(0);
+}
+
+/// Returns a mutable reference to `slot`, initialising it by cloning `base` if absent.
+fn get_or_init_pseudo<'a>(slot: &'a mut Option<Style>, base: &Style) -> &'a mut Style {
+    if slot.is_none() {
+        let mut s = base.clone();
+        initialize_pseudo_style_from_base(&mut s);
+        *slot = Some(s);
+    } else {
+        slot.as_mut().unwrap().prepare_mut();
+    }
+    slot.as_mut().unwrap()
+}
+
 pub struct MeasureOutput;
+impl MeasureOutput {
+    /// Tagged quiet-NaN payloads for MinContent / MaxContent signaling.
+    /// These match the Kotlin `MeasureOutput.MIN_BITS` / `MAX_BITS` constants.
+    pub const MIN_BITS: u32 = 0x7FC0_0001;
+    pub const MAX_BITS: u32 = 0x7FC0_0002;
+
+    /// Packs two u32 bit patterns into an i64
+    pub fn make_bits(width_bits: u32, height_bits: u32) -> i64 {
+        ((width_bits as i64) << 32) | (height_bits as i64)
+    }
+}
 
 impl MeasureOutput {
     pub fn make(width: f32, height: f32) -> i64 {
@@ -94,99 +127,73 @@ impl MeasureOutput {
 }
 
 fn copy_output(taffy: &Tree, node: Id, output: &mut Vec<f32>) {
-    let layout = taffy.layout_raw(node);
-    // (previously had a defensive clamp here; reverted to preserve raw
-    // computed values so we can trace origins upstream)
-    if let Some(children) = taffy.inner().children.get(node) {
-        let len = children.len();
-        output.reserve(len * 22);
+    // Hold a single read lock for the entire tree walk instead of acquiring
+    // 2 locks per node (layout_raw + inner().children).
+    let inner = taffy.inner();
+    let use_rounding = inner.use_rounding;
+    copy_output_inner(&inner, node, output, use_rounding);
+}
 
-        output.push(layout.order as f32);
-        output.push(layout.location.x);
-        output.push(layout.location.y);
-        output.push(layout.size.width);
-        // If the computed layout height is tiny (possibly from underflow or
-        // an uninitialized/near-zero result) but the content_size indicates
-        // a meaningful height, prefer exporting the content_size so the
-        // platform receives a usable value. Do not mutate the internal
-        // layout; only adjust the exported value.
-        let mut export_h = layout.size.height;
-        if export_h.abs() <= 1e-6 && layout.content_size.height > export_h {
-             export_h = layout.content_size.height;
+fn copy_output_inner(inner: &crate::tree::TreeInner, node: Id, output: &mut Vec<f32>, use_rounding: bool) {
+    let n = &inner.nodes[node];
+    let layout = if use_rounding { n.final_layout } else { n.unrounded_layout };
+
+    let children = inner.children.get(node);
+    let len = children.map(|c| c.len()).unwrap_or(0);
+
+    output.reserve(len * 22 + 22);
+
+    let export_h = {
+        let h = layout.size.height;
+        // Promote a near-zero (degenerate) height to content_size.height when
+        // the content itself is larger — avoids invisible collapsed containers.
+        if h.abs() <= 1e-6 && layout.content_size.height > h {
+            layout.content_size.height
+        } else {
+            h
         }
-        output.push(export_h);
+    };
 
-        // reorder if rect constructor changes
-        // Current order T,R,B,L
+    output.extend_from_slice(&[
+        layout.order as f32,
+        layout.location.x,
+        layout.location.y,
+        layout.size.width,
+        export_h,
+        layout.border.top,
+        layout.border.right,
+        layout.border.bottom,
+        layout.border.left,
+        layout.margin.top,
+        layout.margin.right,
+        layout.margin.bottom,
+        layout.margin.left,
+        layout.padding.top,
+        layout.padding.right,
+        layout.padding.bottom,
+        layout.padding.left,
+        layout.content_size.width,
+        layout.content_size.height,
+        layout.scrollbar_size.width,
+        layout.scrollbar_size.height,
+        len as f32,
+    ]);
 
-        output.push(layout.border.top);
-        output.push(layout.border.right);
-        output.push(layout.border.bottom);
-        output.push(layout.border.left);
-
-        output.push(layout.margin.top);
-        output.push(layout.margin.right);
-        output.push(layout.margin.bottom);
-        output.push(layout.margin.left);
-
-        output.push(layout.padding.top);
-        output.push(layout.padding.right);
-        output.push(layout.padding.bottom);
-        output.push(layout.padding.left);
-
-        output.push(layout.content_size.width);
-        output.push(layout.content_size.height);
-
-        output.push(layout.scrollbar_size.width);
-        output.push(layout.scrollbar_size.height);
-
-        output.push(len as f32);
-
+    if let Some(children) = children {
         for child in children {
-            copy_output(taffy, *child, output);
+            copy_output_inner(inner, *child, output, use_rounding);
         }
     }
 }
 
-fn copy_output_count(taffy: &Tree, node: Id, output: &mut Vec<f32>, count: &mut usize) {
-    let layout = taffy.layout(node);
-    if let Some(children) = taffy.inner().children.get(node) {
-        let len = children.len();
-        *count += 1;
-        output.reserve(len * 22);
-
-        output.push(layout.order as f32);
-        output.push(layout.location.x);
-        output.push(layout.location.y);
-        output.push(layout.size.width);
-        output.push(layout.size.height);
-
-        output.push(layout.border.top);
-        output.push(layout.border.right);
-        output.push(layout.border.bottom);
-        output.push(layout.border.left);
-
-        output.push(layout.margin.top);
-        output.push(layout.margin.right);
-        output.push(layout.margin.bottom);
-        output.push(layout.margin.left);
-
-        output.push(layout.padding.top);
-        output.push(layout.padding.right);
-        output.push(layout.padding.bottom);
-        output.push(layout.padding.left);
-
-        output.push(layout.content_size.width);
-        output.push(layout.content_size.height);
-
-        output.push(layout.scrollbar_size.width);
-        output.push(layout.scrollbar_size.height);
-
-        output.push(len as f32);
-
-        for child in children {
-            copy_output_count(taffy, *child, output, count);
-        }
+/// Maps the float sentinel encoding used at FFI boundaries to `AvailableSpace`.
+/// `-1.0` → `MinContent`, `-2.0` → `MaxContent`, any other value → `Definite`.
+#[inline]
+fn f32_to_available_space(v: f32) -> AvailableSpace {
+    match v {
+        x if x == -1.0 => AvailableSpace::MinContent,
+        x if x == -2.0 => AvailableSpace::MaxContent,
+        x => AvailableSpace::Definite(x),
     }
 }
 
@@ -267,6 +274,11 @@ impl Mason {
         self.0.create_list_item_node()
     }
 
+    #[track_caller]
+    pub fn create_button_node(&mut self) -> NodeRef {
+        self.0.create_button_node()
+    }
+
     pub fn prepare_mut(&mut self, node: &NodeRef) {
         self.0.prepare_mut(node.id.into())
     }
@@ -296,7 +308,6 @@ impl Mason {
     #[cfg(target_vendor = "apple")]
     #[track_caller]
     pub fn node_state_data(&mut self, node: Id) -> *mut c_void {
-        use objc2::Message;
         self.0
             .nodes_mut()
             .get_mut(node)
@@ -315,6 +326,24 @@ impl Mason {
                 unsafe { std::slice::from_raw_parts(ptr, len) }
             })
             .unwrap_or(&[])
+    }
+
+    /// Test helper: query whether a node has its virtual bit set.
+    pub fn is_node_virtual(&self, node: Id) -> bool {
+        self.0
+            .nodes()
+            .get(node)
+            .map(|n| n.is_virtual())
+            .unwrap_or(false)
+    }
+
+    /// Test helper: query whether a node's style marks it as a list-item.
+    pub fn is_node_list_item(&self, node: Id) -> bool {
+        self.0
+            .nodes()
+            .get(node)
+            .map(|n| n.style().get_item_is_list_item())
+            .unwrap_or(false)
     }
 
     #[cfg(target_os = "android")]
@@ -336,36 +365,9 @@ impl Mason {
             .nodes_mut()
             .get_mut(node)
             .and_then(|node| {
-                if let Some(p) = &node.pseudo_styles {
-                    use crate::node::PseudoStates;
-                    let bits = PseudoStates::from_bits_truncate(flags);
-                    if bits.contains(PseudoStates::HOVER) {
-                        if let Some(s) = &p.hover {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if let Some(s) = &p.active {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if let Some(s) = &p.focus {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if let Some(s) = &p.disabled {
-                            return Some(s.buffer());
-                        }
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if let Some(s) = &p.checked {
-                            return Some(s.buffer());
-                        }
-                    }
-                }
-                None
+                node.pseudo_styles.as_ref()
+                    .and_then(|p| p.resolve(flags))
+                    .map(|s| s.buffer())
             })
             .unwrap_or(-1 as _)
     }
@@ -376,38 +378,21 @@ impl Mason {
             .nodes()
             .get(node)
             .and_then(|node| {
-                if let Some(p) = &node.pseudo_styles {
-                    use crate::node::PseudoStates;
-                    let bits = PseudoStates::from_bits_truncate(flags);
-                    if bits.contains(PseudoStates::HOVER) {
-                        if let Some(s) = &p.hover {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if let Some(s) = &p.active {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if let Some(s) = &p.focus {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if let Some(s) = &p.disabled {
-                            return Some(s.raw());
-                        }
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if let Some(s) = &p.checked {
-                            return Some(s.raw());
-                        }
-                    }
-                }
-                None
+                node.pseudo_styles.as_ref()
+                    .and_then(|p| p.resolve(flags))
+                    .map(|s| s.raw())
             })
             .unwrap_or((0 as _, 0))
+    }
+
+    /// Return the StyleHandle for a pseudo style (immutable) if present.
+    #[track_caller]
+    pub fn pseudo_style_handle(&self, node: Id, flags: u16) -> Option<u32> {
+        self.0.nodes().get(node).and_then(|node| {
+            node.pseudo_styles.as_ref()
+                .and_then(|p| p.resolve(flags))
+                .map(|s| s.handle.index() as u32)
+        })
     }
 
     /// Prepare and return a mutable pseudo style buffer for `node` matching `flags`.
@@ -419,69 +404,59 @@ impl Mason {
             .nodes_mut()
             .get_mut(node)
             .and_then(|node| {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
-
                 if node.pseudo_styles.is_none() {
                     node.pseudo_styles = Some(node::PseudoStyles::default());
                 }
-
-                if let Some(p) = &mut node.pseudo_styles {
-                    // choose first matching pseudo in priority order
-                    if bits.contains(PseudoStates::HOVER) {
-                        if p.hover.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.hover = Some(s);
-                        } else {
-                            p.hover.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.hover.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if p.active.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.active = Some(s);
-                        } else {
-                            p.active.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.active.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if p.focus.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.focus = Some(s);
-                        } else {
-                            p.focus.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.focus.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if p.disabled.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.disabled = Some(s);
-                        } else {
-                            p.disabled.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.disabled.as_mut().unwrap().raw_mut());
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if p.checked.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.checked = Some(s);
-                        } else {
-                            p.checked.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.checked.as_mut().unwrap().raw_mut());
-                    }
-                }
-                None
+                node.pseudo_styles.as_mut().unwrap()
+                    .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                    .map(|s| s.raw_mut())
             })
             .unwrap_or((0 as _, 0))
+    }
+
+    #[cfg(target_vendor = "apple")]
+    #[track_caller]
+    pub fn pseudo_style_data(&self, node: Id, flags: u16) -> *mut c_void {
+        self.0
+            .nodes()
+            .get(node)
+            .and_then(|node| {
+                node.pseudo_styles.as_ref()
+                    .and_then(|p| p.resolve(flags))
+                    .map(|s| objc2::rc::Retained::into_raw(s.buffer()) as _)
+            })
+            .unwrap_or(0 as _)
+    }
+
+    #[cfg(target_vendor = "apple")]
+    #[track_caller]
+    pub fn pseudo_style_data_mut(&mut self, node: Id, flags: u16) -> *mut c_void {
+        self.0
+            .nodes_mut()
+            .get_mut(node)
+            .and_then(|node| {
+                if node.pseudo_styles.is_none() {
+                    node.pseudo_styles = Some(node::PseudoStyles::default());
+                }
+                node.pseudo_styles.as_mut().unwrap()
+                    .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                    .map(|s| objc2::rc::Retained::into_raw(s.buffer()) as *mut c_void)
+            })
+            .unwrap_or(0 as _)
+    }
+
+    /// Prepare and return the StyleHandle for a mutable pseudo style.
+    /// Caller may then query `buffer_from(handle)` / `buffer_raw_mut_from(handle)`.
+    #[track_caller]
+    pub fn pseudo_style_handle_mut(&mut self, node: Id, flags: u16) -> Option<u32> {
+        self.0.nodes_mut().get_mut(node).and_then(|node| {
+            if node.pseudo_styles.is_none() {
+                node.pseudo_styles = Some(crate::node::PseudoStyles::default());
+            }
+            node.pseudo_styles.as_mut().unwrap()
+                .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                .map(|s| s.handle.index() as u32)
+        })
     }
 
     #[cfg(target_os = "android")]
@@ -491,67 +466,12 @@ impl Mason {
             .nodes_mut()
             .get_mut(node)
             .and_then(|node| {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
-
                 if node.pseudo_styles.is_none() {
                     node.pseudo_styles = Some(crate::node::PseudoStyles::default());
                 }
-
-                if let Some(p) = &mut node.pseudo_styles {
-                    if bits.contains(PseudoStates::HOVER) {
-                        if p.hover.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.hover = Some(s);
-                        } else {
-                            p.hover.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.hover.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if p.active.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.active = Some(s);
-                        } else {
-                            p.active.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.active.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if p.focus.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.focus = Some(s);
-                        } else {
-                            p.focus.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.focus.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if p.disabled.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.disabled = Some(s);
-                        } else {
-                            p.disabled.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.disabled.as_ref().unwrap().buffer());
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if p.checked.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.checked = Some(s);
-                        } else {
-                            p.checked.as_mut().unwrap().prepare_mut();
-                        }
-                        return Some(p.checked.as_ref().unwrap().buffer());
-                    }
-                }
-
-                None
+                node.pseudo_styles.as_mut().unwrap()
+                    .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
+                    .map(|s| s.buffer())
             })
             .unwrap_or(-1 as _)
     }
@@ -559,7 +479,6 @@ impl Mason {
     #[cfg(target_vendor = "apple")]
     #[track_caller]
     pub fn style_data(&mut self, node: Id) -> *mut c_void {
-        use objc2::Message;
         self.0
             .nodes_mut()
             .get_mut(node)
@@ -605,28 +524,22 @@ impl Mason {
 
     #[cfg(target_os = "android")]
     #[track_caller]
-    pub fn setup(&mut self, node: Id, measure: jni::sys::jint) {
-        let has_measure = measure != -1;
-        if let Some(nd) = self.0.node_data_mut().get_mut(node) {
-            nd.measure = measure;
-        }
-
-        if let Some(node) = self.0.nodes_mut().get_mut(node) {
-            node.has_measure = has_measure;
-        }
-    }
-
-    #[cfg(target_os = "android")]
-    #[track_caller]
     pub fn set_measure(&mut self, node: Id, measure: jni::sys::jint) {
         let has_measure = measure != -1;
         if let Some(nd) = self.0.node_data_mut().get_mut(node) {
             nd.measure = measure;
         }
-
-        if let Some(node) = self.0.nodes_mut().get_mut(node) {
-            node.has_measure = has_measure;
+        if let Some(n) = self.0.nodes_mut().get_mut(node) {
+            n.has_measure = has_measure;
         }
+    }
+
+    /// Alias for [`set_measure`]; kept for ABI compatibility.
+    #[cfg(target_os = "android")]
+    #[track_caller]
+    #[deprecated(since = "0.0.0", note = "use set_measure instead")]
+    pub fn setup(&mut self, node: Id, measure: jni::sys::jint) {
+        self.set_measure(node, measure);
     }
 
     #[cfg(not(target_os = "android"))]
@@ -698,21 +611,6 @@ impl Mason {
     pub fn layout(&self, node_id: Id) -> Vec<f32> {
         let mut output = vec![];
         copy_output(&self.0, node_id, &mut output);
-        // Debug: emit the first node's frame (order,x,y,w,h) so we can
-        // verify whether degenerate heights are produced on the native side
-        // before the Vec<f32> is returned to Java. Use the crate logging
-        // macros so messages appear in logcat with the existing Rust tag.
-        if output.len() >= 5 {
-            // Clamp tiny positive heights in the exported Vec so Java parsing
-            // doesn't see tiny non-zero values that should be
-            // treated as zero.
-            let mut export_h = output[4];
-            if export_h > 0.0 && export_h.abs() < 1e-6_f32 {
-                export_h = 0.0;
-                output[4] = export_h;
-            }
-        }
-
         output
     }
 
@@ -720,20 +618,18 @@ impl Mason {
         *self.0.layout(node_id.into())
     }
 
-    /// Return transient float rects for a container as a flat Vec<[left,top,right,bottom,...]>
+    /// Return transient float rects for a container as a flat `[left, top, right, bottom, …]` vec.
     pub fn get_float_rects(&self, container_id: Id) -> Vec<f32> {
-        if let Some(rects) = self.0.get_float_rects_simple(container_id) {
-            let mut out = Vec::with_capacity(rects.len() * 4);
-            for r in rects {
-                out.push(r.left);
-                out.push(r.top);
-                out.push(r.right);
-                out.push(r.bottom);
-            }
-            out
-        } else {
-            Vec::new()
-        }
+        self.0
+            .get_float_rects_simple(container_id)
+            .map(|rects| {
+                let mut out = Vec::with_capacity(rects.len() * 4);
+                for r in rects {
+                    out.extend_from_slice(&[r.left, r.top, r.right, r.bottom]);
+                }
+                out
+            })
+            .unwrap_or_default()
     }
 
     /// Return float rects including the `node` id for each rect so callers
@@ -782,45 +678,9 @@ impl Mason {
     }
 
     pub fn compute_wh(&mut self, node_id: Id, width: f32, height: f32) {
-        // debug log for callers to verify the incoming floats and the
-        // corresponding AvailableSpace conversions.  this helps track down
-        // any mis‑mapping between the Android layer and the engine.
-        #[cfg(debug_assertions)]
-        {
-            let width_space = if width == -1.0 {
-                AvailableSpace::MinContent
-            } else if width == -2.0 {
-                AvailableSpace::MaxContent
-            } else {
-                AvailableSpace::Definite(width)
-            };
-            let height_space = if height == -1.0 {
-                AvailableSpace::MinContent
-            } else if height == -2.0 {
-                AvailableSpace::MaxContent
-            } else {
-                AvailableSpace::Definite(height)
-            };
-            log::debug!(
-                "compute_wh called: raw (w,h) = ({},{}) -> ({:?},{:?})",
-                width,
-                height,
-                width_space,
-                height_space
-            );
-        }
-
         let size = Size {
-            width: match width {
-                x if x == -1.0 => AvailableSpace::MinContent,
-                x if x == -2.0 => AvailableSpace::MaxContent,
-                _ => AvailableSpace::Definite(width),
-            },
-            height: match height {
-                x if x == -1.0 => AvailableSpace::MinContent,
-                x if x == -2.0 => AvailableSpace::MaxContent,
-                _ => AvailableSpace::Definite(height),
-            },
+            width: f32_to_available_space(width),
+            height: f32_to_available_space(height),
         };
         self.compute_layout(node_id, size);
     }
@@ -869,7 +729,7 @@ impl Mason {
     }
 
     pub fn set_children(&mut self, parent: Id, children: &[Id]) {
-        let mut tree = &mut self.0 .0.write();
+        let mut tree = self.0.inner_mut();
         let mut has_children = false;
         {
             if let Some(current_children) = tree.children.get_mut(parent) {
@@ -1080,87 +940,53 @@ impl Mason {
     }
 
     /// Prepare and invoke `func` on a mutable pseudo `Style` for `node` matching `flags`.
-    /// This will create the pseudo Style slot (cloned from base style) if missing
-    /// and call `prepare_mut()` on it before invoking `func` so callers can safely
-    /// mutate complex non-buffer data (strings/arrays) for pseudos.
+    /// Creates the pseudo slot (cloned from base style) if absent.
     #[track_caller]
     pub fn with_pseudo_style_mut<F>(&mut self, node: Id, flags: u16, func: F)
     where
         F: FnOnce(&mut Style),
     {
-        self.0
-            .nodes_mut()
-            .get_mut(node)
-            .map(|node| {
-                use crate::node::PseudoStates;
-                let bits = PseudoStates::from_bits_truncate(flags);
+        use crate::node::PseudoStates;
+        let mut nodes = self.0.nodes_mut();
+        let Some(node) = nodes.get_mut(node) else {
+            return;
+        };
 
-                if node.pseudo_styles.is_none() {
-                    node.pseudo_styles = Some(crate::node::PseudoStyles::default());
-                }
+        let bits = PseudoStates::from_bits_truncate(flags);
+        if bits.is_empty() {
+            node.style.prepare_mut();
+            func(&mut node.style);
+            return;
+        }
 
-                if let Some(p) = &mut node.pseudo_styles {
-                    if bits.contains(PseudoStates::HOVER) {
-                        if p.hover.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.hover = Some(s);
-                        } else {
-                            p.hover.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.hover.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::ACTIVE) {
-                        if p.active.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.active = Some(s);
-                        } else {
-                            p.active.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.active.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::FOCUS) {
-                        if p.focus.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.focus = Some(s);
-                        } else {
-                            p.focus.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.focus.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::DISABLED) {
-                        if p.disabled.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.disabled = Some(s);
-                        } else {
-                            p.disabled.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.disabled.as_mut().unwrap());
-                        return;
-                    }
-                    if bits.contains(PseudoStates::CHECKED) {
-                        if p.checked.is_none() {
-                            let mut s = node.style.clone();
-                            s.prepare_mut();
-                            p.checked = Some(s);
-                        } else {
-                            p.checked.as_mut().unwrap().prepare_mut();
-                        }
-                        func(p.checked.as_mut().unwrap());
-                        return;
-                    }
-                }
-            })
-            .unwrap_or(());
+        if node.pseudo_styles.is_none() {
+            node.pseudo_styles = Some(crate::node::PseudoStyles::default());
+        }
+        let base = node.style.clone();
+        let p = node.pseudo_styles.as_mut().unwrap();
+
+        let slot = if bits.contains(PseudoStates::HOVER) {
+            &mut p.hover
+        } else if bits.contains(PseudoStates::ACTIVE) {
+            &mut p.active
+        } else if bits.contains(PseudoStates::FOCUS) {
+            &mut p.focus
+        } else if bits.contains(PseudoStates::DISABLED) {
+            &mut p.disabled
+        } else if bits.contains(PseudoStates::CHECKED) {
+            &mut p.checked
+        } else {
+            return;
+        };
+
+        func(get_or_init_pseudo(slot, &base));
     }
     pub fn get_root(&self, node: Id) -> Option<NodeRef> {
         self.0.root(node)
+    }
+
+    pub fn reset_arena_defaults(&mut self) {
+        self.0.reset_arena_defaults();
     }
 }
 
@@ -1329,7 +1155,11 @@ mod tests {
 
         let pout = mason.layout(parent.id());
         let parent_h = pout[4];
-        assert!(parent_h > 0.0, "parent height should be positive but was {}", parent_h);
+        assert!(
+            parent_h > 0.0,
+            "parent height should be positive but was {}",
+            parent_h
+        );
     }
 
     #[test]
@@ -1368,22 +1198,23 @@ mod tests {
         mason.compute_wh(pid, -1.0, -2.0);
         let pout = mason.layout(pid);
         let parent_h = pout[4];
-        let parent_w = pout[3];
-        eprintln!("compute(-1,-2): parent w={} h={} h_bits=0x{:08x}", parent_w, parent_h, parent_h.to_bits());
+        let _parent_w = pout[3];
 
         let cout = mason.layout(cid);
-        let child_h = cout[4];
-        let child_w = cout[3];
-        eprintln!("compute(-1,-2): child  w={} h={}", child_w, child_h);
+        let _child_h = cout[4];
+        let _child_w = cout[3];
 
         // Print all computed sizes
         let computed = sizes.lock().unwrap();
-        for &(id, w, h) in computed.iter() {
-            eprintln!("set_computed_size: id={:?} w={} h={} h_bits=0x{:08x}", id, w, h, h.to_bits());
-        }
+        for &(_id, _w, _h) in computed.iter() {}
         drop(computed);
 
-        assert!(parent_h > 0.0, "parent height should be positive but was {} (bits=0x{:08x})", parent_h, parent_h.to_bits());
+        assert!(
+            parent_h > 0.0,
+            "parent height should be positive but was {} (bits=0x{:08x})",
+            parent_h,
+            parent_h.to_bits()
+        );
 
         // Cleanup callback
         crate::test_helpers::set_computed_size_callback(None);
@@ -1749,7 +1580,7 @@ mod tests {
 
     #[test]
     fn css_whitespace_behavior_documentation() {
-        // This test documents the current engine behaviour for consecutive
+        // This test documents the current engine behavior for consecutive
         // text segments (spaces are represented as segments). It asserts
         // the total width equals the sum of segment widths (no automatic
         // collapsing at this layer).

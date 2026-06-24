@@ -9,59 +9,6 @@ use taffy::{
     TrackSizingFunction,
 };
 
-fn parse_repeat<'i, 't>(
-    parser: &mut Parser<'i, 't>,
-    device_scale: f32,
-) -> Result<GridTemplateRepetition<Atom>, ParseError<'i, ()>> {
-    parser.parse_nested_block(|parser| {
-        // --- Parse repetition count ---
-        let repetition_ident = parser.expect_ident_or_string()?.as_ref().to_string();
-        let repetition = match repetition_ident.as_str() {
-            "auto-fit" => RepetitionCount::AutoFit,
-            "auto-fill" => RepetitionCount::AutoFill,
-            _ => {
-                let count = repetition_ident.parse::<u16>().unwrap_or(0);
-                RepetitionCount::Count(count)
-            }
-        };
-
-        parser.expect_comma()?;
-
-        // --- Parse tracks ---
-        let mut tracks = vec![];
-        let mut line_names = vec![];
-
-        while !parser.is_exhausted() {
-            // Collect names before track
-            let mut names: Vec<Atom> = vec![];
-
-            while parser
-                .try_parse(|p| p.expect_square_bracket_block())
-                .is_ok()
-            {
-                let nested_names = parser.parse_nested_block(|p| {
-                    let mut out = Vec::new();
-                    while let Ok(name) = p.expect_ident_cloned() {
-                        out.push(name.as_ref().into());
-                    }
-                    Ok(out)
-                })?;
-                names.extend(nested_names);
-            }
-
-            let track = parse_track_size(parser, device_scale)?;
-            tracks.push(track);
-            line_names.push(names);
-        }
-
-        Ok(GridTemplateRepetition {
-            count: repetition,
-            tracks,
-            line_names,
-        })
-    })
-}
-
 fn parse_repeat_inner<'i, 't, S: CheapCloneStr>(
     parser: &mut Parser<'i, 't>,
     device_scale: f32,

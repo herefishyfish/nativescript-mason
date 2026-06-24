@@ -304,7 +304,7 @@ public class CSSFilters {
     
     func resizeLayerIfNeeded() {
       guard let view = view else { return }
-      let scale = view.window?.screen.scale ?? UIScreen.main.scale
+      let scale = CGFloat(NSCMason.scale)
       
       var padLeft: CGFloat = 0, padRight: CGFloat = 0
       var padTop: CGFloat = 0, padBottom: CGFloat = 0
@@ -461,7 +461,7 @@ public class CSSFilters {
         setupSublayerObservation(for: view)
         self.view = view
       }
-      let scale = view.window?.screen.scale ?? UIScreen.main.scale
+      let scale = CGFloat(NSCMason.scale)
       
       var hasVisualFilters = false
       for filter in filters {
@@ -670,6 +670,135 @@ public class CSSFilters {
         drawable.present()
       }
     }
+
+    /// Apply filters as a backdrop effect (CSS backdrop-filter).
+    /// Unlike `apply(to:)` which overlays the view's own content,
+    /// this blurs/filters the content _behind_ the view.
+    ///
+    /// Uses CALayer.backgroundFilters (CoreImage filters on the backdrop)
+    /// for all supported filter types with exact CSS-matching values.
+    /// Falls back to UIVisualEffectView only for blur when needed.
+    public func applyAsBackdrop(to view: UIView) {
+      isApplying = true
+      defer { isApplying = false }
+
+      // Remove stale backdrop views/layers
+      view.subviews.filter { $0.layer.name == "_mason_backdrop" }.forEach { $0.removeFromSuperview() }
+      view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop_layer" })?.removeFromSuperlayer()
+
+      guard !filters.isEmpty else { return }
+
+      // Collect blur radius and CIFilter-based color adjustments
+      var blurRadius: CGFloat = 0
+      var ciFilters: [CIFilter] = []
+
+      for filter in filters {
+        switch filter {
+        case .blur(let r):
+          blurRadius = max(blurRadius, r)
+
+        case .brightness(let value):
+          if let f = CIFilter(name: "CIColorControls") {
+            f.setValue(Float(value - 1), forKey: kCIInputBrightnessKey)
+            ciFilters.append(f)
+          }
+
+        case .contrast(let value):
+          if let f = CIFilter(name: "CIColorControls") {
+            f.setValue(Float(value), forKey: kCIInputContrastKey)
+            ciFilters.append(f)
+          }
+
+        case .saturate(let value):
+          if let f = CIFilter(name: "CIColorControls") {
+            f.setValue(Float(value), forKey: kCIInputSaturationKey)
+            ciFilters.append(f)
+          }
+
+        case .hueRotate(let degrees):
+          if let f = CIFilter(name: "CIHueAdjust") {
+            f.setValue(Float(degrees * .pi / 180), forKey: kCIInputAngleKey)
+            ciFilters.append(f)
+          }
+
+        case .invert(let amount):
+          if let f = CIFilter(name: "CIColorMatrix") {
+            let t = Float(1 - 2 * amount)
+            let o = Float(amount)
+            f.setValue(CIVector(x: CGFloat(t), y: 0, z: 0, w: 0), forKey: "inputRVector")
+            f.setValue(CIVector(x: 0, y: CGFloat(t), z: 0, w: 0), forKey: "inputGVector")
+            f.setValue(CIVector(x: 0, y: 0, z: CGFloat(t), w: 0), forKey: "inputBVector")
+            f.setValue(CIVector(x: 0, y: 0, z: 0, w: 1), forKey: "inputAVector")
+            f.setValue(CIVector(x: CGFloat(o), y: CGFloat(o), z: CGFloat(o), w: 0), forKey: "inputBiasVector")
+            ciFilters.append(f)
+          }
+
+        case .opacity(let amount):
+          // backdrop-filter opacity: reduce alpha of backdrop content
+          if let f = CIFilter(name: "CIColorMatrix") {
+            f.setValue(CIVector(x: 1, y: 0, z: 0, w: 0), forKey: "inputRVector")
+            f.setValue(CIVector(x: 0, y: 1, z: 0, w: 0), forKey: "inputGVector")
+            f.setValue(CIVector(x: 0, y: 0, z: 1, w: 0), forKey: "inputBVector")
+            f.setValue(CIVector(x: 0, y: 0, z: 0, w: CGFloat(amount)), forKey: "inputAVector")
+            f.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBiasVector")
+            ciFilters.append(f)
+          }
+
+        case .sepia(let amount):
+          if let f = CIFilter(name: "CISepiaTone") {
+            f.setValue(Float(amount), forKey: kCIInputIntensityKey)
+            ciFilters.append(f)
+          }
+
+        case .grayscale(let amount):
+          if let f = CIFilter(name: "CIColorControls") {
+            f.setValue(Float(1 - amount), forKey: kCIInputSaturationKey)
+            ciFilters.append(f)
+          }
+
+        case .dropShadow:
+          break // drop-shadow not applicable for backdrop-filter
+        }
+      }
+
+      // Apply blur via UIVisualEffectView (only way to blur live backdrop content)
+      if blurRadius > 0 {
+        let blurEffect = UIBlurEffect(style: .regular)
+        let effectView = UIVisualEffectView(effect: nil)
+        effectView.frame = view.bounds
+        effectView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        effectView.layer.name = "_mason_backdrop"
+        effectView.isUserInteractionEnabled = false
+        // Use custom blur radius via the animatable property
+        view.insertSubview(effectView, at: 0)
+        UIView.animate(withDuration: 0) {
+          effectView.effect = blurEffect
+        }
+        // Set custom radius on the gaussian blur sublayer if accessible
+        if let backdropLayers = effectView.layer.sublayers {
+          for sublayer in backdropLayers {
+            if let bgFilters = sublayer.value(forKey: "filters") as? [NSObject] {
+              for bgFilter in bgFilters {
+                let filterName = String(describing: type(of: bgFilter))
+                if filterName.contains("Blur") || filterName.contains("blur") {
+                  bgFilter.setValue(blurRadius, forKey: "inputRadius")
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Apply CIFilter-based color adjustments via a backgroundFilters layer
+      if !ciFilters.isEmpty {
+        let backdropLayer = CALayer()
+        backdropLayer.name = "_mason_backdrop_layer"
+        backdropLayer.frame = view.bounds
+        // CALayer.backgroundFilters applies CIFilters to content behind the layer
+        backdropLayer.setValue(ciFilters, forKey: "backgroundFilters")
+        view.layer.addSublayer(backdropLayer)
+      }
+    }
   }
   
   private static func splitCssArgs(_ input: String) -> [String] {
@@ -775,7 +904,7 @@ public class CSSFilters {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     if trimmed.hasSuffix("px") {
       let px = CGFloat(Double(trimmed.dropLast(2)) ?? Double(defaultValue))
-      return px / CGFloat(UIScreen.main.scale)
+      return px / CGFloat(NSCMason.scale)
     } else if trimmed.hasSuffix("%") {
       return CGFloat((Double(trimmed.dropLast()) ?? Double(defaultValue)) / 100.0)
     } else {

@@ -39,6 +39,7 @@ import org.nativescript.mason.masonkit.input.DateInput
 import org.nativescript.mason.masonkit.input.FileInputControl
 import org.nativescript.mason.masonkit.input.NumberControl
 import org.nativescript.mason.masonkit.input.TextInput
+import org.nativescript.mason.masonkit.input.TextInputOwner
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -47,7 +48,7 @@ import kotlin.math.max
 @SuppressLint("DiscouragedPrivateApi")
 class Input @JvmOverloads constructor(
   context: Context, attrs: AttributeSet? = null, override: Boolean = false
-) : FrameLayout(context, attrs), Element, MeasureFunc, StyleChangeListener {
+) : FrameLayout(context, attrs), Element, MeasureFunc, StyleChangeListener, TextInputOwner {
 
   override val view: View
     get() = this
@@ -59,21 +60,25 @@ class Input @JvmOverloads constructor(
     private set
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach { it.shader = null } // force rebuild on next draw
+    style.mBackground?.layers?.forEach {
+      it.shader = null
+      it.shaderWidth = -1
+      it.shaderHeight = -1
+    } // force rebuild on next draw
     style.mBorderRenderer.invalidate()
     super.onSizeChanged(w, h, oldw, oldh)
   }
 
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-
+    // Draw children's outset box shadows at parent level, after this view's own
+    // background/border so an opaque parent background can't paint over them.
     ViewUtils.dispatchDraw(
       this,
       canvas,
       style,
-      ignoreBorder = (type == Type.Radio || type == Type.Checkbox)
+      ignoreBorder = (type == Type.Radio || type == Type.Checkbox),
+      beforeChildren = { c -> ViewUtils.drawChildrenOutsetShadows(this, c) }
     ) {
       super.dispatchDraw(it)
     }
@@ -99,10 +104,10 @@ class Input @JvmOverloads constructor(
   }
 
 
-  internal fun onBeforeInput(
+  override fun onBeforeInput(
     type: String,
-    data: String? = null,
-    options: EventOptions? = null
+    data: String?,
+    options: EventOptions?
   ): Boolean {
     val event = InputEvent(
       type = "beforeinput",
@@ -120,7 +125,7 @@ class Input @JvmOverloads constructor(
 
   internal val textInput: TextInput by lazy {
     TextInput(context).apply {
-      input = this@Input
+      owner = this@Input
       isSingleLine = true
       maxLines = 1
       textSize = style.fontSize.toFloat()
@@ -542,8 +547,8 @@ class Input @JvmOverloads constructor(
           textInput.setPadding(
             x, y, x, y
           )
-          style.border = "2px"
-          style.borderRadius = "4px"
+          style.border = "1"
+          style.borderRadius = "4"
           style.textAlign = TextAlign.Center
         }
         when (type) {
@@ -589,8 +594,8 @@ class Input @JvmOverloads constructor(
 //            LengthPercentage.Points(x),
 //          )
 
-          style.border = "2px"
-          style.borderRadius = "4px"
+          style.border = "1"
+          style.borderRadius = "4"
           style.textAlign = TextAlign.Center
         }
 
@@ -628,8 +633,8 @@ class Input @JvmOverloads constructor(
 //            LengthPercentage.Points(x),
 //          )
 
-          style.border = "2px"
-          style.borderRadius = "4px"
+          style.border = "1"
+          style.borderRadius = "4"
           style.textAlign = TextAlign.Center
         }
         addView(numberInput)
@@ -653,7 +658,7 @@ class Input @JvmOverloads constructor(
 //            LengthPercentage.Points(x),
 //          )
 
-          style.border = "2px"
+          style.border = "1"
         }
         addView(colorInput)
       }
@@ -1075,10 +1080,12 @@ class Input @JvmOverloads constructor(
   }
 
   override fun measure(
-    knownDimensions: Size<Float?>,
-    availableSpace: Size<Float?>
-  ): Size<Float> {
-    val size = Size(300f, 150f)
+    knownWidth: Float, knownHeight: Float,
+    availableWidth: Float, availableHeight: Float
+  ): Long {
+    var sizeWidth = 300f
+    var sizeHeight = 150f
+
     var ch: Float? = null
     when (type) {
       Type.Checkbox -> {
@@ -1087,8 +1094,8 @@ class Input @JvmOverloads constructor(
           24F,
           resources.displayMetrics
         )
-        size.width = dim
-        size.height = dim
+        sizeWidth = dim
+        sizeHeight = dim
       }
 
       Type.Radio -> {
@@ -1102,8 +1109,8 @@ class Input @JvmOverloads constructor(
           24F,
           resources.displayMetrics
         )
-        size.width = width
-        size.height = height
+        sizeWidth = width
+        sizeHeight = height
       }
 
       Type.Color -> {
@@ -1117,22 +1124,22 @@ class Input @JvmOverloads constructor(
           24F,
           resources.displayMetrics
         )
-        size.width = width
-        size.height = height
+        sizeWidth = width
+        sizeHeight = height
       }
 
       Type.File -> {
         fileInput.measure(0, 0)
-        size.width = fileInput.measuredWidth.toFloat()
-        size.height = fileInput.measuredHeight.toFloat()
+        sizeWidth = fileInput.measuredWidth.toFloat()
+        sizeHeight = fileInput.measuredHeight.toFloat()
       }
 
       Type.Button -> {
         buttonInput.measure(0, 0)
-        size.width = max(buttonInput.measuredWidth.toFloat(), 64 * resources.displayMetrics.density)
+        sizeWidth = max(buttonInput.measuredWidth.toFloat(), 64 * resources.displayMetrics.density)
 
         val fm = style.paint.fontMetrics
-        size.height =
+        sizeHeight =
           max(fm.descent - fm.ascent, 32 * resources.displayMetrics.density)
       }
 
@@ -1141,34 +1148,33 @@ class Input @JvmOverloads constructor(
       }
     }
 
-    knownDimensions.width?.let {
-      if (!it.isNaN() && it.isFinite()) {
-        size.width = it
-      }
-    } ?: run {
+    val knownW = knownWidth
+    if (knownW != -3F) {
+      sizeWidth = knownW
+    } else {
       ch?.let {
-        size.width = max(ch * this.size, 150f)
+        sizeWidth = max(ch * this.size, 150f)
       }
     }
 
-    knownDimensions.height?.let {
-      if (!it.isNaN() && it.isFinite()) {
-        size.height = it
-      }
-    } ?: run {
+    val knownH = knownHeight
+    if (knownH != -3F) {
+      sizeHeight = knownH
+    } else {
       ch?.let {
         val fm = style.paint.fontMetrics
-        size.height = fm.descent - fm.ascent
+        sizeHeight = fm.descent - fm.ascent
       }
     }
 
 
-    return size
+    return MeasureOutput.make(sizeWidth, sizeHeight)
   }
 
   override fun onChange(low: Long, high: Long) {
     val fontColor = StateKeys.hasFlag(low, high, StateKeys.FONT_COLOR)
     val fontSize = StateKeys.hasFlag(low, high, StateKeys.FONT_SIZE)
+    val caretColorChanged = StateKeys.hasFlag(low, high, StateKeys.CARET_COLOR)
 
     val font =
       StateKeys.hasFlag(low, high, StateKeys.FONT_WEIGHT) ||
@@ -1182,8 +1188,11 @@ class Input @JvmOverloads constructor(
       Type.Text, Type.Email, Type.Password, Type.Number, Type.Tel, Type.Url -> {
         if (fontSize || fontColor || font || textAlign) {
           textInput.cursorPaint.textSize = style.resolvedFontSize.toFloat()
-          textInput.cursorPaint.color = style.resolvedColor
+          textInput.cursorPaint.color = style.resolvedCaretColor
           syncTextStyle(textInput.text.toString(), textInput)
+        } else if (caretColorChanged) {
+          textInput.cursorPaint.color = style.resolvedCaretColor
+          textInput.invalidate()
         }
       }
 

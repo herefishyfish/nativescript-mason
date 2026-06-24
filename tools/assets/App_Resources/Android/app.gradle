@@ -6,11 +6,11 @@
 //}
 
 android {
-  compileSdkVersion 34
+  compileSdkVersion 36
   buildToolsVersion "34.0.0"
   defaultConfig {
     minSdkVersion 24
-    targetSdkVersion 34
+    targetSdkVersion 36
     multiDexEnabled true
     generatedDensities = []
     testBuildType System.getProperty('testBuildType', 'debug')
@@ -34,4 +34,6 @@ dependencies {
   androidTestImplementation 'com.squareup.okhttp3:okhttp:+'
   // implementation project(":masonkit")
   implementation 'androidx.multidex:multidex:2.0.1'
+  implementation "androidx.activity:activity:1.11.0"
+  implementation 'org.nativescript:fontmanager:1.0.7'
 }

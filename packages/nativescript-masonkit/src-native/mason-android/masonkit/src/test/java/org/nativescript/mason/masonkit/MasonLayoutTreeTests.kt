@@ -246,7 +246,7 @@ class MasonLayoutTreeTests {
     }
   }
 
-  // --- Performance Tests ---
+  // Performance Tests
 
   /**
    * Generate a synthetic layout FloatArray representing a tree with the given shape.

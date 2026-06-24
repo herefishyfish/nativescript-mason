@@ -7,7 +7,7 @@
 
 import Foundation
 import UIKit
-
+import FontManager
 
 @objc(MasonDimensionCompatType)
 public enum MasonDimensionCompatType: Int, RawRepresentable, Codable {
@@ -257,6 +257,39 @@ public enum MasonDimension: Codable, Equatable {
   case Percent(Float)
   
   
+  public enum Kind: RawRepresentable {
+    case Auto
+    case Points
+    case Percent
+    
+    public typealias RawValue = Int8
+    
+    public init?(rawValue: Int8) {
+      switch(rawValue){
+      case 0:
+        self = .Auto
+      case 1:
+        self = .Points
+      case 2:
+        self = .Percent
+      default:
+        return nil
+      }
+    }
+    
+    public var rawValue: Int8 {
+      switch(self){
+      case .Auto:
+        return 0
+      case .Points:
+        return 1
+      case .Percent:
+        return 2
+      }
+    }
+  }
+  
+  
   static func fromValueType(_ value: Float, _ type: Int8) -> MasonDimension? {
     return fromValueType(value, Int(type))
   }
@@ -291,9 +324,9 @@ public enum MasonDimension: Codable, Equatable {
   internal var type: Int8 {
     get {
       switch (self) {
-      case .Auto: return 0
-      case .Points: return 1
-      case .Percent: return 2
+      case .Auto: return Kind.Auto.rawValue
+      case .Points: return Kind.Points.rawValue
+      case .Percent: return Kind.Percent.rawValue
       }
     }
   }
@@ -356,7 +389,7 @@ public enum MasonDimension: Codable, Equatable {
         self = .Points(value)
         break
       case "dip":
-        self = .Points(value * Float(UIScreen.main.scale))
+        self = .Points(value * NSCMason.scale)
         break
       case "%", "percent":
         self = .Percent(value)
@@ -489,7 +522,7 @@ public enum MasonLengthPercentage: Codable, Equatable {
       self = .Points(value)
       break
     case "dip":
-      self = .Points(value * Float(UIScreen.main.scale))
+      self = .Points(value * NSCMason.scale)
       break
     case "%", "percent":
       self = .Percent(value)
@@ -635,7 +668,7 @@ public enum MasonLengthPercentageAuto: Codable, Equatable {
         self = .Points(value)
         break
       case "dip":
-        self = .Points(value * Float(UIScreen.main.scale))
+        self = .Points(value * NSCMason.scale)
         break
       case "%", "percent":
         self = .Percent(value)
@@ -1936,14 +1969,16 @@ public enum FontStyle: Int, RawRepresentable, CustomStringConvertible {
   }
   
   internal init(fontStyle: NSCFontStyle) {
-    switch (fontStyle)
+    switch (fontStyle.type)
     {
     case .normal:
       self = .Normal
     case .italic:
       self = .Italic
-    case .oblique(_):
+    case .oblique:
       self = .Oblique
+    @unknown default:
+      self = .Normal
     }
   }
   

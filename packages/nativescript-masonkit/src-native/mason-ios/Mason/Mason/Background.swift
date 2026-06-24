@@ -23,7 +23,7 @@ extension Background {
       context.fill(rect)
     }
     
-    for bgLayer in layers {
+    for bgLayer in layers.reversed() {
       drawLayer(bgLayer, on: nil, on: layer, in: context, rect: rect)
     }
 
@@ -36,7 +36,7 @@ extension Background {
       context.fill(rect)
     }
 
-    for layer in layers {
+    for layer in layers.reversed() {
       drawLayer(layer, on: view, in: context, rect: rect)
     }
   }
@@ -92,10 +92,12 @@ extension Background {
     }
 
     if layer.shader == nil {
-      let colors = gradient.stops.compactMap {
-        colorMap[$0]?.cgColor ?? UIColor(css: $0)?.cgColor
-      } as CFArray
-      layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors, locations: nil)
+      let (colors, locations) = parseGradientStops(gradient.stops)
+      if locations.isEmpty {
+        layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: nil)
+      } else {
+        layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: locations)
+      }
       layer.shaderWidth = width
       layer.shaderHeight = height
     }
@@ -106,8 +108,14 @@ extension Background {
       let (start, end) = linearGradientPoints(direction: gradient.direction, width: width, height: height)
       context.drawLinearGradient(shader, start: start, end: end, options: [])
     case "radial":
-      let center = CGPoint(x: width/2, y: height/2)
-      let radius = max(width, height) / 2
+      let center = resolveRadialGradientCenter(direction: gradient.direction, width: width, height: height)
+      // Radius must reach the farthest corner from the resolved centre.
+      let radius = max([
+        hypot(center.x, center.y),
+        hypot(width - center.x, center.y),
+        hypot(center.x, height - center.y),
+        hypot(width - center.x, height - center.y)
+      ].max() ?? max(width, height) / 2, 1)
       context.drawRadialGradient(shader, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
     default:
       break
@@ -226,14 +234,14 @@ func drawBackground(
 // MARK: - Gradient Drawing
 func drawGradient(layer: BackgroundLayer, context: CGContext, width: CGFloat, height: CGFloat) {
   guard let gradient = layer.gradient else { return }
-  
+
   if layer.shader == nil {
-    let colors = gradient.stops
-      .compactMap { parseColor($0)?.cgColor } as CFArray
-    
-    layer.shader = CGGradient(colorsSpace: deviceRGB,
-                              colors: colors,
-                              locations: nil)
+    let (colors, locations) = parseGradientStops(gradient.stops)
+    if locations.isEmpty {
+      layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: nil)
+    } else {
+      layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: locations)
+    }
   }
   
   guard let shader = layer.shader else { return }
@@ -244,8 +252,14 @@ func drawGradient(layer: BackgroundLayer, context: CGContext, width: CGFloat, he
     context.drawLinearGradient(shader, start: start, end: end, options: [])
     
   case "radial":
-    let center = CGPoint(x: width/2, y: height/2)
-    let radius = max(width, height) / 2
+    let center = resolveRadialGradientCenter(direction: gradient.direction, width: width, height: height)
+    // Radius must reach the farthest corner from the resolved centre.
+    let radius = max([
+      hypot(center.x, center.y),
+      hypot(width - center.x, center.y),
+      hypot(center.x, height - center.y),
+      hypot(width - center.x, height - center.y)
+    ].max() ?? max(width, height) / 2, 1)
     context.drawRadialGradient(shader,
                                startCenter: center,
                                startRadius: 0,
@@ -288,6 +302,62 @@ func linearGradientPoints(direction: String?, width: CGFloat, height: CGFloat)
     // fallback
     return (CGPoint(x: 0, y: 0), CGPoint(x: 0, y: height))
   }
+}
+
+/// Resolve the centre point of a radial-gradient from the CSS direction string.
+///
+/// Accepted formats: "circle at top left", "ellipse at 30% 70%",
+/// "at center", "circle", etc.  Defaults to the element centre (50% 50%).
+func resolveRadialGradientCenter(direction: String?, width: CGFloat, height: CGFloat) -> CGPoint {
+  let defaultCenter = CGPoint(x: width / 2, y: height / 2)
+  guard let dir = direction?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+    return defaultCenter
+  }
+
+  // Extract the portion after "at "
+  guard let atRange = dir.range(of: " at ") else { return defaultCenter }
+  let positionStr = String(dir[atRange.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+  if positionStr.isEmpty { return defaultCenter }
+
+  return resolvePositionKeywords(positionStr, width: width, height: height)
+}
+
+/// Convert a CSS background-position value (keyword or percentage based) to
+/// absolute pixel coordinates.
+private func resolvePositionKeywords(_ position: String, width: CGFloat, height: CGFloat) -> CGPoint {
+  let parts = position.split(separator: " ").map { String($0) }
+
+  func resolveToken(_ token: String, horizontal: Bool) -> CGFloat {
+    switch token {
+    case "left":   return 0
+    case "right":  return width
+    case "top":    return 0
+    case "bottom": return height
+    case "center": return horizontal ? width / 2 : height / 2
+    default:
+      if token.hasSuffix("%"), let pct = Double(token.dropLast()) {
+        return CGFloat(pct / 100) * (horizontal ? width : height)
+      }
+      let cleaned = token.hasSuffix("px") ? String(token.dropLast(2)) : token
+      if let px = Double(cleaned) { return CGFloat(px) }
+      return horizontal ? width / 2 : height / 2
+    }
+  }
+
+  if parts.count == 1 {
+    switch parts[0] {
+    case "top":    return CGPoint(x: width / 2, y: 0)
+    case "bottom": return CGPoint(x: width / 2, y: height)
+    default:
+      let x = resolveToken(parts[0], horizontal: true)
+      return CGPoint(x: x, y: height / 2)
+    }
+  }
+
+  return CGPoint(
+    x: resolveToken(parts[0], horizontal: true),
+    y: resolveToken(parts[1], horizontal: false)
+  )
 }
 
 // MARK: - Bitmap Drawing
@@ -360,6 +430,71 @@ private func drawBitmapLayer(
       py += drawHeight
     }
   }
+}
+
+// MARK: - Gradient Stop Parsing
+/// Parse gradient stop strings (e.g. "transparent 66%", "rgba(0,0,0,0.5)").
+/// Returns parallel arrays of CGColor and CGFloat positions following CSS inference rules.
+func parseGradientStops(_ stops: [String]) -> (colors: [CGColor], locations: [CGFloat]) {
+  var parsedColors: [CGColor?] = []
+  var parsedPositions: [CGFloat?] = []
+  for raw in stops {
+    let trimmed = raw.trimmingCharacters(in: .whitespaces)
+    var depth = 0
+    var lastSpace: String.Index? = nil
+    for idx in trimmed.indices {
+      let ch = trimmed[idx]
+      if ch == "(" { depth += 1 }
+      else if ch == ")" { depth -= 1 }
+      else if ch == " " && depth == 0 { lastSpace = idx }
+    }
+    if let spaceIdx = lastSpace {
+      let colorPart = String(trimmed[trimmed.startIndex..<spaceIdx])
+      let posPart = String(trimmed[trimmed.index(after: spaceIdx)...]).trimmingCharacters(in: .whitespaces)
+      let color = colorMap[colorPart]?.cgColor ?? UIColor(css: colorPart)?.cgColor
+      var position: CGFloat? = nil
+      if posPart.hasSuffix("%"), let val = Double(posPart.dropLast()) {
+        position = CGFloat(val / 100.0)
+      } else if let val = Double(posPart) {
+        position = CGFloat(val <= 1.0 ? val : val / 100.0)
+      }
+      parsedColors.append(color)
+      parsedPositions.append(position)
+    } else {
+      parsedColors.append(colorMap[trimmed]?.cgColor ?? UIColor(css: trimmed)?.cgColor)
+      parsedPositions.append(nil)
+    }
+  }
+  // CSS position inference: unspecified stops distribute evenly between anchored neighbors.
+  let n = parsedPositions.count
+  if n > 0 {
+    if parsedPositions[0] == nil { parsedPositions[0] = 0.0 }
+    if parsedPositions[n - 1] == nil { parsedPositions[n - 1] = 1.0 }
+    // Forward pass: fill runs of nil between anchors by linear interpolation.
+    var i = 0
+    while i < n {
+      if parsedPositions[i] == nil {
+        var j = i + 1
+        while j < n && parsedPositions[j] == nil { j += 1 }
+        let start = parsedPositions[i - 1] ?? 0.0
+        let end = parsedPositions[j < n ? j : n - 1] ?? 1.0
+        let steps = j - i + 1
+        for k in i..<j {
+          parsedPositions[k] = start + (end - start) * CGFloat(k - i + 1) / CGFloat(steps)
+        }
+        i = j
+      } else {
+        i += 1
+      }
+    }
+  }
+  let validPairs = zip(parsedColors, parsedPositions).compactMap { (c, p) -> (CGColor, CGFloat)? in
+    guard let color = c, let pos = p else { return nil }
+    return (color, pos)
+  }
+  let colors = validPairs.map { $0.0 }
+  let locations = validPairs.map { $0.1 }
+  return (colors, locations)
 }
 
 // MARK: - Image Loading

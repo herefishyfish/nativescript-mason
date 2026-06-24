@@ -50,10 +50,11 @@ class Li @JvmOverloads constructor(
   }
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-
-    ViewUtils.dispatchDraw(this, canvas, style) {
+    // Draw children's outset box shadows at parent level, after this view's own
+    // background/border so an opaque parent background can't paint over them.
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) {
       drawMarker(it)
       // Call ViewGroup.dispatchDraw directly to draw children, avoiding
       // View's dispatchDraw which would double-wrap with ViewUtils.
@@ -68,9 +69,7 @@ class Li @JvmOverloads constructor(
     if (listType == ListStyleType.None.value) return
 
     val fm = style.paint.fontMetrics
-    val baseline = findFirstTextBaseline(this@Li).takeIf { it != -1 } ?: run {
-      (-fm.ascent).toInt()
-    }
+    val baseline = findFirstTextBaseline(this@Li).takeIf { it != -1 } ?: (-fm.ascent).toInt()
 
     val oldPaintStyle = style.paint.style
     val oldStroke = style.paint.strokeWidth
@@ -140,7 +139,10 @@ class Li @JvmOverloads constructor(
 
     when (parent) {
       is ListView.MasonRecyclerView -> {
-        node.dirty()
+        // Do NOT call node.dirty() here — it defeats the compute cache and
+        // forces a full Rust layout on every measure during fling/scroll.
+        // Content changes are handled by onBindViewHolder which already
+        // calls node.dirty().
         if (!node.mason.inCompute) {
           val width = mapMeasureSpec(specWidthMode, specWidth).value
           var height = mapMeasureSpec(specHeightMode, specHeight).value
@@ -177,7 +179,10 @@ class Li @JvmOverloads constructor(
   }
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-    if (parent !is Element || parent is ListView.MasonRecyclerView) {
+    // layoutFlat() is already called during onMeasure for RecyclerView items;
+    // only re-read the layout tree if the cache was dirtied between measure
+    // and layout (rare). This avoids a redundant JNI call per item during fling.
+    if ((parent !is Element || parent is ListView.MasonRecyclerView) && node.computeCacheDirty) {
       layoutFlat()
     }
     applyLayoutFlat(node, node.layoutTree)
@@ -284,8 +289,9 @@ class Li @JvmOverloads constructor(
   }
 
   override fun measure(
-    knownDimensions: Size<Float?>, availableSpace: Size<Float?>
-  ): Size<Float> {
+    knownWidth: Float, knownHeight: Float,
+    availableWidth: Float, availableHeight: Float
+  ): Long {
     // Use the Android view hierarchy (same as resolveListStyleType) so that
     // recycled items inside the RecyclerView correctly pick up the parent
     // ListView's ordered flag — node.parent (Taffy tree) may not reflect the
@@ -301,7 +307,7 @@ class Li @JvmOverloads constructor(
       markerWidth = 0f
       markerHeight = 0f
       markerSize = 0f
-      return Size.uniform(0f)
+      return MeasureOutput.ZERO
     }
 
     val paint = style.paint
@@ -340,6 +346,6 @@ class Li @JvmOverloads constructor(
     markerWidth = width + gap
     markerHeight = textHeight
 
-    return Size(markerWidth, markerHeight)
+    return MeasureOutput.make(markerWidth, markerHeight)
   }
 }

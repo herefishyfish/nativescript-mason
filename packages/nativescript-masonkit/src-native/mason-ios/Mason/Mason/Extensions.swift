@@ -166,7 +166,7 @@ public extension UIImage {
     direction: Direction,
     color: UIColor,
     size: CGSize = CGSize(width: 8, height: 5),
-    scale: CGFloat = UIScreen.main.scale
+    scale: CGFloat = CGFloat(NSCMason.scale)
   ) -> UIImage {
     let renderer = UIGraphicsImageRenderer(size: size, format: {
       let f = UIGraphicsImageRendererFormat()
@@ -207,7 +207,7 @@ public extension UIImage {
           color: UIColor,
           size: CGSize = CGSize(width: 16, height: 6),
           lineWidth: CGFloat = 1.5,
-          scale: CGFloat = UIScreen.main.scale
+          scale: CGFloat = CGFloat(NSCMason.scale)
       ) -> UIImage {
 
           let format = UIGraphicsImageRendererFormat()
@@ -663,8 +663,6 @@ func setInnerHTML<T: MasonElement>(_ element: T,_ value: String) {
     addChildAt(parent, node: node, index: index)
   }
   
-  
-  
   @objc public func mason_replaceChildAt(text: String, _ index: Int){
     guard let parent = self as? MasonElement else { return }
     replaceChildAt(parent, text: text, index: index)
@@ -679,5 +677,20 @@ func setInnerHTML<T: MasonElement>(_ element: T,_ value: String) {
   @objc public func mason_replaceChildAt(node: MasonNode, _ index: Int){
     guard let parent = self as? MasonElement else { return }
     replaceChildAt(parent, node: node, index: index)
+  }
+
+  /// Remove the child node (view or text node) at `index` from the mason tree.
+  /// Counterpart to `mason_addChildAt`; `MasonNode.removeChildAt` already
+  /// handles both `MasonTextNode` and element children.
+  @objc public func mason_removeChildAt(_ index: Int){
+    guard let parent = self as? MasonElement else { return }
+    _ = parent.node.removeChildAt(index: index)
+  }
+
+  /// Remove a specific child node (e.g. the `MasonTextNode` a framework stamped
+  /// onto its JS text node) without needing its index.
+  @objc public func mason_removeChildNode(_ node: MasonNode){
+    guard let parent = self as? MasonElement else { return }
+    _ = parent.node.removeChild(node)
   }
 }

@@ -5,6 +5,9 @@ import android.graphics.Paint
 import android.text.TextPaint
 import android.view.View
 import dalvik.annotation.optimization.FastNative
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.Border.IKeyCorner
 import org.nativescript.mason.masonkit.Styles.TextJustify
 import org.nativescript.mason.masonkit.Styles.TextWrap
@@ -14,6 +17,7 @@ import org.nativescript.mason.masonkit.enums.AlignItems
 import org.nativescript.mason.masonkit.enums.AlignSelf
 import org.nativescript.mason.masonkit.enums.BorderStyle
 import org.nativescript.mason.masonkit.enums.BoxSizing
+import org.nativescript.mason.masonkit.enums.Clear
 import org.nativescript.mason.masonkit.enums.Direction
 import org.nativescript.mason.masonkit.enums.Display
 import org.nativescript.mason.masonkit.enums.DisplayMode
@@ -33,21 +37,210 @@ import org.nativescript.mason.masonkit.enums.TextAlign
 import org.nativescript.mason.masonkit.enums.VerticalAlign
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.math.tan
 
-
-internal fun Int.rgbaToHexCSS(): String {
+internal fun Int.argbToCssHex(): String {
+  // Android color ints are ARGB (0xAARRGGBB). Convert to CSS-style #RRGGBB or #RRGGBBAA.
   val color = this.toUInt()
-  val r = (color shr 24) and 0xFFu
-  val g = (color shr 16) and 0xFFu
-  val b = (color shr 8) and 0xFFu
-  val a = (color and 0xFFu).toInt()
+  val a = ((color shr 24) and 0xFFu).toInt()
+  val r = ((color shr 16) and 0xFFu).toInt()
+  val g = ((color shr 8) and 0xFFu).toInt()
+  val b = (color and 0xFFu).toInt()
   if (a == 255) {
-    return "#%02X%02X%02X".format(r.toInt(), g.toInt(), b.toInt())
+    return "#%02X%02X%02X".format(r, g, b)
   }
-  return "#%02X%02X%02X%02X".format(
-    r.toInt(), g.toInt(), b.toInt(), a
-  )
+  return "#%02X%02X%02X%02X".format(r, g, b, a)
+}
+
+/**
+ * Parse CSS shorthand for padding (1-4 values) and apply to style.padding
+ */
+fun parsePaddingShorthand(style: Style, value: String) {
+  val cleaned = value.trim().removeSuffix(";")
+  if (cleaned.isEmpty()) {
+    if (!style.inBatch) style.inBatch = true
+    style.setPaddingWithValueType(0f, LengthPercentage.Kind.Points.value)
+    if (style.inBatch) style.inBatch = false
+    return
+  }
+
+  val tokens = SPLIT_REGEX.split(cleaned).mapNotNull { parseLengthPercentage(it) }
+  if (tokens.isEmpty()) return
+
+  var topType: Byte
+  var topValue: Float
+  var rightType: Byte
+  var rightValue: Float
+  var bottomType: Byte
+  var bottomValue: Float
+  var leftType: Byte
+  var leftValue: Float
+
+  when (tokens.size) {
+    1 -> {
+      val padding = tokens[0]
+      topType = padding.type
+      topValue = padding.value
+
+      rightType = padding.type
+      rightValue = padding.value
+
+      bottomType = padding.type
+      bottomValue = padding.value
+
+      leftType = padding.type
+      leftValue = padding.value
+    }
+
+    2 -> {
+      val tb = tokens[0]
+      val rl = tokens[1]
+
+
+      topType = tb.type
+      topValue = tb.value
+
+      rightType = rl.type
+      rightValue = rl.value
+
+      bottomType = tb.type
+      bottomValue = tb.value
+
+      leftType = rl.type
+      leftValue = rl.value
+
+    }
+
+    3 -> {
+
+      val top = tokens[0]
+      val right = tokens[1]
+      val bottom = tokens[2]
+
+      topType = top.type
+      topValue = top.value
+
+      rightType = right.type
+      rightValue = right.value
+
+      bottomType = bottom.type
+      bottomValue = bottom.value
+
+      leftType = right.type
+      leftValue = right.value
+    }
+
+    else -> {
+      val top = tokens[0]
+      val right = tokens[1]
+      val bottom = tokens[2]
+      val left = tokens[3]
+
+
+      topType = top.type
+      topValue = top.value
+
+      rightType = right.type
+      rightValue = right.value
+
+      bottomType = bottom.type
+      bottomValue = bottom.value
+
+      leftType = left.type
+      leftValue = left.value
+
+    }
+  }
+
+
+
+  style.prepareMut()
+  style.values.put(StyleKeys.PADDING_LEFT_TYPE, leftType)
+  style.values.putFloat(StyleKeys.PADDING_LEFT_VALUE, leftValue)
+
+  style.values.put(StyleKeys.PADDING_RIGHT_TYPE, rightType)
+  style.values.putFloat(StyleKeys.PADDING_RIGHT_VALUE, rightValue)
+
+  style.values.put(StyleKeys.PADDING_TOP_TYPE, topType)
+  style.values.putFloat(StyleKeys.PADDING_TOP_VALUE, topValue)
+
+  style.values.put(StyleKeys.PADDING_BOTTOM_TYPE, bottomType)
+  style.values.putFloat(StyleKeys.PADDING_BOTTOM_VALUE, bottomValue)
+  style.setOrAppendState(StateKeys.PADDING)
+
+}
+
+/**
+ * Parse CSS shorthand for margin (1-4 values) and apply to style.margin
+ * margin accepts auto so use parseLengthPercentageAuto
+ */
+fun parseMarginShorthand(style: Style, value: String) {
+  val cleaned = value.trim().removeSuffix(";")
+  if (cleaned.isEmpty()) {
+    if (!style.inBatch) style.inBatch = true
+    style.margin = Rect(
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero
+    )
+    if (style.inBatch) style.inBatch = false
+    return
+  }
+
+  val parts = SPLIT_REGEX.split(cleaned)
+  val tokens = parts.mapNotNull { parseLengthPercentageAuto(it) }
+  if (tokens.isEmpty()) return
+
+  val rect = when (tokens.size) {
+    1 -> Rect.uniform(tokens[0])
+    2 -> Rect(tokens[0], tokens[1], tokens[0], tokens[1])
+    3 -> Rect(tokens[0], tokens[1], tokens[2], tokens[1])
+    else -> Rect(tokens[0], tokens[1], tokens[2], tokens[3])
+  }
+
+  if (!style.inBatch) style.inBatch = true
+  style.margin = rect
+  if (style.inBatch) style.inBatch = false
+}
+
+/**
+ * Parse CSS shorthand for inset/position (1-4 values) and apply to style.inset
+ */
+fun parseInsetShorthand(style: Style, value: String) {
+  val cleaned = value.trim().removeSuffix(";")
+  if (cleaned.isEmpty()) {
+    if (!style.inBatch) style.inBatch = true
+    style.inset = Rect(
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero,
+      LengthPercentageAuto.Zero
+    )
+    if (style.inBatch) style.inBatch = false
+    return
+  }
+
+  val parts = SPLIT_REGEX.split(cleaned)
+  val tokens = parts.mapNotNull { parseLengthPercentageAuto(it) }
+  if (tokens.isEmpty()) return
+
+  val rect = when (tokens.size) {
+    1 -> Rect.uniform(tokens[0])
+    2 -> Rect(tokens[0], tokens[1], tokens[0], tokens[1])
+    3 -> Rect(tokens[0], tokens[1], tokens[2], tokens[1])
+    else -> Rect(tokens[0], tokens[1], tokens[2], tokens[3])
+  }
+
+  if (!style.inBatch) style.inBatch = true
+  style.inset = rect
+  if (style.inBatch) style.inBatch = false
 }
 
 
@@ -68,78 +261,79 @@ object StyleKeys {
   const val JUSTIFY_SELF = 11
   const val JUSTIFY_CONTENT = 12
 
+  // Contiguous types, then contiguous values per group
   const val INSET_LEFT_TYPE = 13
-  const val INSET_LEFT_VALUE = 14 // float (4 bytes: 14-17)
-  const val INSET_RIGHT_TYPE = 18
-  const val INSET_RIGHT_VALUE = 19 // float (4 bytes: 19-22)
-  const val INSET_TOP_TYPE = 23
-  const val INSET_TOP_VALUE = 24 // float (4 bytes: 24-27)
-  const val INSET_BOTTOM_TYPE = 28
-  const val INSET_BOTTOM_VALUE = 29 // float (4 bytes: 29-32)
+  const val INSET_RIGHT_TYPE = 14
+  const val INSET_TOP_TYPE = 15
+  const val INSET_BOTTOM_TYPE = 16
+  const val INSET_LEFT_VALUE = 17   // f32 (4 bytes: 17-20)
+  const val INSET_RIGHT_VALUE = 21  // f32 (4 bytes: 21-24)
+  const val INSET_TOP_VALUE = 25    // f32 (4 bytes: 25-28)
+  const val INSET_BOTTOM_VALUE = 29 // f32 (4 bytes: 29-32)
 
   const val MARGIN_LEFT_TYPE = 33
-  const val MARGIN_LEFT_VALUE = 34 // float (4 bytes: 34-37)
-  const val MARGIN_RIGHT_TYPE = 38
-  const val MARGIN_RIGHT_VALUE = 39 // float (4 bytes: 39-42)
-  const val MARGIN_TOP_TYPE = 43
-  const val MARGIN_TOP_VALUE = 44 // float (4 bytes: 44-47)
-  const val MARGIN_BOTTOM_TYPE = 48
-  const val MARGIN_BOTTOM_VALUE = 49 // float (4 bytes: 49-52)
+  const val MARGIN_RIGHT_TYPE = 34
+  const val MARGIN_TOP_TYPE = 35
+  const val MARGIN_BOTTOM_TYPE = 36
+  const val MARGIN_LEFT_VALUE = 37   // f32 (4 bytes: 37-40)
+  const val MARGIN_RIGHT_VALUE = 41  // f32 (4 bytes: 41-44)
+  const val MARGIN_TOP_VALUE = 45    // f32 (4 bytes: 45-48)
+  const val MARGIN_BOTTOM_VALUE = 49 // f32 (4 bytes: 49-52)
 
   const val PADDING_LEFT_TYPE = 53
-  const val PADDING_LEFT_VALUE = 54 // float (4 bytes: 54-57)
-  const val PADDING_RIGHT_TYPE = 58
-  const val PADDING_RIGHT_VALUE = 59 // float (4 bytes: 59-62)
-  const val PADDING_TOP_TYPE = 63
-  const val PADDING_TOP_VALUE = 64 // float (4 bytes: 64-67)
-  const val PADDING_BOTTOM_TYPE = 68
-  const val PADDING_BOTTOM_VALUE = 69 // float (4 bytes: 69-72)
+  const val PADDING_RIGHT_TYPE = 54
+  const val PADDING_TOP_TYPE = 55
+  const val PADDING_BOTTOM_TYPE = 56
+  const val PADDING_LEFT_VALUE = 57   // f32 (4 bytes: 57-60)
+  const val PADDING_RIGHT_VALUE = 61  // f32 (4 bytes: 61-64)
+  const val PADDING_TOP_VALUE = 65    // f32 (4 bytes: 65-68)
+  const val PADDING_BOTTOM_VALUE = 69 // f32 (4 bytes: 69-72)
 
   const val BORDER_LEFT_TYPE = 73
-  const val BORDER_LEFT_VALUE = 74 // float (4 bytes: 74-77)
-  const val BORDER_RIGHT_TYPE = 78
-  const val BORDER_RIGHT_VALUE = 79 // float (4 bytes: 79-82)
-  const val BORDER_TOP_TYPE = 83
-  const val BORDER_TOP_VALUE = 84 // float (4 bytes: 84-87)
-  const val BORDER_BOTTOM_TYPE = 88
-  const val BORDER_BOTTOM_VALUE = 89 // float (4 bytes: 89-92)
+  const val BORDER_RIGHT_TYPE = 74
+  const val BORDER_TOP_TYPE = 75
+  const val BORDER_BOTTOM_TYPE = 76
+  const val BORDER_LEFT_VALUE = 77   // f32 (4 bytes: 77-80)
+  const val BORDER_RIGHT_VALUE = 81  // f32 (4 bytes: 81-84)
+  const val BORDER_TOP_VALUE = 85    // f32 (4 bytes: 85-88)
+  const val BORDER_BOTTOM_VALUE = 89 // f32 (4 bytes: 89-92)
 
-  const val FLEX_GROW = 93 // float (4 bytes: 93-96)
-  const val FLEX_SHRINK = 97 // float (4 bytes: 97-100)
+  const val FLEX_GROW = 93   // f32 (4 bytes: 93-96)
+  const val FLEX_SHRINK = 97 // f32 (4 bytes: 97-100)
 
   const val FLEX_BASIS_TYPE = 101
-  const val FLEX_BASIS_VALUE = 102 // float (4 bytes: 102-105)
+  const val FLEX_BASIS_VALUE = 102 // f32 (4 bytes: 102-105)
 
   const val WIDTH_TYPE = 106
-  const val WIDTH_VALUE = 107 // float (4 bytes: 107-110)
-  const val HEIGHT_TYPE = 111
-  const val HEIGHT_VALUE = 112 // float (4 bytes: 112-115)
+  const val HEIGHT_TYPE = 107
+  const val WIDTH_VALUE = 108  // f32 (4 bytes: 108-111)
+  const val HEIGHT_VALUE = 112 // f32 (4 bytes: 112-115)
 
   const val MIN_WIDTH_TYPE = 116
-  const val MIN_WIDTH_VALUE = 117 // float (4 bytes: 117-120)
-  const val MIN_HEIGHT_TYPE = 121
-  const val MIN_HEIGHT_VALUE = 122 // float (4 bytes: 122-125)
+  const val MIN_HEIGHT_TYPE = 117
+  const val MIN_WIDTH_VALUE = 118  // f32 (4 bytes: 118-121)
+  const val MIN_HEIGHT_VALUE = 122 // f32 (4 bytes: 122-125)
 
   const val MAX_WIDTH_TYPE = 126
-  const val MAX_WIDTH_VALUE = 127 // float (4 bytes: 127-130)
-  const val MAX_HEIGHT_TYPE = 131
-  const val MAX_HEIGHT_VALUE = 132 // float (4 bytes: 132-135)
+  const val MAX_HEIGHT_TYPE = 127
+  const val MAX_WIDTH_VALUE = 128  // f32 (4 bytes: 128-131)
+  const val MAX_HEIGHT_VALUE = 132 // f32 (4 bytes: 132-135)
 
   const val GAP_ROW_TYPE = 136
-  const val GAP_ROW_VALUE = 137 // float (4 bytes: 137-140)
-  const val GAP_COLUMN_TYPE = 141
-  const val GAP_COLUMN_VALUE = 142 // float (4 bytes: 142-145)
+  const val GAP_COLUMN_TYPE = 137
+  const val GAP_ROW_VALUE = 138    // f32 (4 bytes: 138-141)
+  const val GAP_COLUMN_VALUE = 142 // f32 (4 bytes: 142-145)
 
-  const val ASPECT_RATIO = 146 // float (4 bytes: 146-149)
+  const val ASPECT_RATIO = 146 // f32 (4 bytes: 146-149)
   const val GRID_AUTO_FLOW = 150
   const val GRID_COLUMN_START_TYPE = 151
-  const val GRID_COLUMN_START_VALUE = 152 // float (4 bytes: 152-155)
-  const val GRID_COLUMN_END_TYPE = 156
-  const val GRID_COLUMN_END_VALUE = 157 // float (4 bytes: 157-160)
-  const val GRID_ROW_START_TYPE = 161
-  const val GRID_ROW_START_VALUE = 162 // float (4 bytes: 162-165)
-  const val GRID_ROW_END_TYPE = 166
-  const val GRID_ROW_END_VALUE = 167 // float (4 bytes: 167-170)
+  const val GRID_COLUMN_END_TYPE = 152
+  const val GRID_ROW_START_TYPE = 153
+  const val GRID_ROW_END_TYPE = 154
+  const val GRID_COLUMN_START_VALUE = 155 // f32 (4 bytes: 155-158)
+  const val GRID_COLUMN_END_VALUE = 159   // f32 (4 bytes: 159-162)
+  const val GRID_ROW_START_VALUE = 163    // f32 (4 bytes: 163-166)
+  const val GRID_ROW_END_VALUE = 167      // f32 (4 bytes: 167-170)
   const val SCROLLBAR_WIDTH = 171 // float (4 bytes: 171-174)
   const val ALIGN = 175
   const val BOX_SIZING = 176
@@ -153,17 +347,13 @@ object StyleKeys {
   const val MAX_CONTENT_WIDTH = 190 // float (4 bytes: 190-193)
   const val MAX_CONTENT_HEIGHT = 194 // float (4 bytes: 194-197)
 
-  // ----------------------------
   // Border Style (per side)
-  // ----------------------------
   const val BORDER_LEFT_STYLE = 198
   const val BORDER_RIGHT_STYLE = 199
   const val BORDER_TOP_STYLE = 200
   const val BORDER_BOTTOM_STYLE = 201
 
-  // ----------------------------
   // Border Color (per side)
-  // ----------------------------
   const val BORDER_LEFT_COLOR = 202 // u32 (4 bytes: 202-205)
   const val BORDER_RIGHT_COLOR = 206 // u32 (4 bytes: 206-209)
   const val BORDER_TOP_COLOR = 210 // u32 (4 bytes: 210-213)
@@ -171,49 +361,32 @@ object StyleKeys {
 
   // ============================================================
   // Border Radius (elliptical + squircle exponent)
-  // Each corner = 5 fields (12 bytes total):
-  //   x_type (1), x_value (4), y_type (1), y_value (4), exponent (4)
+  // 8 types (1 byte each), then 8 values (f32), then 4 exponents (f32)
   // ============================================================
-
-  // ----------------------------
-  // Top-left corner (12 bytes)
-  // ----------------------------
   const val BORDER_RADIUS_TOP_LEFT_X_TYPE = 218
-  const val BORDER_RADIUS_TOP_LEFT_X_VALUE = 219 // float (4 bytes: 219-222)
-  const val BORDER_RADIUS_TOP_LEFT_Y_TYPE = 223
-  const val BORDER_RADIUS_TOP_LEFT_Y_VALUE = 224 // float (4 bytes: 224-227)
-  const val BORDER_RADIUS_TOP_LEFT_EXPONENT = 228 // float (4 bytes: 228-231)
+  const val BORDER_RADIUS_TOP_LEFT_Y_TYPE = 219
+  const val BORDER_RADIUS_TOP_RIGHT_X_TYPE = 220
+  const val BORDER_RADIUS_TOP_RIGHT_Y_TYPE = 221
+  const val BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE = 222
+  const val BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE = 223
+  const val BORDER_RADIUS_BOTTOM_LEFT_X_TYPE = 224
+  const val BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE = 225
 
-  // ----------------------------
-  // Top-right corner
-  // ----------------------------
-  const val BORDER_RADIUS_TOP_RIGHT_X_TYPE = 232
-  const val BORDER_RADIUS_TOP_RIGHT_X_VALUE = 233 // float (4 bytes: 233-236)
-  const val BORDER_RADIUS_TOP_RIGHT_Y_TYPE = 237
-  const val BORDER_RADIUS_TOP_RIGHT_Y_VALUE = 238 // float (4 bytes: 238-241)
-  const val BORDER_RADIUS_TOP_RIGHT_EXPONENT = 242 // float (4 bytes: 242-245)
+  const val BORDER_RADIUS_TOP_LEFT_X_VALUE = 226      // f32 (4 bytes: 226-229)
+  const val BORDER_RADIUS_TOP_LEFT_Y_VALUE = 230      // f32 (4 bytes: 230-233)
+  const val BORDER_RADIUS_TOP_RIGHT_X_VALUE = 234     // f32 (4 bytes: 234-237)
+  const val BORDER_RADIUS_TOP_RIGHT_Y_VALUE = 238     // f32 (4 bytes: 238-241)
+  const val BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE = 242  // f32 (4 bytes: 242-245)
+  const val BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE = 246  // f32 (4 bytes: 246-249)
+  const val BORDER_RADIUS_BOTTOM_LEFT_X_VALUE = 250   // f32 (4 bytes: 250-253)
+  const val BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE = 254   // f32 (4 bytes: 254-257)
 
-  // ----------------------------
-  // Bottom-right corner
-  // ----------------------------
-  const val BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE = 246
-  const val BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE = 247 // float (4 bytes: 247-250)
-  const val BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE = 251
-  const val BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE = 252 // float (4 bytes: 252-255)
-  const val BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 256 // float (4 bytes: 256-259)
+  const val BORDER_RADIUS_TOP_LEFT_EXPONENT = 258     // f32 (4 bytes: 258-261)
+  const val BORDER_RADIUS_TOP_RIGHT_EXPONENT = 262    // f32 (4 bytes: 262-265)
+  const val BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 266 // f32 (4 bytes: 266-269)
+  const val BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270  // f32 (4 bytes: 270-273)
 
-  // ----------------------------
-  // Bottom-left corner
-  // ----------------------------
-  const val BORDER_RADIUS_BOTTOM_LEFT_X_TYPE = 260
-  const val BORDER_RADIUS_BOTTOM_LEFT_X_VALUE = 261 // float (4 bytes: 261-264)
-  const val BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE = 265
-  const val BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE = 266 // float (4 bytes: 266-269)
-  const val BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270 // float (4 bytes: 270-273)
-
-  // ----------------------------
   // Float
-  // ----------------------------
   const val FLOAT = 274
   const val CLEAR = 275
 
@@ -291,11 +464,59 @@ object StyleKeys {
   // font-variant-numeric bitmask (byte) + state
   const val FONT_VARIANT_NUMERIC = 419       // byte (bitmask)
   const val FONT_VARIANT_NUMERIC_STATE = 420 // byte
+
+  // Transform buffer region (bytes 422-559)
+  const val TRANSFORM_COUNT = 422            // u8: number of inline ops (0-6)
+  const val TRANSFORM_FLAGS = 423            // u8: bit 0 = HAS_MATRIX, bit 1 = IS_3D
+  const val TRANSFORM_OP_0 = 424             // 12 bytes: type(u8) + pad(3) + a(f32) + b(f32)
+  const val TRANSFORM_OP_1 = 436
+  const val TRANSFORM_OP_2 = 448
+  const val TRANSFORM_OP_3 = 460
+  const val TRANSFORM_OP_4 = 472
+  const val TRANSFORM_OP_5 = 484
+  const val TRANSFORM_MATRIX = 496           // 64 bytes: 16 x f32 (4x4 column-major)
+  const val TRANSFORM_OP_SIZE = 12
+  const val MAX_INLINE_TRANSFORM_OPS = 6
+  const val TRANSFORM_FLAG_HAS_MATRIX = 0x01
+  const val TRANSFORM_FLAG_IS_3D = 0x02
+
+  const val OBJECT_POSITION_X_TYPE = 560
+  const val OBJECT_POSITION_Y_TYPE = 561
+  const val OBJECT_POSITION_X_VALUE = 562    // f32
+  const val OBJECT_POSITION_Y_VALUE = 566    // f32
+  const val OBJECT_POSITION_STATE = 570
+  const val WRITING_MODE = 571
+  const val WRITING_MODE_STATE = 572
+  const val UNICODE_BIDI = 573
+  const val UNICODE_BIDI_STATE = 574
+  const val HYPHENS = 575
+  const val HYPHENS_STATE = 576
+  const val CARET_COLOR = 577                // u32
+  const val CARET_COLOR_STATE = 581
+  const val WORD_SPACING = 582               // f32
+  const val WORD_SPACING_TYPE = 586
+  const val WORD_SPACING_STATE = 587
+  const val FONT_STRETCH = 588               // i32 (pct * 100)
+  const val FONT_STRETCH_STATE = 592
+}
+
+object TransformOpType {
+  const val NONE = 0
+  const val TRANSLATE = 1
+  const val TRANSLATE_X = 2
+  const val TRANSLATE_Y = 3
+  const val SCALE = 4
+  const val SCALE_X = 5
+  const val SCALE_Y = 6
+  const val ROTATE = 7
+  const val SKEW_X = 8
+  const val SKEW_Y = 9
 }
 
 class StateKeys internal constructor(val low: Long, val high: Long) {
   companion object {
-    private fun flag(n: Int): StateKeys =
+    @JvmStatic
+    fun flag(n: Int): StateKeys =
       if (n < 64) StateKeys(1L shl n, 0L) else StateKeys(0L, 1L shl (n - 64))
 
     val NONE = StateKeys(0L, 0L)
@@ -372,6 +593,25 @@ class StateKeys internal constructor(val low: Long, val high: Long) {
     val FONT_FAMILY = flag(69)
     val LETTER_SPACING = flag(70)
     val FONT_VARIANT_NUMERIC = flag(71)
+    val OBJECT_POSITION = flag(72)
+    val WRITING_MODE = flag(73)
+    val UNICODE_BIDI = flag(74)
+    val HYPHENS = flag(75)
+    val CARET_COLOR = flag(76)
+    val WORD_SPACING = flag(77)
+    val FONT_STRETCH = flag(78)
+
+    /**
+     * Union of every text flag TextEngine reacts to; `dirty ∩ ALL_TEXT` is forwarded,
+     * so an omitted key never relayouts/redraws. Keep in sync with TextEngine's
+     * hasTextLayoutFlags / hasTextVisualFlags / onTextStyleChanged.
+     */
+    val ALL_TEXT: StateKeys = FONT_COLOR or FONT_SIZE or FONT_WEIGHT or FONT_STYLE or
+      FONT_FAMILY or FONT_VARIANT_NUMERIC or TEXT_WRAP or WHITE_SPACE or
+      TEXT_TRANSFORM or DECORATION_LINE or DECORATION_COLOR or DECORATION_STYLE or
+      LETTER_SPACING or TEXT_JUSTIFY or BACKGROUND_COLOR or LINE_HEIGHT or
+      TEXT_ALIGN or TEXT_OVERFLOW or TEXT_SHADOWS or
+      WORD_SPACING or WRITING_MODE or UNICODE_BIDI or HYPHENS or FONT_STRETCH
 
     fun hasFlag(low: Long, high: Long, flag: StateKeys): Boolean =
       ((low and flag.low) != 0L) || ((high and flag.high) != 0L)
@@ -436,6 +676,29 @@ internal class GridState {
     gridTemplateRows = null
     gridTemplateColumns = null
   }
+
+  override fun toString(): String {
+    val props = buildList {
+      gridArea?.let { add("gridArea=$it") }
+      gridTemplateAreas?.let { add("gridTemplateAreas=$it") }
+      gridAutoRows?.let { add("gridAutoRows=$it") }
+      gridAutoColumns?.let { add("gridAutoColumns=$it") }
+      gridRow?.let { add("gridRow=$it") }
+      gridRowStart?.let { add("gridRowStart=$it") }
+      gridRowEnd?.let { add("gridRowEnd=$it") }
+      gridColumn?.let { add("gridColumn=$it") }
+      gridColumnStart?.let { add("gridColumnStart=$it") }
+      gridColumnEnd?.let { add("gridColumnEnd=$it") }
+      gridTemplateRows?.let { add("gridTemplateRows=$it") }
+      gridTemplateColumns?.let { add("gridTemplateColumns=$it") }
+    }
+
+    return if (props.isEmpty()) {
+      "GridState(empty)"
+    } else {
+      "GridState(\n  ${props.joinToString(",\n  ")}\n)"
+    }
+  }
 }
 
 interface StyleChangeListener {
@@ -447,9 +710,12 @@ internal object StyleState {
   const val SET: Byte = 1
 }
 
+// Cached regex patterns for transform parsing (avoid per-call compilation)
+private val TRANSFORM_FN_REGEX = Regex("(\\w+)\\(([^)]*)\\)")
+private val TRANSFORM_WS_REGEX = Regex("\\s+")
+
 class Style internal constructor(@Transient internal var node: Node) {
   internal var isValueInitialized: Boolean = false
-  internal var isTextValueInitialized: Boolean = false
   internal var gridState = GridState()
 
   internal var fontDirty = false
@@ -459,14 +725,19 @@ class Style internal constructor(@Transient internal var node: Node) {
   internal var inMeasure = false
   private var pendingMetricsSync = false
 
+  private var reloadListener: (FontFace, String?) -> Unit = { font, error ->
+    syncFontMetrics()
+  }
+
   var font: FontFace = FontFace("sans-serif").apply {
-    owner = this@Style
+    addOnReloadListener(reloadListener)
   }
     set(value) {
       val old = field
       if (old !== value) {
         field = value
-        value.owner = this
+        old.removeOnReloadListener(reloadListener)
+        value.addOnReloadListener(reloadListener)
         invalidateResolvedFontFace()
       }
     }
@@ -550,7 +821,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   /**
    * Update font metrics on a Mason node when font changes.
    * When called during a Rust measure callback (inMeasure == true),
-   * the write is deferred to avoid deadlocking the rwlock.
+   * write is deferred to avoid deadlocking the rwlock.
    */
   internal fun syncFontMetrics() {
     if (!fontDirty) return
@@ -565,7 +836,7 @@ class Style internal constructor(@Transient internal var node: Node) {
     val fm = paint.fontMetrics
 
     // Use absolute ascent (Android reports negative ascent); sanitize tiny/NaN values
-    var ascent = kotlin.math.abs(fm.ascent)
+    var ascent = abs(fm.ascent)
     var descent = fm.descent
     val leading = fm.leading
 
@@ -626,7 +897,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   private val mPlaceholder by lazy {
     isValueInitialized = true
     // use the same capacity set in rust
-    ByteBuffer.allocateDirect(400).apply {
+    ByteBuffer.allocateDirect(596).apply {
       order(ByteOrder.nativeOrder())
 
       // default ratio to NAN
@@ -715,22 +986,22 @@ class Style internal constructor(@Transient internal var node: Node) {
 
   val values: ByteBuffer
     get() {
-      return mWritableValue ?: mValues ?: run {
-        // During compute Rust holds the lock — use placeholder to avoid deadlock
-        if (node.mason.inCompute) {
-          return mPlaceholder
-        }
-        val buffer =
-          ObjectManager.shared[nativeGetStyleBuffer(
-            node.mason.nativePtr,
-            node.nativePtr
-          )] as ByteBuffer
-        buffer.apply {
-          order(ByteOrder.nativeOrder())
-        }
-        mValues = buffer
-        buffer
+      if (mWritableValue != null) return mWritableValue!!
+      if (mValues != null) return mValues!!
+      // During compute Rust holds the lock — use placeholder to avoid deadlock
+      if (node.mason.inCompute) {
+        return mPlaceholder
       }
+      val buffer =
+        ObjectManager.shared[nativeGetStyleBuffer(
+          node.mason.nativePtr,
+          node.nativePtr
+        )] as ByteBuffer
+      buffer.apply {
+        order(ByteOrder.nativeOrder())
+      }
+      mValues = buffer
+      return buffer
     }
 
   internal var isDirty = -1L
@@ -738,6 +1009,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   private var isSlowDirty = false
     set(value) {
       if (value && !inBatch) {
+        node.dirty()
         updateNativeStyle()
       }
       field = value
@@ -779,64 +1051,27 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
     if (!isDirtyEmpty()) {
-      var invalidate = false
-      val value = StateKeys(isDirty, isDirtyHigh)
-      val backgroundColorDirty = value.hasFlag(StateKeys.BACKGROUND_COLOR)
-      val colorDirty = value.hasFlag(StateKeys.FONT_COLOR)
-      val sizeDirty = value.hasFlag(StateKeys.SIZE)
-      val weightDirty = value.hasFlag(StateKeys.FONT_WEIGHT)
-      val styleDirty = value.hasFlag(StateKeys.FONT_STYLE)
-      val lineHeightDirty = value.hasFlag(StateKeys.LINE_HEIGHT)
-      if (value.hasFlag(StateKeys.TEXT_TRANSFORM) || value.hasFlag(StateKeys.TEXT_WRAP) || value.hasFlag(
-          StateKeys.WHITE_SPACE
-        ) || value.hasFlag(
-          StateKeys.TEXT_OVERFLOW
-        ) || colorDirty || value.hasFlag(StateKeys.BACKGROUND_COLOR) || value.hasFlag(
-          StateKeys.DECORATION_COLOR
-        ) || value.hasFlag(StateKeys.DECORATION_LINE) || sizeDirty || weightDirty || styleDirty || lineHeightDirty || value.hasFlag(
-          StateKeys.DECORATION_THICKNESS
-        ) || value.hasFlag(
-          StateKeys.TEXT_SHADOWS
-        )
-      ) {
-        invalidate = true
-      }
+      // Forward dirty ∩ ALL_TEXT: onTextStyleChanged picks the layout-vs-visual
+      // branch from the exact flags, so it must carry every text key (a hand-picked
+      // subset previously dropped font-size, letter-spacing, etc.). Mirrors iOS.
+      val stateLow = isDirty and StateKeys.ALL_TEXT.low
+      val stateHigh = isDirtyHigh and StateKeys.ALL_TEXT.high
 
-      var state = StateKeys.NONE
-
-      if (styleDirty) {
-        state = state or StateKeys.FONT_STYLE
-      }
-
-      if (weightDirty) {
-        state = state or StateKeys.FONT_WEIGHT
-      }
-
-      if (sizeDirty) {
-        state = state or StateKeys.FONT_SIZE
-      }
-
-      if (colorDirty) {
-        state = state or StateKeys.FONT_COLOR
-      }
-
-      if (lineHeightDirty) {
-        state = state or StateKeys.LINE_HEIGHT
-      }
-
-      if (backgroundColorDirty) {
-        if (mBackground == null) {
-          mBackground = Background(this)
+      if (stateLow != 0L || stateHigh != 0L) {
+        // Background needs its holder created before the change is dispatched.
+        if ((stateLow and StateKeys.BACKGROUND_COLOR.low) != 0L ||
+          (stateHigh and StateKeys.BACKGROUND_COLOR.high) != 0L
+        ) {
+          if (mBackground == null) {
+            mBackground = Background(this)
+          }
         }
-        state = state or StateKeys.BACKGROUND_COLOR
-      }
-
-      if (state != StateKeys.NONE) {
-        notifyTextStyleChanged(state)
-      }
-
-      if (invalidate && isDirtyEmpty()) {
-        (node.view as? Element)?.invalidateLayout()
+        notifyTextStyleChanged(stateLow, stateHigh)
+        // Repaint this node's own view: notifyTextStyleChanged routes to the
+        // styleChangeListener (often an ancestor that can't target this view), so
+        // visual-only changes like backgroundColor would otherwise not repaint.
+        // Mirrors iOS MasonUIView.onStyleChange (unconditional setNeedsDisplay).
+        (node.view as? android.view.View)?.invalidate()
       }
       return
     }
@@ -849,6 +1084,14 @@ class Style internal constructor(@Transient internal var node: Node) {
     } else {
       isDirty = isDirty or low
       isDirtyHigh = isDirtyHigh or high
+    }
+    // JS-driven font-face changes bypass the Kotlin setters that normally invalidate
+    // the cache, so without this resolvedFontFace returns a stale FontFace/Typeface.
+    if (StateKeys.hasFlag(low, high, StateKeys.FONT_WEIGHT) ||
+      StateKeys.hasFlag(low, high, StateKeys.FONT_STYLE) ||
+      StateKeys.hasFlag(low, high, StateKeys.FONT_FAMILY)
+    ) {
+      invalidateResolvedFontFace()
     }
     if (!inBatch) {
       updateNativeStyle()
@@ -957,13 +1200,13 @@ class Style internal constructor(@Transient internal var node: Node) {
       setOrAppendState(StateKeys.FLOAT)
     }
 
-  var clear: org.nativescript.mason.masonkit.enums.Clear
+  var clear: Clear
     get() {
-      val base = org.nativescript.mason.masonkit.enums.Clear.from(values.get(StyleKeys.CLEAR))
+      val base = Clear.from(values.get(StyleKeys.CLEAR))
       return resolvePseudo(
         StateKeys.CLEAR,
         base
-      ) { buf -> org.nativescript.mason.masonkit.enums.Clear.from(buf.get(StyleKeys.CLEAR)) }
+      ) { buf -> Clear.from(buf.get(StyleKeys.CLEAR)) }
     }
     set(value) {
       prepareMut()
@@ -983,13 +1226,368 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
+  // Transform (buffer-backed)
+
+  internal data class TransformOp(val type: Int, val a: Float, val b: Float)
+
+  internal var mTransformRaw: String = ""
+
+  var transform: String
+    get() = mTransformRaw
+    set(value) {
+      mTransformRaw = value
+      writeTransformToBuffer(value)
+      applyTransformToView()
+    }
+
+  private fun writeTransformToBuffer(input: String) {
+    val ops = parseTransformOps(input)
+    prepareMut()
+
+    if (ops.isEmpty()) {
+      // Clear transform
+      values.put(StyleKeys.TRANSFORM_COUNT, 0.toByte())
+      values.put(StyleKeys.TRANSFORM_FLAGS, 0.toByte())
+      return
+    }
+
+    // Check for matrix ops — write directly to matrix region
+    if (ops.size == 1 && ops[0].type == -1) {
+      // matrix() sentinel: a/b unused, matrix already written by parseTransformOps
+      return
+    }
+    if (ops.size == 1 && ops[0].type == -2) {
+      // matrix3d() sentinel
+      return
+    }
+
+    if (ops.size > StyleKeys.MAX_INLINE_TRANSFORM_OPS) {
+      // Too many ops — flatten to matrix
+      flattenOpsToMatrix(ops)
+      return
+    }
+
+    // Write inline ops
+    values.put(StyleKeys.TRANSFORM_COUNT, ops.size.toByte())
+    values.put(StyleKeys.TRANSFORM_FLAGS, 0.toByte())
+    for (i in ops.indices) {
+      val base = StyleKeys.TRANSFORM_OP_0 + i * StyleKeys.TRANSFORM_OP_SIZE
+      values.put(base, ops[i].type.toByte())
+      values.put(base + 1, 0.toByte()) // padding
+      values.put(base + 2, 0.toByte())
+      values.put(base + 3, 0.toByte())
+      values.putFloat(base + 4, ops[i].a)
+      values.putFloat(base + 8, ops[i].b)
+    }
+    // Zero remaining slots
+    for (i in ops.size until StyleKeys.MAX_INLINE_TRANSFORM_OPS) {
+      val base = StyleKeys.TRANSFORM_OP_0 + i * StyleKeys.TRANSFORM_OP_SIZE
+      values.putFloat(base, 0f) // zeros type + padding
+      values.putFloat(base + 4, 0f)
+      values.putFloat(base + 8, 0f)
+    }
+  }
+
+  private fun parseTransformOps(input: String): List<TransformOp> {
+    if (input.isBlank()) return emptyList()
+    val ops = mutableListOf<TransformOp>()
+    for (m in TRANSFORM_FN_REGEX.findAll(input)) {
+      val name = m.groupValues[1].trim().lowercase()
+      val rawArgs = m.groupValues[2].trim()
+      val args =
+        rawArgs.replace(',', ' ').split(TRANSFORM_WS_REGEX).map { it.trim() }
+          .filter { it.isNotEmpty() }
+      try {
+        when (name) {
+          "translate" -> {
+            val ax = args.getOrNull(0)?.let { parseLength(it) } ?: 0f
+            val ay = args.getOrNull(1)?.let { parseLength(it) } ?: 0f
+            ops.add(TransformOp(TransformOpType.TRANSLATE, ax, ay))
+          }
+
+          "translatex" -> ops.add(
+            TransformOp(
+              TransformOpType.TRANSLATE_X,
+              args.getOrNull(0)?.let { parseLength(it) } ?: 0f,
+              0f))
+
+          "translatey" -> ops.add(
+            TransformOp(
+              TransformOpType.TRANSLATE_Y,
+              0f,
+              args.getOrNull(0)?.let { parseLength(it) } ?: 0f))
+
+          "scale" -> {
+            val sx = args.getOrNull(0)?.toFloatOrNull() ?: 1f
+            val sy = args.getOrNull(1)?.toFloatOrNull() ?: sx
+            ops.add(TransformOp(TransformOpType.SCALE, sx, sy))
+          }
+
+          "scalex" -> ops.add(
+            TransformOp(
+              TransformOpType.SCALE_X,
+              args.getOrNull(0)?.toFloatOrNull() ?: 1f,
+              1f
+            )
+          )
+
+          "scaley" -> ops.add(
+            TransformOp(
+              TransformOpType.SCALE_Y,
+              1f,
+              args.getOrNull(0)?.toFloatOrNull() ?: 1f
+            )
+          )
+
+          "rotate" -> ops.add(
+            TransformOp(
+              TransformOpType.ROTATE,
+              parseAngle(args.getOrNull(0) ?: "0"),
+              0f
+            )
+          )
+
+          "skewx" -> ops.add(
+            TransformOp(
+              TransformOpType.SKEW_X,
+              parseAngle(args.getOrNull(0) ?: "0"),
+              0f
+            )
+          )
+
+          "skewy" -> ops.add(
+            TransformOp(
+              TransformOpType.SKEW_Y,
+              parseAngle(args.getOrNull(0) ?: "0"),
+              0f
+            )
+          )
+
+          "matrix" -> {
+            val nums = args.mapNotNull { it.replace("px", "").toFloatOrNull() }
+            if (nums.size >= 6) {
+              writeMatrixToBuffer(nums[0], nums[1], nums[2], nums[3], nums[4], nums[5])
+              return listOf(TransformOp(-1, 0f, 0f)) // sentinel
+            }
+          }
+
+          "matrix3d" -> {
+            val nums = args.mapNotNull { it.replace("px", "").toFloatOrNull() }
+            if (nums.size >= 16) {
+              writeMatrix3dToBuffer(nums)
+              return listOf(TransformOp(-2, 0f, 0f)) // sentinel
+            }
+          }
+        }
+      } catch (_: Exception) {
+      }
+    }
+    return ops
+  }
+
+  private fun writeMatrixToBuffer(a: Float, b: Float, c: Float, d: Float, tx: Float, ty: Float) {
+    values.put(StyleKeys.TRANSFORM_COUNT, 0.toByte())
+    values.put(StyleKeys.TRANSFORM_FLAGS, StyleKeys.TRANSFORM_FLAG_HAS_MATRIX.toByte())
+    // Write as 4x4 column-major identity with 2D affine embedded
+    val base = StyleKeys.TRANSFORM_MATRIX
+    // Column 0: [a, b, 0, 0]
+    values.putFloat(base, a)
+    values.putFloat(base + 4, b)
+    values.putFloat(base + 8, 0f)
+    values.putFloat(base + 12, 0f)
+    // Column 1: [c, d, 0, 0]
+    values.putFloat(base + 16, c)
+    values.putFloat(base + 20, d)
+    values.putFloat(base + 24, 0f)
+    values.putFloat(base + 28, 0f)
+    // Column 2: [0, 0, 1, 0]
+    values.putFloat(base + 32, 0f)
+    values.putFloat(base + 36, 0f)
+    values.putFloat(base + 40, 1f)
+    values.putFloat(base + 44, 0f)
+    // Column 3: [tx, ty, 0, 1]
+    values.putFloat(base + 48, tx)
+    values.putFloat(base + 52, ty)
+    values.putFloat(base + 56, 0f)
+    values.putFloat(base + 60, 1f)
+  }
+
+  private fun writeMatrix3dToBuffer(nums: List<Float>) {
+    values.put(StyleKeys.TRANSFORM_COUNT, 0.toByte())
+    values.put(
+      StyleKeys.TRANSFORM_FLAGS,
+      (StyleKeys.TRANSFORM_FLAG_HAS_MATRIX or StyleKeys.TRANSFORM_FLAG_IS_3D).toByte()
+    )
+    val base = StyleKeys.TRANSFORM_MATRIX
+    // CSS matrix3d is in column-major order: m11,m12,m13,m14, m21,m22,m23,m24, ...
+    for (i in 0 until 16) {
+      values.putFloat(base + i * 4, nums[i])
+    }
+  }
+
+  private fun flattenOpsToMatrix(ops: List<TransformOp>) {
+    // Compose all ops into a 2D affine matrix, then write as 4x4
+    var a = 1f;
+    var b = 0f;
+    var c = 0f;
+    var d = 1f;
+    var tx = 0f;
+    var ty = 0f
+    for (op in ops) {
+      when (op.type) {
+        TransformOpType.TRANSLATE -> {
+          tx += a * op.a + c * op.b; ty += b * op.a + d * op.b
+        }
+
+        TransformOpType.TRANSLATE_X -> {
+          tx += a * op.a; ty += b * op.a
+        }
+
+        TransformOpType.TRANSLATE_Y -> {
+          tx += c * op.b; ty += d * op.b
+        }
+
+        TransformOpType.SCALE -> {
+          a *= op.a; b *= op.a; c *= op.b; d *= op.b
+        }
+
+        TransformOpType.SCALE_X -> {
+          a *= op.a; b *= op.a
+        }
+
+        TransformOpType.SCALE_Y -> {
+          c *= op.b; d *= op.b
+        }
+
+        TransformOpType.ROTATE -> {
+          val rad = Math.toRadians(op.a.toDouble())
+          val cos = cos(rad).toFloat()
+          val sin = sin(rad).toFloat()
+          val na = a * cos + c * sin
+          val nb = b * cos + d * sin
+          val nc = a * -sin + c * cos
+          val nd = b * -sin + d * cos
+          a = na; b = nb; c = nc; d = nd
+        }
+
+        TransformOpType.SKEW_X -> {
+          val t = tan(Math.toRadians(op.a.toDouble())).toFloat()
+          val nc = a * t + c
+          val nd = b * t + d
+          c = nc; d = nd
+        }
+
+        TransformOpType.SKEW_Y -> {
+          val t = tan(Math.toRadians(op.a.toDouble())).toFloat()
+          val na = a + c * t
+          val nb = b + d * t
+          a = na; b = nb
+        }
+      }
+    }
+    writeMatrixToBuffer(a, b, c, d, tx, ty)
+  }
+
+  private fun parseLength(s: String): Float {
+    val v = s.trim()
+    return when {
+      v.endsWith("px") -> v.removeSuffix("px").toFloatOrNull() ?: 0f
+      v.endsWith("dp") -> v.removeSuffix("dp").toFloatOrNull() ?: 0f
+      v.endsWith("%") -> v.removeSuffix("%").toFloatOrNull() ?: 0f
+      else -> v.toFloatOrNull() ?: 0f
+    }
+  }
+
+  private fun parseAngle(s: String): Float {
+    val v = s.trim()
+    return when {
+      v.endsWith("deg") -> v.removeSuffix("deg").toFloatOrNull() ?: 0f
+      v.endsWith("rad") -> (v.removeSuffix("rad").toFloatOrNull()
+        ?: 0f) * (180f / Math.PI.toFloat())
+
+      else -> v.toFloatOrNull() ?: 0f
+    }
+  }
+
+  internal fun applyTransformToView() {
+    val v = node.view as? View ?: return
+    val count = values.get(StyleKeys.TRANSFORM_COUNT).toInt() and 0xFF
+    val flags = values.get(StyleKeys.TRANSFORM_FLAGS).toInt() and 0xFF
+
+    if (count == 0 && (flags and StyleKeys.TRANSFORM_FLAG_HAS_MATRIX) == 0) {
+      // No transform — reset to identity
+      v.translationX = 0f; v.translationY = 0f
+      v.scaleX = 1f; v.scaleY = 1f; v.rotation = 0f
+      v.invalidate()
+      return
+    }
+
+    if ((flags and StyleKeys.TRANSFORM_FLAG_HAS_MATRIX) != 0) {
+      // Read 4x4 matrix and decompose into translate/rotate/scale
+      val base = StyleKeys.TRANSFORM_MATRIX
+      val a = values.getFloat(base)
+      val b = values.getFloat(base + 4)
+      val c = values.getFloat(base + 16)
+      val d = values.getFloat(base + 20)
+      val tx = values.getFloat(base + 48)
+      val ty = values.getFloat(base + 52)
+      val scaleX = sqrt((a * a + b * b).toDouble()).toFloat()
+      var rotate = 0f
+      var scaleY = 1f
+      if (scaleX != 0f) {
+        rotate = Math.toDegrees(atan2(b.toDouble(), a.toDouble())).toFloat()
+        scaleY = (a * d - b * c) / scaleX
+      }
+      if (v.width > 0 && v.height > 0) {
+        v.pivotX = v.width / 2f; v.pivotY = v.height / 2f
+      }
+      v.translationX = tx; v.translationY = ty
+      v.rotation = rotate; v.scaleX = scaleX; v.scaleY = scaleY
+    } else {
+      // Compose inline ops
+      var tx = 0f;
+      var ty = 0f;
+      var rot = 0f;
+      var sx = 1f;
+      var sy = 1f
+      for (i in 0 until count) {
+        val opBase = StyleKeys.TRANSFORM_OP_0 + i * StyleKeys.TRANSFORM_OP_SIZE
+        val type = values.get(opBase).toInt() and 0xFF
+        val a = values.getFloat(opBase + 4)
+        val b = values.getFloat(opBase + 8)
+        when (type) {
+          TransformOpType.TRANSLATE -> {
+            tx += a; ty += b
+          }
+
+          TransformOpType.TRANSLATE_X -> tx += a
+          TransformOpType.TRANSLATE_Y -> ty += b
+          TransformOpType.SCALE -> {
+            sx *= a; sy *= b
+          }
+
+          TransformOpType.SCALE_X -> sx *= a
+          TransformOpType.SCALE_Y -> sy *= b
+          TransformOpType.ROTATE -> rot += a
+        }
+      }
+      if (v.width > 0 && v.height > 0) {
+        v.pivotX = v.width / 2f; v.pivotY = v.height / 2f
+      }
+      v.translationX = tx; v.translationY = ty
+      v.rotation = rot; v.scaleX = sx; v.scaleY = sy
+    }
+    v.invalidate()
+  }
+
   /**
    * Resolve filter string with pseudo-aware cascade. Returns the active
    * pseudo's filter string according to PSEUDO_CSS_ORDER, or the base `filter` if none set.
    */
   internal val resolvedFilterString: String
     get() {
-      for (state in PSEUDO_CSS_ORDER.asReversed()) {
+      for (i in PSEUDO_CSS_ORDER.indices.reversed()) {
+        val state = PSEUDO_CSS_ORDER[i]
         if (node.hasPseudo(state)) {
           node.getPseudoString(state.mask, "filter")?.let { s ->
             if (s.isNotEmpty()) return s
@@ -1026,6 +1624,8 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
       val layers = parseBackgroundLayers(value)
       mBackground?.layers = layers.toMutableList()
+      isValueInitialized = true
+      (node.view as? android.view.View)?.invalidate()
     }
 
   var backgroundRepeat: String
@@ -1085,7 +1685,8 @@ class Style internal constructor(@Transient internal var node: Node) {
 
   fun setBackgroundColor(value: String) {
     parseColor(value)?.let {
-      (mBackground ?: run { Background(this) }).color = it
+      if (mBackground == null) mBackground = Background(this)
+      mBackground!!.color = it
     }
   }
 
@@ -1130,12 +1731,14 @@ class Style internal constructor(@Transient internal var node: Node) {
       if (oldFamily != value) {
         val oldFont = font
         // Create new font with updated family
+        font.removeOnReloadListener(reloadListener)
         font = FontFace(value).apply {
           weight = oldFont.weight
           style = oldFont.style
-          fontDescriptors.display = oldFont.fontDescriptors.display
-          owner = this@Style
+          display = oldFont.display
+          addOnReloadListener(reloadListener)
         }
+
         values.put(StyleKeys.FONT_FAMILY_STATE, StyleState.SET)
         if (inBatch) {
           setOrAppendState(StateKeys.FONT_FAMILY)
@@ -1145,80 +1748,48 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
-  private fun ensureWritableFontFace() {
-    val current = font
-    if (current.owner != this) {
-      val old = current
-      val od = old.fontDescriptors
-      val nd = FontFace.NSCFontDescriptors(old.fontFamily)
-      nd.weight = od.weight
-      nd.ascentOverride = od.ascentOverride
-      nd.descentOverride = od.descentOverride
-      nd.display = od.display
-      nd.style = od.style
-      nd.stretch = od.stretch
-      nd.unicodeRange = od.unicodeRange
-      nd.featureSettings = od.featureSettings
-      nd.lineGapOverride = od.lineGapOverride
-      nd.variationSettings = od.variationSettings
-      nd.kerning = od.kerning
-      nd.variantLigatures = od.variantLigatures
-
-      font = FontFace(old.fontFamily, descriptors = nd).apply {
-        font = old.font
-        status = old.status
-        owner = this@Style
-      }
-    }
-  }
-
   var fontVariant: String
     get() {
-      return font.fontDescriptors.variationSettings
+      return font.variationSettings
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.variationSettings = value
+      font.variationSettings = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontStretch: String
     get() {
-      return font.fontDescriptors.stretch
+      return font.stretch
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.stretch = value
+      font.stretch = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontFeatureSettings: String
     get() {
-      return font.fontDescriptors.featureSettings
+      return font.featureSettings
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.featureSettings = value
+      font.featureSettings = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontKerning: String
     get() {
-      return font.fontDescriptors.kerning
+      return font.kerning
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.kerning = value
+      font.kerning = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
   var fontVariantLigatures: String
     get() {
-      return font.fontDescriptors.variantLigatures
+      return font.variantLigatures
     }
     set(value) {
-      ensureWritableFontFace()
-      font.fontDescriptors.variantLigatures = value
+      font.variantLigatures = value
       notifyTextStyleChanged(StateKeys.INVALIDATE_TEXT)
     }
 
@@ -1237,10 +1808,10 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
-  var fontWeight: FontFace.NSCFontWeight
+  var fontWeight: FontWeight
     get() {
       val weight = values.getInt(StyleKeys.FONT_WEIGHT)
-      return FontFace.NSCFontWeight.from(weight)
+      return FontWeight.from(weight)
     }
     set(value) {
       val old = fontWeight
@@ -1257,11 +1828,11 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
     }
 
-  var fontStyle: FontFace.NSCFontStyle
+  var fontStyle: FontStyle
     set(value) {
       val previous = fontStyle
       if (previous != value) {
-        values.put(StyleKeys.FONT_STYLE_TYPE, value.style.value.toByte())
+        values.put(StyleKeys.FONT_STYLE_TYPE, value.fontStyle.toByte())
         values.put(StyleKeys.FONT_STYLE_STATE, StyleState.SET)
         font.style = value
         invalidateResolvedFontFace()
@@ -1276,19 +1847,19 @@ class Style internal constructor(@Transient internal var node: Node) {
       val style = values.get(StyleKeys.FONT_STYLE_TYPE)
       when (style) {
         0.toByte() -> {
-          return FontFace.NSCFontStyle.Normal
+          return FontStyle.Normal
         }
 
         1.toByte() -> {
-          return FontFace.NSCFontStyle.Italic
+          return FontStyle.Italic
         }
 
         2.toByte() -> {
-          return FontFace.NSCFontStyle.Oblique()
+          return FontStyle.Oblique()
         }
 
         else -> {
-          return FontFace.NSCFontStyle.Normal
+          return FontStyle.Normal
         }
       }
     }
@@ -1581,7 +2152,8 @@ class Style internal constructor(@Transient internal var node: Node) {
       prepareMut()
       values.put(StyleKeys.DISPLAY_MODE, displayMode.value)
       values.put(StyleKeys.DISPLAY, display)
-      setOrAppendState(arrayOf(StateKeys.DISPLAY_MODE, StateKeys.DISPLAY))
+
+      setOrAppendState(StateKeys.DISPLAY.and(StateKeys.DISPLAY_MODE))
     }
 
   var position: Position
@@ -2241,23 +2813,42 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal var boxShadows: List<Shadow.BoxShadow> = listOf()
+  private var mHasOutsetBoxShadow = false
+
+  /** Fast check used in draw paths to avoid `.filter { !it.inset }` allocations. */
+  fun hasOutsetBoxShadow(): Boolean = mHasOutsetBoxShadow
+
   private var mBoxShadowRaw: String = ""
   internal val mBoxShadowRenderer by lazy {
     BoxShadowRenderer(this)
   }
+
+  // Compute a stable, allocation-free hash for the current list of box shadows.
+  // This combines primitive fields directly to avoid creating temporary objects
+  // inside hot rendering paths.
+  fun boxShadowsHash(): Int {
+    var result = 1
+    val list = boxShadows
+    for (s in list) {
+      result = 31 * result + s.offsetX.hashCode()
+      result = 31 * result + s.offsetY.hashCode()
+      result = 31 * result + s.blurRadius.hashCode()
+      result = 31 * result + s.spreadRadius.hashCode()
+      result = 31 * result + s.color
+      result = 31 * result + if (s.inset) 1 else 0
+    }
+    return result
+  }
+
   var boxShadow: String
     get() = mBoxShadowRaw
     set(value) {
       mBoxShadowRaw = value
       boxShadows = Shadow.parseBoxShadow(this, value)
+      mHasOutsetBoxShadow = boxShadows.any { !it.inset }
       mBoxShadowRenderer.invalidate()
       val view = node.view as? View
       if (view != null) {
-        // Only disable clipping on immediate parent - parent draws child shadows
-        val parent = view.parent
-        if (parent is android.view.ViewGroup && boxShadows.any { !it.inset }) {
-          parent.clipChildren = false
-        }
         view.invalidate()
       }
     }
@@ -2304,10 +2895,52 @@ class Style internal constructor(@Transient internal var node: Node) {
       parseBorderShorthand(this, value)
     }
 
+  var borderLeft: String = ""
+    set(value) {
+      field = value
+      parseBorderSideShorthand(this, Border.Side.Left, value)
+    }
+
+  var borderTop: String = ""
+    set(value) {
+      field = value
+      parseBorderSideShorthand(this, Border.Side.Top, value)
+    }
+
+  var borderRight: String = ""
+    set(value) {
+      field = value
+      parseBorderSideShorthand(this, Border.Side.Right, value)
+    }
+
+  var borderBottom: String = ""
+    set(value) {
+      field = value
+      parseBorderSideShorthand(this, Border.Side.Bottom, value)
+    }
+
   var borderRadius: String = ""
     set(value) {
       field = value
       parseBorderRadius(this, value)
+    }
+
+  var paddingCss: String
+    get() = padding.cssValue
+    set(value) {
+      parsePaddingShorthand(this, value)
+    }
+
+  var marginCss: String
+    get() = margin.cssValue
+    set(value) {
+      parseMarginShorthand(this, value)
+    }
+
+  var insetCss: String
+    get() = inset.cssValue
+    set(value) {
+      parseInsetShorthand(this, value)
     }
 
   var cornerShape: String = ""
@@ -2355,6 +2988,60 @@ class Style internal constructor(@Transient internal var node: Node) {
         mBorderRenderer.invalidate()
       }
     }
+
+  // ============================================================
+  // border-image (string-based)
+  // ============================================================
+  var borderImage: String = ""
+    set(value) {
+      field = value
+      (node.view as? View)?.invalidate()
+    }
+
+  // ============================================================
+  // backdrop-filter (string-based)
+  // ============================================================
+  internal var mBackdropFilter: CSSFilters.CSSFilter? = null
+
+  // Filters content BEHIND the view; unlike setRenderEffect, children stay sharp (API 31+).
+  internal var mBackdropHelper: BackdropHelper? = null
+
+  var backdropFilter: String = ""
+    set(value) {
+      field = value
+      mBackdropFilter = if (value.isNotEmpty() && value != "none") {
+        CSSFilters.parse(value)
+      } else {
+        null
+      }
+      applyBackdropFilter()
+    }
+
+  @android.annotation.SuppressLint("NewApi")
+  private fun applyBackdropFilter() {
+    val view = node.view as? android.view.View ?: return
+
+    if (android.os.Build.VERSION.SDK_INT < 31) {
+      view.invalidate()
+      return
+    }
+
+    // Never apply the filter to the view's OWN output — that blurs children.
+    view.setRenderEffect(null)
+
+    val filter = mBackdropFilter
+    if (filter == null || filter.filters.isEmpty()) {
+      mBackdropHelper?.disable()
+      mBackdropHelper = null
+      view.invalidate()
+      return
+    }
+
+    val helper = mBackdropHelper ?: BackdropHelper(view).also { mBackdropHelper = it }
+    helper.setFilter(filter)
+    view.invalidate()
+  }
+
 
   internal fun getRadiusPoint(keys: IKeyCorner): Point<LengthPercentage> {
     val x = LengthPercentage.fromTypeValue(
@@ -2626,40 +3313,32 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   fun setBorderLeftWidth(value: Float, type: Byte) {
-    val left = LengthPercentage.fromTypeValue(type, value)
-    left?.let {
-      mBorderLeft.width = it
+    if (LengthPercentage.isValid(type, value)) {
+      mBorderLeft.width = LengthPercentage.fromTypeValue(type, value)!!
     }
   }
 
   fun setBorderRightWidth(value: Float, type: Byte) {
-    val right = LengthPercentage.fromTypeValue(type, value)
-
-    right?.let {
-      mBorderRight.width = it
+    if (LengthPercentage.isValid(type, value)) {
+      mBorderRight.width = LengthPercentage.fromTypeValue(type, value)!!
     }
   }
 
   fun setBorderTopWidth(value: Float, type: Byte) {
-    val top = LengthPercentage.fromTypeValue(type, value)
-
-    top?.let {
-      mBorderTop.width = it
+    if (LengthPercentage.isValid(type, value)) {
+      mBorderTop.width = LengthPercentage.fromTypeValue(type, value)!!
     }
   }
 
   fun setBorderBottomWidth(value: Float, type: Byte) {
-    val bottom = LengthPercentage.fromTypeValue(type, value)
-
-    bottom?.let {
-      mBorderBottom.width = it
+    if (LengthPercentage.isValid(type, value)) {
+      mBorderBottom.width = LengthPercentage.fromTypeValue(type, value)!!
     }
   }
 
   fun setBorderWidth(value: Float, type: Byte) {
-    val border = LengthPercentage.fromTypeValue(type, value)
-
-    border?.let {
+    if (LengthPercentage.isValid(type, value)) {
+      val it = LengthPercentage.fromTypeValue(type, value)!!
       mBorderLeft.apply {
         setState = false
         width = it
@@ -2917,6 +3596,16 @@ class Style internal constructor(@Transient internal var node: Node) {
       values.putFloat(StyleKeys.HEIGHT_VALUE, value.height.value)
       setOrAppendState(StateKeys.SIZE)
     }
+
+  fun setSizePoints(width: Float, height: Float) {
+    prepareMut()
+    values.put(StyleKeys.WIDTH_TYPE, Dimension.Kind.Points.value)
+    values.putFloat(StyleKeys.WIDTH_VALUE, width)
+
+    values.put(StyleKeys.HEIGHT_TYPE, Dimension.Kind.Points.value)
+    values.putFloat(StyleKeys.HEIGHT_VALUE, height)
+    setOrAppendState(StateKeys.SIZE)
+  }
 
 
   fun setSizeWidth(value: Float, type: Byte) {
@@ -3391,6 +4080,11 @@ class Style internal constructor(@Transient internal var node: Node) {
       return
     }
 
+    // Mark the style as initialized so ViewUtils.render() draws
+    // backgrounds, borders, etc. This is the first point where TS-driven
+    // style writes reach Kotlin (via syncStyle → setStateFromHalves).
+    isValueInitialized = true
+
     updateTextStyle()
 
     val borderState = (isDirty and StateKeys.BORDER.low) or (isDirtyHigh and StateKeys.BORDER.high)
@@ -3404,6 +4098,18 @@ class Style internal constructor(@Transient internal var node: Node) {
 
     if (borderState != 0L || borderRadius != 0L || borderStyle != 0L || borderColor != 0L) {
       mBorderRenderer.invalidate()
+    }
+
+    // Dispatch caret-color to input views
+    val caretColorDirty = StateKeys(isDirty, isDirtyHigh).hasFlag(StateKeys.CARET_COLOR)
+    if (caretColorDirty) {
+      notifyTextStyleChanged(StateKeys.CARET_COLOR)
+    }
+
+    // Dispatch object-position to image views
+    val objectPositionDirty = StateKeys(isDirty, isDirtyHigh).hasFlag(StateKeys.OBJECT_POSITION)
+    if (objectPositionDirty) {
+      (node.view as? android.widget.ImageView)?.invalidate()
     }
 
     if (isSlowDirty) {
@@ -3600,7 +4306,7 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
     set(value) {
       prepareMut()
-      values.put(StyleKeys.LIST_STYLE_POSITION, value.value.toByte())
+      values.put(StyleKeys.LIST_STYLE_POSITION, value.value)
       values.put(StyleKeys.LIST_STYLE_POSITION_STATE, StyleState.SET)
       setOrAppendState(StateKeys.LIST_STYLE_POSITION)
     }
@@ -3612,7 +4318,7 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
     set(value) {
       prepareMut()
-      values.put(StyleKeys.LIST_STYLE_TYPE, value.value.toByte())
+      values.put(StyleKeys.LIST_STYLE_TYPE, value.value)
       values.put(StyleKeys.LIST_STYLE_TYPE_STATE, StyleState.SET)
       setOrAppendState(StateKeys.LIST_STYLE_TYPE)
     }
@@ -3687,7 +4393,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       var parent = node.parent
       while (parent != null) {
         // Check if parent has text values initialized
-        if (parent.style.isTextValueInitialized) {
+        if (parent.style.isValueInitialized) {
           return parent.style
         }
         parent = parent.parent
@@ -3723,9 +4429,9 @@ class Style internal constructor(@Transient internal var node: Node) {
 
       val resolvedWeight = if (weightState == StyleState.INHERIT) {
         parentStyleWithTextValues?.resolvedFontWeight
-          ?: FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+          ?: FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       } else {
-        FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+        FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       }
 
       val resolvedStyle = if (styleState == StyleState.INHERIT) {
@@ -3745,7 +4451,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       val resolvedFont = FontFace(baseFamily).apply {
         weight = resolvedWeight
         style = resolvedStyle
-        owner = this@Style
+        addOnReloadListener(reloadListener)
       }
 
       // Eagerly load so resolvedFont.font is non-null (cheap with Typeface cache)
@@ -3772,7 +4478,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   // Uses PSEUDO_SET_MASK bitmask to determine if the property was explicitly set
   // in the pseudo buffer (pseudo buffers are cloned from base, so state bytes alone
   // are unreliable).
-  private fun resolvePseudoInt(valueKey: Int, stateKey: Int, base: Int, key: StateKeys): Int {
+  internal fun resolvePseudoInt(valueKey: Int, stateKey: Int, base: Int, key: StateKeys): Int {
     val mask = node.pseudoMask
     if (mask == 0) return base
     var result = base
@@ -3879,7 +4585,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       // PERCENT == 1
       if (type == StyleState.SET) {
         val parentFontSize =
-          node.parent?.takeIf { it.style.isTextValueInitialized }?.style?.resolvedFontSize
+          node.parent?.takeIf { it.style.isValueInitialized }?.style?.resolvedFontSize
             ?: Constants.DEFAULT_FONT_SIZE
         val base = resolvePercentageFontSize(parentFontSize, values.getInt(StyleKeys.FONT_SIZE))
         return resolvePseudoInt(
@@ -3908,14 +4614,14 @@ class Style internal constructor(@Transient internal var node: Node) {
     return ceil((parentFontSize * percent).coerceAtLeast(0f)).toInt()
   }
 
-  internal val resolvedFontWeight: FontFace.NSCFontWeight
+  internal val resolvedFontWeight: FontWeight
     get() {
       val state = values.get(StyleKeys.FONT_WEIGHT_STATE)
       val base = if (state == StyleState.INHERIT) {
         parentStyleWithTextValues?.resolvedFontWeight
-          ?: FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+          ?: FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       } else {
-        FontFace.NSCFontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
+        FontWeight.from(values.getInt(StyleKeys.FONT_WEIGHT))
       }
       val pseudoRaw = resolvePseudoInt(
         StyleKeys.FONT_WEIGHT,
@@ -3924,13 +4630,13 @@ class Style internal constructor(@Transient internal var node: Node) {
         StateKeys.FONT_WEIGHT
       )
       return if (node.pseudoMask != 0 && pseudoRaw != values.getInt(StyleKeys.FONT_WEIGHT)) {
-        FontFace.NSCFontWeight.from(pseudoRaw)
+        FontWeight.from(pseudoRaw)
       } else {
         base
       }
     }
 
-  internal val resolvedFontStyle: FontFace.NSCFontStyle
+  internal val resolvedFontStyle: FontStyle
     get() {
       val state = values.get(StyleKeys.FONT_STYLE_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -3945,7 +4651,11 @@ class Style internal constructor(@Transient internal var node: Node) {
         StateKeys.FONT_STYLE
       )
       return if (node.pseudoMask != 0 && pseudoRaw != values.get(StyleKeys.FONT_STYLE_TYPE)) {
-        FontFace.NSCFontStyle.from(pseudoRaw)!!
+        when (pseudoRaw) {
+          2.toByte() -> FontStyle.Oblique()
+          1.toByte() -> FontStyle.Italic
+          else -> FontStyle.Normal
+        }
       } else {
         base
       }
@@ -4287,6 +4997,76 @@ class Style internal constructor(@Transient internal var node: Node) {
       )
     }
 
+  internal val resolvedCaretColor: Int
+    get() {
+      val state = values.get(StyleKeys.CARET_COLOR_STATE)
+      return if (state == StyleState.SET) {
+        values.getInt(StyleKeys.CARET_COLOR)
+      } else if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedCaretColor ?: resolvedColor
+      } else {
+        // auto / unset → fall back to currentColor (text color)
+        resolvedColor
+      }
+    }
+
+  internal val resolvedWordSpacing: Float
+    get() {
+      val state = values.get(StyleKeys.WORD_SPACING_STATE)
+      return if (state == StyleState.SET || state == StyleState.INHERIT) {
+        if (state == StyleState.INHERIT) {
+          parentStyleWithTextValues?.resolvedWordSpacing ?: values.getFloat(StyleKeys.WORD_SPACING)
+        } else {
+          values.getFloat(StyleKeys.WORD_SPACING)
+        }
+      } else {
+        0f
+      }
+    }
+
+  internal val resolvedWordSpacingType: Byte
+    get() = values.get(StyleKeys.WORD_SPACING_TYPE)
+
+  internal val resolvedWritingMode: Byte
+    get() {
+      val state = values.get(StyleKeys.WRITING_MODE_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedWritingMode ?: values.get(StyleKeys.WRITING_MODE)
+      } else {
+        values.get(StyleKeys.WRITING_MODE)
+      }
+    }
+
+  internal val resolvedUnicodeBidi: Byte
+    get() {
+      val state = values.get(StyleKeys.UNICODE_BIDI_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedUnicodeBidi ?: values.get(StyleKeys.UNICODE_BIDI)
+      } else {
+        values.get(StyleKeys.UNICODE_BIDI)
+      }
+    }
+
+  internal val resolvedHyphens: Byte
+    get() {
+      val state = values.get(StyleKeys.HYPHENS_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedHyphens ?: values.get(StyleKeys.HYPHENS)
+      } else {
+        values.get(StyleKeys.HYPHENS)
+      }
+    }
+
+  internal val resolvedFontStretch: Int
+    get() {
+      val state = values.get(StyleKeys.FONT_STRETCH_STATE)
+      return if (state == StyleState.INHERIT) {
+        parentStyleWithTextValues?.resolvedFontStretch ?: values.getInt(StyleKeys.FONT_STRETCH)
+      } else {
+        values.getInt(StyleKeys.FONT_STRETCH)
+      }
+    }
+
 
   /* Resolved Styles */
 
@@ -4318,10 +5098,11 @@ class Style internal constructor(@Transient internal var node: Node) {
     internal fun applyClip(
       canvas: Canvas,
       clip: BackgroundClip,
-      node: Node,
+      style: Style,
       width: Float,
       height: Float
     ) {
+      val node = style.node
       // fall back to computed dimensions only if the passed values are <= 0
       val w = if (width > 0f) width else node.computedWidth
       val h = if (height > 0f) height else node.computedHeight
@@ -4339,17 +5120,14 @@ class Style internal constructor(@Transient internal var node: Node) {
       when (clip) {
         BackgroundClip.BORDER_BOX -> {
           // Border box = full view bounds
-          canvas.clipRect(0f, 0f, w, h)
+          val p = style.mBorderRenderer.getOuterClipPath(w, h)
+          canvas.clipPath(p)
         }
 
         BackgroundClip.PADDING_BOX -> {
           // Padding box = inset by border widths
-          canvas.clipRect(
-            borderLeft,
-            borderTop,
-            w - borderRight,
-            h - borderBottom
-          )
+          val p = style.mBorderRenderer.getClipPath(w, h)
+          canvas.clipPath(p)
         }
 
         BackgroundClip.CONTENT_BOX -> {
@@ -4379,38 +5157,37 @@ class Style internal constructor(@Transient internal var node: Node) {
       // Nothing to do if both axes are visible
       if (overflowX == Overflow.Visible.value && overflowY == Overflow.Visible.value) return
 
+      // Clip per the CSS overflow spec:
+      // Hidden(1), Scroll(2), Clip(3) → always clip
+      // Auto(4) → clip only when content overflows
+      // Visible(0) → never clip
       val clipX = when (overflowX.toInt()) {
-        1, 3 -> true
+        1, 2, 3 -> true
         4 -> style.node.overflowWidth > width
         else -> false
       }
 
       val clipY = when (overflowY.toInt()) {
-        1, 3 -> true
+        1, 2, 3 -> true
         4 -> style.node.overflowHeight > height
         else -> false
       }
 
-      // If neither axis needs clipping, return early — except Scroll views
-      val isScrollView = node.view is Scroll
+      if (!clipX && !clipY) return
 
-      if (!clipX && !clipY && !isScrollView) return
-
-      // If Scroll view, ensure we clip both axes to content box
-      val finalClipX = clipX || isScrollView
-      val finalClipY = clipY || isScrollView
+      val scroll = node.view as? Scroll
 
       // For Scroll views the canvas has already been translated by
       // -scrollX/-scrollY (Android applies the scroll offset in
       // View.draw(Canvas, ViewGroup, long) before dispatchDraw is called).
       // Offset the clip rect so it tracks the scrolled viewport.
-      val scrollOX = if (isScrollView) (node.view as Scroll).scrollX.toFloat() else 0f
-      val scrollOY = if (isScrollView) (node.view as Scroll).scrollY.toFloat() else 0f
+      val scrollOX = scroll?.scrollX?.toFloat() ?: 0f
+      val scrollOY = scroll?.scrollY?.toFloat() ?: 0f
 
-      val clipLeft = (if (finalClipX) paddingLeft else 0f) + scrollOX
-      val clipTop = (if (finalClipY) paddingTop else 0f) + scrollOY
-      val clipRight = (if (finalClipX) width - paddingRight else width) + scrollOX
-      val clipBottom = (if (finalClipY) height - paddingBottom else height) + scrollOY
+      val clipLeft = (if (clipX) paddingLeft else 0f) + scrollOX
+      val clipTop = (if (clipY) paddingTop else 0f) + scrollOY
+      val clipRight = (if (clipX) width - paddingRight else width) + scrollOX
+      val clipBottom = (if (clipY) height - paddingBottom else height) + scrollOY
 
       // Defensive guard: if computed clip rect is inverted or degenerate, skip clipping
       if (clipRight > clipLeft && clipBottom > clipTop) {
@@ -4452,6 +5229,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       gridArea: String?,
       gridTemplateAreas: String?,
     )
+
 
     @JvmStatic
     external fun nativeGetGridArea(

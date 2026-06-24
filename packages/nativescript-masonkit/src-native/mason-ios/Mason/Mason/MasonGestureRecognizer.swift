@@ -12,55 +12,85 @@ class MasonGestureRecognizer: UIGestureRecognizer {
   weak var targetView: UIView?
   internal var isSubmit: Bool = false
   var eventDispatched: Bool = false
-  private let isButton: Bool
+
+  // Movement past this many points (in WINDOW coords, stable while a scroll view
+  // moves content under the finger) marks a scroll/drag rather than a tap.
+  // Matches UIScrollView's default pan slop.
+  private static let tapSlop: CGFloat = 10.0
+  // Touch-down location in window space; nil once the gesture has bailed.
+  private var startLocationInWindow: CGPoint?
+
   init(targetView: UIView) {
     self.targetView = targetView
-    if let a = targetView as? MasonText {
-      isButton = a.type == .A
-    }else {
-      isButton = targetView is UIButton || targetView is Button
-    }
     super.init(target: nil, action: nil)
+    // We dispatch the click event ourselves in touchesBegan and don't need UIKit
+    // to delay touch-ended delivery or cancel touches in views. On iOS 26 the
+    // default delaysTouchesEnded=true causes a nil-event crash in
+    // _delayTouchesForEvent:inPhase: when state is set to .recognized before
+    // touchesEnded has occurred.
+    delaysTouchesEnded = false
+    cancelsTouchesInView = false
   }
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-    guard let touch = touches.first else { return }
-    if let view = targetView {
-      let location = touch.location(in: view)
+    // Record the start in window coords so touchesEnded can tell a tap from a scroll.
+    startLocationInWindow = touches.first?.location(in: nil)
+  }
 
-      if isButton {
-        let click = MasonMouseEvent(
-          type: "click",
-          options: MasonMouseEventOptions().apply {
-            $0.clientX = Float(location.x)
-            $0.clientY = Float(location.y)
-            $0.screenX = Float(location.x)
-            $0.screenY = Float(location.y)
-            $0.pageX = Float(location.x)
-            $0.pageY = Float(location.y)
-          }
-        )
-        click.target = view
-
-        if let owner = owner {
-          owner.node.mason.dispatch(click, owner.node)
-        }
-
-        if click.defaultPrevented {
-          state = .failed
-        } else {
-          state = .recognized
-        }
-      }
-
-      eventDispatched = true
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    // Past the slop = scroll/drag; bail so touchesEnded won't fire a click.
+    guard let touch = touches.first, let start = startLocationInWindow else { return }
+    let now = touch.location(in: nil)
+    if hypot(now.x - start.x, now.y - start.y) > Self.tapSlop {
+      startLocationInWindow = nil
+      state = .failed
     }
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
-    if !eventDispatched {
+    guard let touch = touches.first, let view = targetView, let start = startLocationInWindow else {
       state = .failed
+      return
     }
+
+    // Reject if the touch moved too far overall (scroll/drag, not a tap).
+    let endInWindow = touch.location(in: nil)
+    guard hypot(endInWindow.x - start.x, endInWindow.y - start.y) <= Self.tapSlop else {
+      state = .failed
+      return
+    }
+
+    // Only fire click if the finger lifted inside the view (not a drag).
+    let location = touch.location(in: view)
+    guard view.bounds.contains(location) else {
+      state = .failed
+      return
+    }
+
+    let click = MasonMouseEvent(
+      type: "click",
+      options: MasonMouseEventOptions().apply {
+        $0.clientX = Float(location.x)
+        $0.clientY = Float(location.y)
+        $0.screenX = Float(location.x)
+        $0.screenY = Float(location.y)
+        $0.pageX = Float(location.x)
+        $0.pageY = Float(location.y)
+      }
+    )
+    click.target = view
+
+    if let owner = owner {
+      owner.node.mason.dispatch(click, owner.node)
+    }
+
+    if click.defaultPrevented {
+      state = .failed
+    } else {
+      state = .recognized
+    }
+
+    eventDispatched = true
   }
 
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -69,6 +99,6 @@ class MasonGestureRecognizer: UIGestureRecognizer {
 
   override func reset() {
     eventDispatched = false
-    state = .possible
+    startLocationInWindow = nil
   }
 }

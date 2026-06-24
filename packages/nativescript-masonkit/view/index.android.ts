@@ -46,8 +46,11 @@ export class View extends ViewBase {
 
     if (nativeView && (child.nativeViewProtected || child.android)) {
       child._hasNativeView = true;
+      const jsIndex = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      // Map the JS index onto the native children list (views attach lazily,
+      // so the raw index can run ahead of native state).
+      const index = jsIndex <= -1 ? jsIndex : (this as any)._nativeIndexFor(jsIndex);
       child._isMasonChild = true;
-      const index = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
       if (child[isPlaceholder_]) {
         nativeView.addChildAt(child.android, index as never);
       } else {

@@ -2867,6 +2867,10 @@ declare module org {
 					public getNativePtr(): number;
 					public styleForView(this_: globalAndroid.view.View): org.nativescript.mason.masonkit.Style;
 					public createInput(context: globalAndroid.content.Context): org.nativescript.mason.masonkit.Input;
+					/** Enable or disable CSS Preflight defaults for the entire Mason tree. */
+					public setPreflight(enabled: boolean): void;
+					/** Returns whether CSS Preflight defaults are currently enabled. */
+					public getPreflight(): boolean;
 				}
 				export module Mason {
 					export class Companion {
@@ -3518,6 +3522,7 @@ declare module org {
 					public getNativePtr(): number;
 					public isTracked(): boolean;
 					public setMeasureFuncImpl$masonkit_release(value: org.nativescript.mason.masonkit.MeasureFuncImpl): void;
+					public static markPseudoSet(buf: java.nio.ByteBuffer, key: org.nativescript.mason.masonkit.StateKeys): void;
 				}
 				export module Node {
 					export class Companion {
@@ -3542,6 +3547,7 @@ declare module org {
 			export module masonkit {
 				export class NodeHelper {
 					public static class: java.lang.Class<org.nativescript.mason.masonkit.NodeHelper>;
+					public setTextDecoration(this_: globalAndroid.view.View, view: string): void;
 					public getGridAutoColumns(this_: globalAndroid.view.View): string;
 					public setGridColumnStart(this_: globalAndroid.view.View, view: string): void;
 					public getAlignSelf(this_: globalAndroid.view.View): org.nativescript.mason.masonkit.enums.AlignSelf;
@@ -3584,6 +3590,9 @@ declare module org {
 					public setTextShadow(this_: globalAndroid.view.View, view: string): void;
 					public setPaddingTop(this_: globalAndroid.view.View, view: number, value: number): void;
 					public setPaddingWithValueType(this_: globalAndroid.view.View, view: number, value: number): void;
+					public setPaddingCss(this_: globalAndroid.view.View, view: string): void;
+					public setMarginCss(this_: globalAndroid.view.View, view: string): void;
+					public setInsetCss(this_: globalAndroid.view.View, view: string): void;
 					public setInsetRight(this_: globalAndroid.view.View, view: number, value: number): void;
 					public getViews(): java.util.ArrayList<org.nativescript.mason.masonkit.View>;
 					public getSizeJsonValue(this_: globalAndroid.view.View): string;
@@ -3749,6 +3758,10 @@ declare module org {
 					public getGridRow(this_: globalAndroid.view.View): string;
 					public setMarginLeft(this_: globalAndroid.view.View, view: number, value: number): void;
 					public setBorder(this_: globalAndroid.view.View, view: string): void;
+					public setBorderLeft(this_: globalAndroid.view.View, value: string): void;
+					public setBorderTop(this_: globalAndroid.view.View, value: string): void;
+					public setBorderRight(this_: globalAndroid.view.View, value: string): void;
+					public setBorderBottom(this_: globalAndroid.view.View, value: string): void;
 					public setPosition(this_: globalAndroid.view.View, view: number, left: number, top: number, right: number): void;
 					public setPosition(this_: globalAndroid.view.View, view: org.nativescript.mason.masonkit.LengthPercentageAuto, left: org.nativescript.mason.masonkit.LengthPercentageAuto, top: org.nativescript.mason.masonkit.LengthPercentageAuto, right: org.nativescript.mason.masonkit.LengthPercentageAuto): void;
 					public setGap(this_: globalAndroid.view.View, view: number, width: number, widthType: number, height: number): void;
@@ -3763,6 +3776,16 @@ declare module org {
 					public setCornerShapeBottomRight(this_: globalAndroid.view.View, value: string): void;
 					public getCornerShapeBottomLeft(this_: globalAndroid.view.View): string;
 					public setCornerShapeBottomLeft(this_: globalAndroid.view.View, value: string): void;
+					public getBoxShadow(this_: globalAndroid.view.View): string;
+					public setBoxShadow(this_: globalAndroid.view.View, value: string): void;
+					public getTransform(this_: globalAndroid.view.View): string;
+					public setTransform(this_: globalAndroid.view.View, value: string): void;
+					public getBorderImage(this_: globalAndroid.view.View): string;
+					public setBorderImage(this_: globalAndroid.view.View, value: string): void;
+					public getFontFeatureSettings(this_: globalAndroid.view.View): string;
+					public setFontFeatureSettings(this_: globalAndroid.view.View, value: string): void;
+					public getBackdropFilter(this_: globalAndroid.view.View): string;
+					public setBackdropFilter(this_: globalAndroid.view.View, value: string): void;
 				}
 			}
 		}
@@ -4305,7 +4328,7 @@ declare module org {
 		export module mason {
 			export module masonkit {
 				export class StateKeys {
-					public static class: java.lang.Class<org.nativescript.mason.masonkit.StateKeys>;
+					public static class: java.lang.Class<ComputedStyle>;
 					public and(other: org.nativescript.mason.masonkit.StateKeys): org.nativescript.mason.masonkit.StateKeys;
 					public or(other: org.nativescript.mason.masonkit.StateKeys): org.nativescript.mason.masonkit.StateKeys;
 					public hasFlag(flag: org.nativescript.mason.masonkit.StateKeys): boolean;
@@ -4313,6 +4336,7 @@ declare module org {
 					public getHigh(): number;
 					public getLow(): number;
 					public getBits(): number;
+					public static flag(value: number): org.nativescript.mason.masonkit.StateKeys;
 				}
 				export module StateKeys {
 					export class Companion {

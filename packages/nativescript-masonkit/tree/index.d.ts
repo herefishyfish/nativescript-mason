@@ -60,4 +60,8 @@ export class Tree {
   createList(context?): org.nativescript.mason.masonkit.ListView | MasonList;
 
   createListItem(context?): org.nativescript.mason.masonkit.Li | MasonListItem;
+
+  createTextArea(context?);
+
+  preflight: boolean;
 }

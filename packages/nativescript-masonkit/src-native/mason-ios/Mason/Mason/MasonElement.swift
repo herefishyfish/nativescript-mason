@@ -5,7 +5,7 @@
 //  Created by Osei Fortune on 02/10/2025.
 //
 import UIKit
-
+import FontManager
 
 internal func create_layout(_ floats: UnsafePointer<Float>?, _ count: UInt) -> UnsafeMutableRawPointer? {
   guard let floats = floats else {return nil}
@@ -126,19 +126,23 @@ func ctFont(from cgFont: CGFont, fontSize: CGFloat, weight: UIFont.Weight, style
   ]
   
   var symbolicTraits: CTFontSymbolicTraits = []
-  switch(style) {
+  switch(style.type) {
   case .normal:
     // noop
     break
   case .italic:
     symbolicTraits.insert(.traitItalic)
-  case .oblique(let value):
-    if value != nil {
-      // todo handle slant value
-      symbolicTraits.insert(.traitItalic)
-    }else {
-      symbolicTraits.insert(.traitItalic)
-    }
+  case .oblique:
+    symbolicTraits.insert(.traitItalic)
+//    if style.obliqueAngle != nil {
+//      // todo handle slant value
+//      symbolicTraits.insert(.traitItalic)
+//    }else {
+//      symbolicTraits.insert(.traitItalic)
+//    }
+  @unknown default:
+    //noop
+    break
   }
   if weightValue >= 0.6 {
     symbolicTraits.insert(.traitBold)
@@ -154,22 +158,29 @@ func ctFont(from cgFont: CGFont, fontSize: CGFloat, weight: UIFont.Weight, style
   // CoreText ignores weight traits when an explicit name like ".SFUI-Regular" is given.
   // Use the family name + traits so CoreText selects the correct weight variant.
   let isSystemFont = postScriptName.hasPrefix(".")
-  
+
   var attributes: [CFString: Any] = [
     kCTFontSizeAttribute: fontSize,
     kCTFontTraitsAttribute: traits
   ]
-  
+
   if isSystemFont {
-    // For system fonts, use CTFontCreateUIFontForLanguage to get the correct weight
     let uiFont = UIFont.systemFont(ofSize: fontSize, weight: weight)
     return CTFontCreateWithFontDescriptor(uiFont.fontDescriptor as CTFontDescriptor, fontSize, nil)
   } else {
-    attributes[kCTFontNameAttribute] = postScriptName as CFString
+    // Resolve by FAMILY name + traits, not the exact PostScript name: pinning a
+    // face makes CoreText ignore the weight trait. Fall back to the PostScript
+    // name only if the family can't be determined.
+    let baseCT = CTFontCreateWithGraphicsFont(cgFont, fontSize, nil, nil)
+    if let familyName = CTFontCopyFamilyName(baseCT) as String? {
+      attributes[kCTFontFamilyNameAttribute] = familyName as CFString
+    } else {
+      attributes[kCTFontNameAttribute] = postScriptName as CFString
+    }
   }
-  
+
   let descriptor = CTFontDescriptorCreateWithAttributes(attributes as CFDictionary)
-  
+
   return CTFontCreateWithFontDescriptor(descriptor, fontSize, nil)
 }
 
@@ -266,15 +277,15 @@ extension MasonElement {
     }
 
     if let view = view {
-      if(view.computeCacheDirty){
-        let computed = view.computeCache()
-        // Preserve root view's frame — managed externally, not by Mason
-        let isRoot = !(view.uiView.superview is MasonElement)
-        let savedFrame = view.uiView.frame
-        view.computeWithSize(Float(computed.width), Float(computed.height))
-        if isRoot && view.uiView.frame != savedFrame {
-          view.uiView.frame = savedFrame
+      if view.isInLayout {
+        // Currently inside a layout pass — defer to avoid re-entrant layout.
+        DispatchQueue.main.async {
+          view.computeWithViewSize(layout: true)
         }
+      } else {
+        view.isInLayout = true
+        defer { view.isInLayout = false }
+        view.computeWithViewSize(layout: true)
       }
     }
   }
@@ -346,6 +357,15 @@ extension MasonElement {
       objc_setAssociatedObject(self, &MasonElementProperties.computeCacheDirty, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
   }
+
+  internal var isInLayout: Bool {
+    get {
+      return objc_getAssociatedObject(self, &MasonElementProperties.isInLayout) as? Bool ?? false
+    }
+    set {
+      objc_setAssociatedObject(self, &MasonElementProperties.isInLayout, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
   
   internal func computeCache() -> CGSize {
     return objc_getAssociatedObject(self, &MasonElementProperties.computeCache) as? CGSize ?? .zero
@@ -365,22 +385,23 @@ extension MasonElement {
     }
   }
 
-  /// Auto-compute layout when this is a root Mason view.
-  /// Call from layoutSubviews in any MasonElement UIView subclass.
-  /// Mirrors Android's onMeasure: if the parent isn't a MasonElement,
-  /// take the parent's size as the available space and compute.
+  /// Auto-compute layout when this is a root Mason view (parent isn't a
+  /// MasonElement). Call from layoutSubviews; mirrors Android's onMeasure.
   public func autoComputeIfRoot() {
     guard !(uiView.superview is MasonElement) else { return }
     guard let parentSize = uiView.superview?.bounds.size else { return }
+    // Zero parent bounds (transitions, pre-Auto-Layout): skip but keep dirty
+    // flags so the next real-size call recomputes instead of hitting stale cache.
     guard parentSize.width > 0 || parentSize.height > 0 else { return }
     if _lastAutoComputeSize != parentSize || computeCacheDirty || node.isDirty {
       _lastAutoComputeSize = parentSize
       let scale = NSCMason.scale
       let w = scale * Float(parentSize.width)
       let h = scale * Float(parentSize.height)
-      // Preserve root view's frame — it's managed by the parent
-      // (autolayout/autoresize), not by Mason. Only children get repositioned.
+      // Preserve root view's frame — managed by the parent, not Mason.
       let savedFrame = uiView.frame
+      isInLayout = true
+      defer { isInLayout = false }
       computeWithSize(w, h)
       computeCacheDirty = false
       if uiView.frame != savedFrame {
@@ -477,8 +498,13 @@ extension MasonElement {
   }
   
   public func computeWithSize(_ width: Float, _ height: Float){
-    compute(width, height)
-    let layout = self.layout()
+    setComputeCache(CGSize(width: CGFloat(width), height: CGFloat(height)))
+    let points = mason_node_compute_wh_and_layout(node.mason.nativePtr,
+                                                   node.nativePtr, width, height, create_layout)
+    guard let points = points else {
+      return
+    }
+    let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
     MasonElementHelpers.applyToView(node, layout)
   }
   
@@ -487,21 +513,41 @@ extension MasonElement {
   }
   
   public func computeWithViewSize(layout: Bool){
-    compute(Float(uiView.frame.size.width) * NSCMason.scale, Float(uiView.frame.size.height) * NSCMason.scale)
+    let w = Float(uiView.frame.size.width) * NSCMason.scale
+    let h = Float(uiView.frame.size.height) * NSCMason.scale
     if(layout){
-      MasonElementHelpers.applyToView(node, self.layout())
+      setComputeCache(CGSize(width: CGFloat(w), height: CGFloat(h)))
+      let points = mason_node_compute_wh_and_layout(node.mason.nativePtr,
+                                                     node.nativePtr, w, h, create_layout)
+      guard let points = points else {
+        return
+      }
+      let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
+      MasonElementHelpers.applyToView(node, layout)
+    } else {
+      compute(w, h)
     }
   }
   
   public func computeWithMaxContent(){
-    computeMaxContent()
-    let layout = self.layout()
+    let points = mason_node_compute_max_content_and_layout(node.mason.nativePtr,
+                                                            node.nativePtr, create_layout)
+    setComputeCache(CGSize(width: CGFloat(-2), height: CGFloat(-2)))
+    guard let points = points else {
+      return
+    }
+    let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
     MasonElementHelpers.applyToView(node, layout)
   }
   
   public func computeWithMinContent(){
-    computeMinContent()
-    let layout = self.layout()
+    let points = mason_node_compute_min_content_and_layout(node.mason.nativePtr,
+                                                            node.nativePtr, create_layout)
+    setComputeCache(CGSize(width: CGFloat(-1), height: CGFloat(-1)))
+    guard let points = points else {
+      return
+    }
+    let layout: MasonLayout = Unmanaged.fromOpaque(points).takeRetainedValue()
     MasonElementHelpers.applyToView(node, layout)
   }
   
@@ -631,9 +677,9 @@ class MasonElementHelpers: NSObject {
       
       let heightIsNan = realLayout.height.isNaN
       
-      var x = CGFloat(realLayout.x.isNaN ? 0 : realLayout.x/NSCMason.scale)
+      let x = CGFloat(realLayout.x.isNaN ? 0 : realLayout.x/NSCMason.scale)
       
-      var y = CGFloat(realLayout.y.isNaN ? 0 : realLayout.y/NSCMason.scale)
+      let y = CGFloat(realLayout.y.isNaN ? 0 : realLayout.y/NSCMason.scale)
       
       var width = CGFloat(widthIsNan ? 0 : realLayout.width/NSCMason.scale)
       
@@ -649,47 +695,102 @@ class MasonElementHelpers: NSObject {
         }
       }
       
-      // remember unpadded values before possible scroll-root tweaks
-      let origX = x
-      let origY = y
-      let origWidth = width
-      let origHeight = height
-
-      // special-case scroll root: offset into parent padding and expand
-      if let scroll = view as? Scroll, let parentNode = node.parent {
-        let pad = parentNode.style.padding
-        let parentPadL = CGFloat(pad.left.value/NSCMason.scale)
-        let parentPadT = CGFloat(pad.top.value/NSCMason.scale)
-        let parentPadR = CGFloat(pad.right.value/NSCMason.scale)
-        let parentPadB = CGFloat(pad.bottom.value/NSCMason.scale)
-
-        x += parentPadL
-        y += parentPadT
-        width += parentPadL + parentPadR
-        height += parentPadT + parentPadB
-
-        #if DEBUG
-        print("Mason scrollRoot parentPad=\(parentPadL)/\(parentPadR) layoutW=\(origWidth) layoutH=\(origHeight) finalW=\(width) finalH=\(height)")
-        #endif
-      }
-
       let point = CGPoint(x: x, y: y)
       
       let size = CGSizeMake(width, height)
       
-      let newFrame = CGRect(origin: point, size: size)
-      if view.frame != newFrame {
-        view.frame = newFrame
+      var newFrame = CGRect(origin: point, size: size)
+      
+      if(!realLayout.paddingIsEmpty){
+        var top: CGFloat = 0
+        if !realLayout.paddingTop.isZero {
+          top = CGFloat(realLayout.paddingTop / NSCMason.scale)
+        }
+        
+        var left: CGFloat = 0
+        if !realLayout.paddingLeft.isZero {
+          left = CGFloat(realLayout.paddingLeft / NSCMason.scale)
+        }
+        
+        var bottom: CGFloat = 0
+        if !realLayout.paddingBottom.isZero {
+          bottom = CGFloat(realLayout.paddingBottom / NSCMason.scale)
+        }
+        
+        var right: CGFloat = 0
+        if !realLayout.paddingRight.isZero {
+          right = CGFloat(realLayout.paddingRight / NSCMason.scale)
+        }
+        
+        let insets = UIEdgeInsets(top: top, left: left, bottom: bottom, right: right)
+        newFrame.inset(by: insets)
       }
 
-      // Apply clipsToBounds for non-visible overflow on all views
+      // Root scroll container is a VIEWPORT: Mason sizes a height:auto / visible
+      // node to its full content, but the on-screen box must not exceed the
+      // available space, or there is no scrollable delta (box == contentSize).
+      // Clamp the box to the superview (the NativeScript-managed viewport); the
+      // children stay laid out in the full content space and `contentSize`
+      // (computed below from the unclamped layout) overflows it → scroll engages.
+      // Only roots (superview is not a MasonElement) self-size; nested nodes are
+      // positioned by their Mason parent and must keep the computed frame.
+      if let mv = view as? MasonUIView, mv.isScrollContainer,
+         !(view.superview is MasonElement),
+         let avail = view.superview?.bounds.size,
+         avail.width > 0, avail.height > 0 {
+        if newFrame.size.height > avail.height { newFrame.size.height = avail.height }
+        if newFrame.size.width > avail.width { newFrame.size.width = avail.width }
+      }
+
+      // Setting `view.frame` is undefined when the view has a non-identity
+      // transform, so position via bounds+center instead (equivalent to frame
+      // when the transform is identity).
+      if view.transform.isIdentity && CATransform3DIsIdentity(view.layer.transform) {
+        if view.frame != newFrame {
+          view.frame = newFrame
+        }
+      } else {
+        let newBounds = CGRect(origin: view.bounds.origin, size: newFrame.size)
+        let newCenter = CGPoint(x: newFrame.midX, y: newFrame.midY)
+        if view.bounds.size != newBounds.size {
+          view.bounds = newBounds
+        }
+        if view.center != newCenter {
+          view.center = newCenter
+        }
+      }
+
+      // Reposition the outset box-shadow layer here (where the frame is applied):
+      // layoutSubviews only fires on size changes, so position-only moves during
+      // reflow would otherwise leave the shadow stranded.
+      node.style.updateShadowLayer(for: CGRect(origin: .zero, size: view.bounds.size))
+
+      // Clipping per the CSS overflow spec: Hidden/Scroll/Clip always clip the
+      // axis, Auto clips only on overflow, Visible never. Border-radius always
+      // clips children to the rounded rect regardless of overflow.
       let overflow = node.style.overflow
-      if overflow.x != .Visible || overflow.y != .Visible {
+      // Scroll container: default `visible` acts as `auto` on the Y axis only;
+      // horizontal stays visible to avoid surprise sideways scrolling.
+      let _isScrollContainer = (node.view as? MasonUIView)?.isScrollContainer ?? false
+      let clipX = overflow.x == .Hidden || overflow.x == .Scroll || overflow.x == .Clip
+        || (overflow.x == .Auto && realLayout.contentWidth > realLayout.width)
+      let clipY = overflow.y == .Hidden || overflow.y == .Scroll || overflow.y == .Clip
+        || (overflow.y == .Auto && realLayout.contentHeight > realLayout.height)
+        || (overflow.y == .Visible && _isScrollContainer && realLayout.contentHeight > realLayout.height)
+
+      let borderRender = node.style.mBorderRender
+      borderRender.resolve(for: view.bounds)
+      let hasRadii = borderRender.hasRadii()
+
+      // Never touch clipsToBounds on UIScrollView here: changing it during
+      // layoutSubviews corrupts UIKit's gesture graph (UIGestureGraphEdge
+      // assertions). It's fixed to true at init.
+      if view is UIScrollView {
+        // Nothing to do — clipping is fixed at init time.
+      } else if clipX && clipY {
+        // Both axes clip — use clipsToBounds (+ border-radius mask if needed)
         view.clipsToBounds = true
-        // Apply border-radius clipping via layer mask when radii are present
-        let borderRender = node.style.mBorderRender
-        borderRender.resolve(for: view.bounds)
-        if borderRender.hasRadii() {
+        if hasRadii {
           let clipPath = borderRender.getClipPath(rect: view.bounds, radius: borderRender.radius)
           let newCGPath = clipPath.cgPath
           if let existing = view.layer.mask as? CAShapeLayer {
@@ -704,7 +805,36 @@ class MasonElementHelpers: NSObject {
         } else if view.layer.mask != nil {
           view.layer.mask = nil
         }
+      } else if clipX || clipY {
+        // Only one axis clips — use a layer mask that extends beyond
+        // the view on the non-clipped axis so shadows/content can overflow.
+        view.clipsToBounds = false
+
+        // Large overflow allowance for the unclipped axis
+        let overflowPad: CGFloat = 10000
+
+        let clipRect: CGRect
+        if clipX && !clipY {
+          clipRect = CGRect(x: 0, y: -overflowPad, width: view.bounds.width, height: view.bounds.height + overflowPad * 2)
+        } else {
+          clipRect = CGRect(x: -overflowPad, y: 0, width: view.bounds.width + overflowPad * 2, height: view.bounds.height)
+        }
+
+        if hasRadii {
+          let clipPath = borderRender.getClipPath(rect: view.bounds, radius: borderRender.radius)
+          let newCGPath = clipPath.cgPath
+          let maskLayer = (view.layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+          maskLayer.path = newCGPath
+          view.layer.mask = maskLayer
+        } else {
+          let maskLayer = (view.layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+          maskLayer.path = UIBezierPath(rect: clipRect).cgPath
+          view.layer.mask = maskLayer
+        }
       } else {
+        // Overflow visible: border-radius alone doesn't clip children (only the
+        // element's own bg/border are rounded, drawn in draw()). A mask here would
+        // clip the border stroke and overflowing children, so clear it.
         view.clipsToBounds = false
         if view.layer.mask != nil {
           view.layer.mask = nil
@@ -713,39 +843,57 @@ class MasonElementHelpers: NSObject {
       
       node.isLayoutValid = true
       
-      if let scroll = node.view as? Scroll {
-        let overflow = node.style.overflow
-        
-        
-        let scrollWidth =
-        max(CGFloat(realLayout.contentWidth.isNaN ? 0 : realLayout.contentWidth/NSCMason.scale), CGFloat(realLayout.width.isNaN ? 0 : realLayout.width/NSCMason.scale))
-        
-        let scrollHeight =
-        max(CGFloat(realLayout.contentHeight.isNaN ? 0 : realLayout.contentHeight/NSCMason.scale), CGFloat(realLayout.height.isNaN ? 0 : realLayout.height/NSCMason.scale))
-        
-      
-        
-        let newContentSize = CGSize(width: scrollWidth, height: scrollHeight)
-        if scroll.contentSize != newContentSize {
-          scroll.contentSize = newContentSize
+      // Compute content size for any scrollable view (Scroll or MasonUIView).
+      let _overflow = node.style.overflow
+      let _ox = _overflow.x
+      let _oy: Overflow = (_overflow.y == .Visible && _isScrollContainer) ? .Auto : _overflow.y
+      let _hasScrollOverflow = _ox == .Scroll || _ox == .Auto
+        || _oy == .Scroll || _oy == .Auto
+      if _hasScrollOverflow {
+        let cw = CGFloat(realLayout.contentWidth.isNaN ? 0 : realLayout.contentWidth/NSCMason.scale)
+        let ch = CGFloat(realLayout.contentHeight.isNaN ? 0 : realLayout.contentHeight/NSCMason.scale)
+        let bw = CGFloat(realLayout.width.isNaN ? 0 : realLayout.width/NSCMason.scale)
+        let bh = CGFloat(realLayout.height.isNaN ? 0 : realLayout.height/NSCMason.scale)
+
+        // For `scroll`: always use content size (allow scrolling even if smaller)
+        // For `auto`: use content size only when it overflows the box
+        // For `visible`/`hidden`/`clip`: use box size (no scrolling)
+        let scrollWidth: CGFloat
+        switch _ox {
+        case .Scroll: scrollWidth = max(cw, bw)
+        case .Auto:   scrollWidth = cw > bw ? cw : bw
+        default:      scrollWidth = bw
         }
-        
-        
-        MasonElementHelpers.handleOverflow(overflow.x, scroll)
-        MasonElementHelpers.handleOverflow(overflow.y, scroll, true)
-        
+        let scrollHeight: CGFloat
+        switch _oy {
+        case .Scroll: scrollHeight = max(ch, bh)
+        case .Auto:   scrollHeight = ch > bh ? ch : bh
+        default:      scrollHeight = bh
+        }
+        let newContentSize = CGSize(width: scrollWidth, height: scrollHeight)
+
+        if let scroll = node.view as? Scroll {
+          if scroll.contentSize != newContentSize { scroll.contentSize = newContentSize }
+          MasonElementHelpers.handleOverflow(_overflow.x, scroll)
+          MasonElementHelpers.handleOverflow(_overflow.y, scroll, true)
+        } else if let masonView = node.view as? MasonUIView {
+          if masonView.contentSize != newContentSize { masonView.contentSize = newContentSize }
+        }
       }
 
     }
     
     if(!layout.children.isEmpty){
-      // Filter to only children with nativePtr (matching Rust layout tree order)
-      // Do NOT filter out flattened text containers here — indices must stay
-      // aligned with layout.children from Rust.
+      // Only children with nativePtr, matching Rust layout tree order. Keep
+      // flattened text containers so indices stay aligned with layout.children.
       let children = node.children.filter { $0.nativePtr != nil }
 
       let count = children.count
+      // Sweep orphaned outset-shadow layers (safety net for missed per-child
+      // willMove cleanup under heavy churn).
+      reconcileShadowLayers(node.view)
       for i in 0..<count{
+        guard i < layout.children.count else { break }
         let child = children[i]
         if(child.type == .text){
           continue
@@ -759,8 +907,8 @@ class MasonElementHelpers: NSObject {
           }
         }
 
-        let layout = layout.children[i]
-        applyToView(child, layout)
+        let childLayout = layout.children[i]
+        applyToView(child, childLayout)
       }
     }
     
@@ -768,57 +916,57 @@ class MasonElementHelpers: NSObject {
   
   
   
+  /// Remove outset-shadow sublayers in `container` whose owner is no longer a
+  /// direct child (or whose style was freed). Safety net for per-child cleanup.
+  internal static func reconcileShadowLayers(_ container: UIView?) {
+    guard let container = container, let sublayers = container.layer.sublayers else { return }
+    for layer in sublayers {
+      guard let shadow = layer as? MasonShadowLayer else { continue }
+      let ownerView = shadow.masonStyle?.node.view
+      if ownerView == nil || ownerView?.superview !== container {
+        shadow.removeFromSuperlayer()
+        // Reset bookkeeping so the owner re-attaches cleanly if it returns.
+        shadow.masonStyle?.markShadowLayerDetached()
+      }
+    }
+  }
+
   private static func setIfNeeded<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<UIScrollView, T>, on scroll: UIScrollView, to value: T) {
     if scroll[keyPath: keyPath] != value {
       scroll[keyPath: keyPath] = value
     }
   }
 
+  /// Configure scroll indicators and bounce behaviour for a single axis.
+  /// Clipping (clipsToBounds / layer mask) is handled in the layout pass,
+  /// not here, so that per-axis clipping works correctly.
   internal static func handleOverflow(_ overflow: Overflow, _ scroll: UIScrollView, _ vertical: Bool = false) {
-    switch(overflow){
-    case .Visible:
-      setIfNeeded(\.clipsToBounds, on: scroll, to: false)
-      if(vertical){
-        setIfNeeded(\.alwaysBounceVertical, on: scroll, to: false)
-        setIfNeeded(\.showsVerticalScrollIndicator, on: scroll, to: false)
-      }else {
-        setIfNeeded(\.alwaysBounceHorizontal, on: scroll, to: false)
-        setIfNeeded(\.showsHorizontalScrollIndicator, on: scroll, to: false)
-      }
-    case .Hidden:
-      setIfNeeded(\.clipsToBounds, on: scroll, to: true)
-      if(vertical){
-        setIfNeeded(\.alwaysBounceVertical, on: scroll, to: true)
-        setIfNeeded(\.showsVerticalScrollIndicator, on: scroll, to: false)
-      }else {
-        setIfNeeded(\.alwaysBounceHorizontal, on: scroll, to: true)
-        setIfNeeded(\.showsHorizontalScrollIndicator, on: scroll, to: false)
-      }
+    switch overflow {
     case .Scroll:
-      setIfNeeded(\.clipsToBounds, on: scroll, to: true)
-      if(vertical){
+      if vertical {
         setIfNeeded(\.alwaysBounceVertical, on: scroll, to: true)
         setIfNeeded(\.showsVerticalScrollIndicator, on: scroll, to: true)
-      }else {
+      } else {
         setIfNeeded(\.alwaysBounceHorizontal, on: scroll, to: true)
         setIfNeeded(\.showsHorizontalScrollIndicator, on: scroll, to: true)
       }
-    case .Clip:
-      setIfNeeded(\.clipsToBounds, on: scroll, to: true)
-      if(vertical){
-        setIfNeeded(\.alwaysBounceVertical, on: scroll, to: true)
-        setIfNeeded(\.showsVerticalScrollIndicator, on: scroll, to: false)
-      }else {
-        setIfNeeded(\.alwaysBounceHorizontal, on: scroll, to: true)
-        setIfNeeded(\.showsHorizontalScrollIndicator, on: scroll, to: false)
-      }
     case .Auto:
-      setIfNeeded(\.clipsToBounds, on: scroll, to: true)
-      if(vertical){
-        let showIndicator = scroll.contentSize.height > scroll.bounds.size.height
-        setIfNeeded(\.showsVerticalScrollIndicator, on: scroll, to: showIndicator)
-        setIfNeeded(\.alwaysBounceVertical, on: scroll, to: true)
-      }else {
+      if vertical {
+        let overflows = scroll.contentSize.height > scroll.bounds.size.height
+        setIfNeeded(\.showsVerticalScrollIndicator, on: scroll, to: overflows)
+        setIfNeeded(\.alwaysBounceVertical, on: scroll, to: overflows)
+      } else {
+        let overflows = scroll.contentSize.width > scroll.bounds.size.width
+        setIfNeeded(\.showsHorizontalScrollIndicator, on: scroll, to: overflows)
+        setIfNeeded(\.alwaysBounceHorizontal, on: scroll, to: overflows)
+      }
+    default:
+      // Visible, Hidden, Clip — no scrolling on this axis
+      if vertical {
+        setIfNeeded(\.alwaysBounceVertical, on: scroll, to: false)
+        setIfNeeded(\.showsVerticalScrollIndicator, on: scroll, to: false)
+      } else {
+        setIfNeeded(\.alwaysBounceHorizontal, on: scroll, to: false)
         setIfNeeded(\.showsHorizontalScrollIndicator, on: scroll, to: false)
       }
     }

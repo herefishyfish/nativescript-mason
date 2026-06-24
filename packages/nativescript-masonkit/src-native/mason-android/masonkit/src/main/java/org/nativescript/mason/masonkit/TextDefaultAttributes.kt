@@ -1,14 +1,17 @@
 package org.nativescript.mason.masonkit
 
 import android.os.Build
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.enums.TextAlign
 import org.nativescript.mason.masonkit.enums.VerticalAlign
 
 data class TextDefaultAttributes(
   var color: Int? = null,
-  var fontSize: Any? = null,
-  var fontWeight: FontFace.NSCFontWeight? = null,
-  var fontStyle: FontFace.NSCFontStyle? = null,
+  var fontSize: Int? = null,
+  var fontWeight: FontWeight? = null,
+  var fontStyle: FontStyle? = null,
   var fontFamily: String? = null,
   var font: FontFace? = null,
   var textWrap: Styles.TextWrap? = null,
@@ -30,8 +33,8 @@ data class TextDefaultAttributes(
   fun sync(style: Style) {
     color = style.resolvedColor
     fontSize = style.resolvedFontSize
-    fontWeight = style.fontWeight
-    fontStyle = style.fontStyle
+    fontWeight = style.resolvedFontWeight
+    fontStyle = style.resolvedFontStyle
     val resolvedFont = style.resolvedFontFace
     fontFamily = resolvedFont.fontFamily
     font = resolvedFont
@@ -67,7 +70,7 @@ data class TextDefaultAttributes(
     textShadow = style.resolvedTextShadow
   }
 
-  fun copy(attributes: TextDefaultAttributes) {
+  fun sync(attributes: TextDefaultAttributes) {
     color = attributes.color
     fontSize = attributes.fontSize
     fontWeight = attributes.fontWeight
@@ -99,8 +102,8 @@ data class TextDefaultAttributes(
       return TextDefaultAttributes(
         style.resolvedColor,
         style.resolvedFontSize,
-        style.fontWeight,
-        style.fontStyle,
+        style.resolvedFontWeight,
+        style.resolvedFontStyle,
         resolvedFont.fontFamily,
         resolvedFont,
         style.resolvedTextWrap,

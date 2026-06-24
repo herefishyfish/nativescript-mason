@@ -10,19 +10,25 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
-import android.util.Log
 import android.view.View
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
+import kotlin.math.hypot
 
+
+// Reusable objects to avoid per-frame allocations in draw paths
+private val gradientPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isDither = true }
+private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+private val bitmapDstRect = RectF()
 
 private val IMAGE_REGEX = Regex("""url\(["']?(.*?)["']?\)""")
 private val IMAGE_REPLACE_REGEX = Regex("""url\(['"].*?['"]\)""")
 private val GRADIENT_REGEX = Regex("""(linear|radial)-gradient\(([\s\S]*)\)\s*;?""")
 private val GRADIENT_DIRECTION_REGEX = Regex("""to .*""")
 private val REPEAT_KEYS = listOf("repeat", "repeat-x", "repeat-y", "no-repeat")
-private val PARSE_LAYER_REGEX = Regex("""\s+""")
+private val WHITESPACE_REGEX = Regex("""\s+""")
+private val COMMA_WHITESPACE_REGEX = Regex("""[\s,]+""")
 private val POSITION_KEYS = listOf("top", "bottom", "left", "right", "center")
 private val COLOR_KEYWORDS = listOf("red", "blue", "green", "black", "white", "yellow", "gray")
 private val CLIP_REGEX = Regex("""^(content-box|border-box|padding-box)\s+""")
@@ -40,7 +46,7 @@ private val ANGLE_REGEX =
  * Later entries override earlier ones when multiple states are active.
  * Matches CSS spec: :active overrides :focus overrides :hover.
  */
-internal val PSEUDO_CSS_ORDER = listOf(
+internal val PSEUDO_CSS_ORDER = arrayOf(
   PseudoState.HOVER, PseudoState.FOCUS, PseudoState.ACTIVE, PseudoState.DISABLED
 )
 
@@ -68,37 +74,40 @@ data class BackgroundLayer(
 class Background(
   val style: Style
 ) {
+
+  internal val bgPaint by lazy {
+    Paint().apply {
+      this.style = Paint.Style.FILL
+    }
+  }
+
   var color: Int?
     set(value) {
       if (value == null) {
         style.values.put(StyleKeys.BACKGROUND_COLOR_STATE, StyleState.INHERIT)
         style.values.putInt(StyleKeys.BACKGROUND_COLOR, 0)
-        style.values.putInt(StyleKeys.BACKGROUND_COLOR_TYPE, 0)
+        style.values.put(StyleKeys.BACKGROUND_COLOR_TYPE, 0)
         return
       }
 
       style.values.put(StyleKeys.BACKGROUND_COLOR_STATE, StyleState.SET)
       style.values.putInt(StyleKeys.BACKGROUND_COLOR, value)
-      style.values.putInt(StyleKeys.BACKGROUND_COLOR_TYPE, 1)
+      style.values.put(StyleKeys.BACKGROUND_COLOR_TYPE, 1)
     }
     get() {
-      val baseValue: Int? = if (style.values.get(StyleKeys.BACKGROUND_COLOR_STATE) == StyleState.INHERIT) {
-        null
-      } else {
-        style.values.getInt(StyleKeys.BACKGROUND_COLOR)
-      }
-      val mask = style.node.pseudoMask
-      if (mask == 0) return baseValue
-      var result = baseValue
-      for (state in PSEUDO_CSS_ORDER) {
-        if (mask and state.mask != 0) {
-          val buf = style.node.getPseudoBuffer(state.mask)
-          if (buf.capacity() > 0 && buf.get(StyleKeys.BACKGROUND_COLOR_STATE) != StyleState.INHERIT) {
-            result = buf.getInt(StyleKeys.BACKGROUND_COLOR)
-          }
+      val baseValue: Int =
+        if (style.values.get(StyleKeys.BACKGROUND_COLOR_STATE) == StyleState.SET) {
+          style.values.getInt(StyleKeys.BACKGROUND_COLOR)
+        } else {
+          0
         }
-      }
-      return result
+
+      return style.resolvePseudoInt(
+        StyleKeys.BACKGROUND_COLOR,
+        StyleKeys.BACKGROUND_COLOR_STATE,
+        baseValue,
+        StateKeys.BACKGROUND_COLOR
+      )
     }
 
   var layers: MutableList<BackgroundLayer> = mutableListOf()
@@ -109,14 +118,14 @@ class Background(
     parts.forEachIndexed { idx, rep ->
       layers[idx].repeat = parseRepeat(rep.trim())
     }
-    (style.node.view as? android.view.View)?.invalidate()
+    (style.node.view as? View)?.invalidate()
   }
 
   fun applyBackgroundPosition(value: String) {
     val parts = splitLayers(value)
     while (layers.size < parts.size) layers.add(BackgroundLayer())
     parts.forEachIndexed { idx, p ->
-      val tokens = p.trim().split(Regex("\\s+"))
+      val tokens = p.trim().split(WHITESPACE_REGEX)
       layers[idx].position = parsePosition(tokens)
     }
     (style.node.view as? android.view.View)?.invalidate()
@@ -193,17 +202,20 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
   // (which often happens at 0x0) would create a degenerate shader that never
   // updates when the view finally gets a proper size.
   if (layer.shader != null &&
-      (layer.shaderWidth != width || layer.shaderHeight != height)) {
+    (layer.shaderWidth != width || layer.shaderHeight != height)
+  ) {
     layer.shader = null
   }
 
   if (layer.shader == null) {
     // Parse color stops: each stop can be "color position" or just "color"
-    val colors = mutableListOf<Int>()
-    val positions = mutableListOf<Float>()
+    val stopCount = gradient.stops.size
+    val colorsArray = IntArray(stopCount)
+    val positionsArray = FloatArray(stopCount)
+    val maxIndex = (stopCount - 1).coerceAtLeast(1)
 
-    for ((index, stop) in gradient.stops.withIndex()) {
-      val trimmed = stop.trim()
+    for (index in 0 until stopCount) {
+      val trimmed = gradient.stops[index].trim()
       // Find the last space that separates color from position
       val lastSpace = trimmed.lastIndexOf(' ')
 
@@ -211,51 +223,49 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
         val colorPart = trimmed.substring(0, lastSpace)
         val posPart = trimmed.substring(lastSpace + 1).trim()
 
-        val color = parseColor(colorPart) ?: Color.TRANSPARENT
-        colors.add(color)
+        colorsArray[index] = parseColor(colorPart) ?: Color.TRANSPARENT
 
         // Parse position: can be "0", "50%", "100%", etc.
         val posValue = posPart.trimEnd('%')
         val pos = posValue.toFloatOrNull()
         if (pos != null) {
-          // Normalize to 0.0-1.0 range
-          // If it ends with %, divide by 100; if no %, treat small values (0-1) as-is, larger as percentage
           val normalizedPos = when {
             posPart.endsWith('%') -> pos / 100f
-            pos <= 1f -> pos  // Already in 0-1 range
-            else -> pos / 100f  // Treat as percentage (0-100)
+            pos <= 1f -> pos
+            else -> pos / 100f
           }
-          positions.add(normalizedPos.coerceIn(0f, 1f))
+          positionsArray[index] = normalizedPos.coerceIn(0f, 1f)
         } else {
-          // Fallback: distribute evenly
-          positions.add(index.toFloat() / (gradient.stops.size - 1).coerceAtLeast(1))
+          positionsArray[index] = index.toFloat() / maxIndex
         }
       } else {
-        // No position specified, just color
-        val color = parseColor(trimmed) ?: Color.TRANSPARENT
-        colors.add(color)
-        // Distribute evenly
-        positions.add(index.toFloat() / (gradient.stops.size - 1).coerceAtLeast(1))
+        colorsArray[index] = parseColor(trimmed) ?: Color.TRANSPARENT
+        positionsArray[index] = index.toFloat() / maxIndex
       }
     }
-
-    val colorsArray = colors.toIntArray()
-    val positionsArray = if (positions.isNotEmpty()) positions.toFloatArray() else null
 
     // Ensure we have valid colors and positions
     if (colorsArray.isEmpty()) return
 
     layer.shader = when (gradient.type.lowercase()) {
       "linear" -> {
-        val (x0, y0, x1, y1) = resolveLinearGradientEndpoints(
+        val ep = resolveLinearGradientEndpoints(
           gradient.direction, width.toFloat(), height.toFloat()
         )
-        LinearGradient(x0, y0, x1, y1, colorsArray, positionsArray, Shader.TileMode.CLAMP)
+        LinearGradient(ep[0], ep[1], ep[2], ep[3], colorsArray, positionsArray, Shader.TileMode.CLAMP)
       }
 
       "radial" -> {
+        val (cx, cy) = resolveRadialGradientCenter(gradient.direction, width.toFloat(), height.toFloat())
+        // Radius must reach the farthest corner from the resolved centre.
+        val radius = maxOf(
+          hypot((cx).toDouble(), (cy).toDouble()),
+          hypot((width - cx).toDouble(), (cy).toDouble()),
+          hypot((cx).toDouble(), (height - cy).toDouble()),
+          hypot((width - cx).toDouble(), (height - cy).toDouble())
+        ).toFloat().coerceAtLeast(1f)
         RadialGradient(
-          width / 2f, height / 2f, maxOf(width, height) / 2f, colorsArray, positionsArray, Shader.TileMode.CLAMP
+          cx, cy, radius, colorsArray, positionsArray, Shader.TileMode.CLAMP
         )
       }
 
@@ -267,11 +277,12 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
     layer.shaderHeight = height
   }
 
-  val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    isDither = true
-    shader = layer.shader
-  }
-  canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+  // Fail-safe: if no shader could be built (e.g. an unrecognised gradient type
+  // after a re-parse on rotation), do NOT fill — gradientPaint is shared and its
+  // fallback colour is opaque black, which would paint a solid black box.
+  if (layer.shader == null) return
+  gradientPaint.shader = layer.shader
+  canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), gradientPaint)
 }
 
 /**
@@ -279,23 +290,28 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
  * Supports CSS angle values (deg, rad, turn, grad), named directions
  * ("to bottom", "to top right", etc.), and falls back to top-to-bottom (180deg).
  */
+// Reusable array for gradient endpoint calculations (avoids List<Float> boxing)
+private val gradientEndpoints = FloatArray(4)
+
 private fun resolveLinearGradientEndpoints(
   direction: String?,
   width: Float,
   height: Float
-): List<Float> {
-  val dir = direction?.trim()?.lowercase() ?: return listOf(0f, 0f, 0f, height)
+): FloatArray {
+  val ep = gradientEndpoints
+  val dir = direction?.trim()?.lowercase()
+  if (dir == null) { ep[0] = 0f; ep[1] = 0f; ep[2] = 0f; ep[3] = height; return ep }
 
   // Named directions
   when (dir) {
-    "to bottom" -> return listOf(0f, 0f, 0f, height)
-    "to top" -> return listOf(0f, height, 0f, 0f)
-    "to right" -> return listOf(0f, 0f, width, 0f)
-    "to left" -> return listOf(width, 0f, 0f, 0f)
-    "to bottom right", "to right bottom" -> return listOf(0f, 0f, width, height)
-    "to bottom left", "to left bottom" -> return listOf(width, 0f, 0f, height)
-    "to top right", "to right top" -> return listOf(0f, height, width, 0f)
-    "to top left", "to left top" -> return listOf(width, height, 0f, 0f)
+    "to bottom"                        -> { ep[0] = 0f;    ep[1] = 0f;     ep[2] = 0f;    ep[3] = height; return ep }
+    "to top"                           -> { ep[0] = 0f;    ep[1] = height; ep[2] = 0f;    ep[3] = 0f;     return ep }
+    "to right"                         -> { ep[0] = 0f;    ep[1] = 0f;     ep[2] = width; ep[3] = 0f;     return ep }
+    "to left"                          -> { ep[0] = width; ep[1] = 0f;     ep[2] = 0f;    ep[3] = 0f;     return ep }
+    "to bottom right", "to right bottom" -> { ep[0] = 0f;    ep[1] = 0f;     ep[2] = width; ep[3] = height; return ep }
+    "to bottom left", "to left bottom" -> { ep[0] = width; ep[1] = 0f;     ep[2] = 0f;    ep[3] = height; return ep }
+    "to top right", "to right top"     -> { ep[0] = 0f;    ep[1] = height; ep[2] = width; ep[3] = 0f;     return ep }
+    "to top left", "to left top"       -> { ep[0] = width; ep[1] = height; ep[2] = 0f;    ep[3] = 0f;     return ep }
   }
 
   // Try to parse as an angle
@@ -305,17 +321,17 @@ private fun resolveLinearGradientEndpoints(
     val centerY = height / 2f
     val sinA = kotlin.math.sin(angleRad).toFloat()
     val cosA = kotlin.math.cos(angleRad).toFloat()
-    // Half-length of gradient line per CSS spec
     val halfLen = (kotlin.math.abs(width * sinA) + kotlin.math.abs(height * cosA)) / 2f
-    val x0 = centerX - halfLen * sinA
-    val y0 = centerY + halfLen * cosA
-    val x1 = centerX + halfLen * sinA
-    val y1 = centerY - halfLen * cosA
-    return listOf(x0, y0, x1, y1)
+    ep[0] = centerX - halfLen * sinA
+    ep[1] = centerY + halfLen * cosA
+    ep[2] = centerX + halfLen * sinA
+    ep[3] = centerY - halfLen * cosA
+    return ep
   }
 
   // Fallback: top-to-bottom (CSS default)
-  return listOf(0f, 0f, 0f, height)
+  ep[0] = 0f; ep[1] = 0f; ep[2] = 0f; ep[3] = height
+  return ep
 }
 
 /**
@@ -327,44 +343,132 @@ private fun parseCssAngleToRadians(value: String): Double? {
   return when {
     v.endsWith("deg") -> v.removeSuffix("deg").toDoubleOrNull()
       ?.let { it * Math.PI / 180.0 }
+
     v.endsWith("grad") -> v.removeSuffix("grad").toDoubleOrNull()
       ?.let { it * Math.PI / 200.0 }
+
     v.endsWith("turn") -> v.removeSuffix("turn").toDoubleOrNull()
       ?.let { it * 2.0 * Math.PI }
+
     v.endsWith("rad") -> v.removeSuffix("rad").toDoubleOrNull()
     else -> null
+  }
+}
+
+/**
+ * Resolve the centre point of a radial-gradient from the CSS direction string.
+ *
+ * Accepted formats include:
+ *   "circle at top left", "ellipse at 30% 70%", "at center", "circle", etc.
+ *
+ * When no position is given the default is the element centre (50% 50%).
+ */
+private fun resolveRadialGradientCenter(
+  direction: String?,
+  width: Float,
+  height: Float
+): Pair<Float, Float> {
+  val defaultCenter = Pair(width / 2f, height / 2f)
+  val dir = direction?.trim()?.lowercase() ?: return defaultCenter
+
+  // Extract the position portion after "at "
+  val atIndex = dir.indexOf(" at ")
+  val positionStr = if (atIndex >= 0) dir.substring(atIndex + 4).trim() else return defaultCenter
+  if (positionStr.isEmpty()) return defaultCenter
+
+  return resolvePositionKeywords(positionStr, width, height)
+}
+
+/**
+ * Convert a CSS background-position value (keyword or percentage based) to
+ * absolute pixel coordinates.
+ *
+ * Supports: named keywords (top, bottom, left, right, center) and percentage
+ * values (e.g. "30%" or "30% 70%").
+ */
+private fun resolvePositionKeywords(
+  position: String,
+  width: Float,
+  height: Float
+): Pair<Float, Float> {
+  val parts = position.split(Regex("\\s+"))
+
+  fun resolveToken(token: String, horizontal: Boolean): Float {
+    return when (token) {
+      "left" -> 0f
+      "right" -> width
+      "top" -> 0f
+      "bottom" -> height
+      "center" -> if (horizontal) width / 2f else height / 2f
+      else -> {
+        if (token.endsWith("%")) {
+          val pct = token.removeSuffix("%").toFloatOrNull() ?: 50f
+          if (horizontal) pct / 100f * width else pct / 100f * height
+        } else {
+          val num = token.removeSuffix("px").toFloatOrNull()
+          if (num != null) num * Mason.shared.scale
+          else if (horizontal) width / 2f else height / 2f
+        }
+      }
+    }
+  }
+
+  return when (parts.size) {
+    1 -> {
+      val x = resolveToken(parts[0], horizontal = true)
+      val y = when (parts[0]) {
+        "top" -> 0f
+        "bottom" -> height
+        // Single keyword like "center", "left", "right" → y defaults to 50%
+        else -> height / 2f
+      }
+      // For "top"/"bottom" used alone, x defaults to center
+      val finalX = when (parts[0]) {
+        "top", "bottom" -> width / 2f
+        else -> x
+      }
+      Pair(finalX, y)
+    }
+    else -> Pair(
+      resolveToken(parts[0], horizontal = true),
+      resolveToken(parts[1], horizontal = false)
+    )
   }
 }
 
 private fun drawBitmapLayer(
   bitmap: Bitmap, layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
 ) {
-  val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
   // Determine the scaled size
-  val (drawWidth, drawHeight) = when (layer.size) {
-    null -> bitmap.width to bitmap.height
-    else -> {
-      val w = if (layer.size!!.first < 0) bitmap.width else layer.size!!.first * width
-      val h = if (layer.size!!.second < 0) bitmap.height else layer.size!!.second * height
-      w.toInt() to h.toInt()
-    }
+  val drawWidth: Int
+  val drawHeight: Int
+  val size = layer.size
+  if (size == null) {
+    drawWidth = bitmap.width
+    drawHeight = bitmap.height
+  } else {
+    drawWidth = if (size.first < 0) bitmap.width else (size.first * width).toInt()
+    drawHeight = if (size.second < 0) bitmap.height else (size.second * height).toInt()
   }
 
   // Determine position
   val x = ((layer.position?.first ?: 0.5f) * (width - drawWidth))
   val y = ((layer.position?.second ?: 0.5f) * (height - drawHeight))
 
+  // Reuse cached RectF and Paint to avoid per-tile allocations
+  val dst = bitmapDstRect
+  val paint = bitmapPaint
+
   when (layer.repeat) {
     BackgroundRepeat.NO_REPEAT -> {
-      val dst = RectF(x, y, x + drawWidth, y + drawHeight)
+      dst.set(x, y, x + drawWidth, y + drawHeight)
       canvas.drawBitmap(bitmap, null, dst, paint)
     }
 
     BackgroundRepeat.REPEAT_X -> {
       var px = x
       while (px < width) {
-        val dst = RectF(px, y, px + drawWidth, y + drawHeight)
+        dst.set(px, y, px + drawWidth, y + drawHeight)
         canvas.drawBitmap(bitmap, null, dst, paint)
         px += drawWidth
       }
@@ -373,7 +477,7 @@ private fun drawBitmapLayer(
     BackgroundRepeat.REPEAT_Y -> {
       var py = y
       while (py < height) {
-        val dst = RectF(x, py, x + drawWidth, py + drawHeight)
+        dst.set(x, py, x + drawWidth, py + drawHeight)
         canvas.drawBitmap(bitmap, null, dst, paint)
         py += drawHeight
       }
@@ -384,7 +488,7 @@ private fun drawBitmapLayer(
       while (py < height) {
         var px = x
         while (px < width) {
-          val dst = RectF(px, py, px + drawWidth, py + drawHeight)
+          dst.set(px, py, px + drawWidth, py + drawHeight)
           canvas.drawBitmap(bitmap, null, dst, paint)
           px += drawWidth
         }
@@ -504,7 +608,7 @@ fun parseRgbColor(input: String): Int? {
 
   val components = rgbPart
     .trim()
-    .split(Regex("""[\s,]+"""))
+    .split(COMMA_WHITESPACE_REGEX)
     .filter { it.isNotEmpty() }
 
   return when (components.size) {
@@ -515,6 +619,7 @@ fun parseRgbColor(input: String): Int? {
       val a = parseAlpha(alphaPart)
       (a shl 24) or (r shl 16) or (g shl 8) or b
     }
+
     4 -> {
       // Legacy rgba(r, g, b, a) comma-separated format
       val r = parseColorChannel(components[0]) ?: return null
@@ -523,6 +628,7 @@ fun parseRgbColor(input: String): Int? {
       val a = if (alphaPart != null) parseAlpha(alphaPart) else parseAlpha(components[3])
       (a shl 24) or (r shl 16) or (g shl 8) or b
     }
+
     else -> null
   }
 }
@@ -572,7 +678,7 @@ fun parseSize(value: String): Pair<Float, Float>? {
     "cover" -> -1f to -1f
     "contain" -> -2f to -2f
     else -> {
-      val tokens = s.split(Regex("\\s+"))
+      val tokens = s.split(WHITESPACE_REGEX)
       if (tokens.size == 2) {
         val w = tokens[0].removeSuffix("px").toFloatOrNull()
         val h = tokens[1].removeSuffix("px").toFloatOrNull()
@@ -625,7 +731,7 @@ private fun isAngleOrDirection(token: String): Boolean {
   if (ANGLE_REGEX.matches(v)) return true
 
   if (v.startsWith("to ")) {
-    val parts = v.removePrefix("to ").split(Regex("\\s+"))
+    val parts = v.removePrefix("to ").split(WHITESPACE_REGEX)
     return parts.all {
       it == "top" || it == "bottom" || it == "left" || it == "right"
     }
@@ -637,7 +743,7 @@ private fun isAngleOrDirection(token: String): Boolean {
     // Check if it starts with a shape keyword or size keyword
     val shapeKeywords = listOf("circle", "ellipse")
     val sizeKeywords = listOf("closest-side", "closest-corner", "farthest-side", "farthest-corner")
-    val parts = beforeAt.split(Regex("\\s+"))
+    val parts = beforeAt.split(WHITESPACE_REGEX)
     if (parts.any { it in shapeKeywords || it in sizeKeywords } || beforeAt.isEmpty()) {
       return true
     }
@@ -724,7 +830,7 @@ fun parseLayer(layerValue: String): BackgroundLayer {
   }
 
   // 5. Position
-  val posTokens = value.split(PARSE_LAYER_REGEX)
+  val posTokens = value.split(WHITESPACE_REGEX)
     .filter { it.endsWith("%") || POSITION_KEYS.contains(it.lowercase()) }
 
   if (posTokens.isNotEmpty()) {
@@ -769,7 +875,13 @@ fun parseBackground(style: Style, css: String): Background? {
     }
   }
 
-  bg.layers.addAll(layers)
+  // Filter out empty/default layers (e.g. when the author only specified
+  // a simple color like "#fff" we don't want a placeholder layer).
+  val meaningful = layers.filter { layer ->
+    layer.image != null || layer.gradient != null || layer.position != null || layer.size != null || layer.repeat != BackgroundRepeat.NO_REPEAT || layer.clip != BackgroundClip.BORDER_BOX
+  }
+
+  bg.layers.addAll(meaningful)
 
   if (bg.color == null && bg.layers.isEmpty()) return null
 

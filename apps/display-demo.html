@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mason Display Demo</title>
+  </head>
+  <body>
+    <div id="mason-display-demo" style="display: block; padding: 16px; background: #ffffff">
+      <div id="mason-demo-box" style="display: flex; flex-direction: column; width: 150px; height: 150px; background: linear-gradient(to right, rgb(255, 53, 26), rgb(0, 235, 235)); border-radius: 0 50% 0 0; box-shadow: 3px 5px 5px black; border-left: 2px dotted rgb(0, 235, 235); border-top: 2px dashed rgb(255, 53, 26)"></div>
+
+      <button id="mason-display-toggle" style="display: block; margin-top: 12px; text-align: left" type="button">Hide</button>
+    </div>
+
+    <script>
+      const demo = document.getElementById('mason-demo-box');
+      const toggle = document.getElementById('mason-display-toggle');
+
+      toggle.addEventListener('click', () => {
+        if (!demo || !toggle) return;
+        const isHidden = getComputedStyle(demo).display === 'none';
+
+        if (isHidden) {
+          demo.style.display = 'flex';
+          toggle.textContent = 'Hide';
+        } else {
+          demo.style.display = 'none';
+          toggle.textContent = 'Show';
+        }
+      });
+    </script>
+  </body>
+</html>

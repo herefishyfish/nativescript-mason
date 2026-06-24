@@ -10,7 +10,7 @@ import UIKit
 
 @objcMembers
 @objc(MasonButton)
-public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc, StyleChangeListener, TextContainer {
+public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc, StyleChangeListener, TextContainer, SingleLineTextBaselineProviding {
   public let node: MasonNode
   public let mason: NSCMason
   
@@ -37,6 +37,22 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     }
     set {
       engine.textContent = newValue
+    }
+  }
+
+  func singleLineTextBaselineY(ascent: CGFloat, descent: CGFloat, in drawBounds: CGRect) -> CGFloat {
+    let lineHeight = ascent + descent
+    let centeredBaseline = drawBounds.minY + ((drawBounds.height - lineHeight) / 2) + ascent
+
+    switch contentVerticalAlignment {
+    case .top:
+      return drawBounds.minY + ascent
+    case .bottom:
+      return drawBounds.maxY - descent
+    case .fill, .center:
+      return max(drawBounds.minY + ascent, centeredBaseline)
+    @unknown default:
+      return max(drawBounds.minY + ascent, centeredBaseline)
     }
   }
   
@@ -84,12 +100,31 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     if(view.superview == self){
       return
     }
-    
+
     if(view is MasonElement){
       node.addChildAt((view as! MasonElement).node, at)
     }else {
       node.addChildAt(node.mason.nodeForView(view), at)
     }
+  }
+
+  public func removeView(_ view: UIView) {
+    let childNode = (view as? MasonElement)?.node ?? node.mason.nodeForView(view)
+    node.removeChild(childNode)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeView(at index: Int) {
+    _ = node.removeChildAt(index: index)
+    engine.invalidateInlineSegments()
+  }
+
+  public func removeAllViews() {
+    if let ptr = node.nativePtr {
+      mason_node_remove_children(node.mason.nativePtr, ptr)
+    }
+    node.children.removeAll()
+    engine.invalidateInlineSegments()
   }
 
   
@@ -107,6 +142,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     guard let context = UIGraphicsGetCurrentContext() else {
       return
     }
+
 
     style.mBorderRender.resolve(for: bounds)
     let borderWidths = style.mBorderRender.cachedWidths
@@ -154,7 +190,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     if !filterCss.isEmpty {
       style.applyResolvedFilter(in: context, rect: bounds, view: self)
     } else if node.hasPseudo(.active),
-              node.getPseudoBuffer(PseudoState.active.rawValue) == nil {
+              node.getPseudoBufferRaw(PseudoState.active.rawValue) == nil {
       context.saveGState()
       if style.mBorderRender.hasRadii() {
         let clipPath = style.mBorderRender.getClipPath(rect: bounds, radius: style.mBorderRender.radius)
@@ -172,9 +208,11 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
     isOpaque = false
     style.setStyleChangeListener(listener: self)
     
-    let scale = Float((window?.screen.scale ?? CGFloat(NSCMason.scale)))
+    let scale = NSCMason.scale
     let x =  6 * scale
     let y =  scale
+    
+    node.view = self
 
     configure { style in
       style.display = Display.InlineBlock
@@ -186,14 +224,26 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
       style.border = "1 solid #767676"
       style.borderRadius = "4"
     }
-    node.view = self
+
 
     // Default :active brightness is applied in draw() as a fallback only
     // when no explicit :active pseudo buffer has been set by the user.
 
     node.measureFunc = { [weak self] known, available in
       guard let self = self else { return .zero }
-      return TextEngine.measure(self.engine, true, isBlock: false, known, available)
+      
+      
+      var isBlock = false
+      var isInline = true
+      
+      if(style.isValueInitialized){
+        let mode = style.getInt8(StyleKeys.DISPLAY_MODE)
+        isBlock = mode == 0 && style.getInt8(StyleKeys.DISPLAY) == Display.Block.rawValue
+        isInline = mode == DisplayMode.Inline.rawValue || mode == DisplayMode.Box.rawValue
+      }
+      
+      
+      return TextEngine.measure(self.engine, isInline, isBlock: isBlock, known, available)
     }
     node.setMeasureFunction(node.measureFunc!)
   }
@@ -210,7 +260,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
   
   
   public override init(frame: CGRect) {
-    node = NSCMason.shared.createTextNode()
+    node = NSCMason.shared.createButtonNode()
     mason = NSCMason.shared
     super.init(frame: frame)
     setup()
@@ -218,7 +268,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
   
   
   init(mason doc: NSCMason) {
-    node = doc.createTextNode()
+    node = doc.createButtonNode()
     mason = doc
     super.init(frame: .zero)
     setup()
@@ -226,7 +276,7 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
   
   
   required init?(coder: NSCoder) {
-    node = NSCMason.shared.createTextNode()
+    node = NSCMason.shared.createButtonNode()
     mason = NSCMason.shared
     super.init(coder: coder)
     setup()
@@ -239,8 +289,27 @@ public class Button: UIControl,MasonEventTarget, MasonElement, MasonElementObjc,
 extension Button {
 
   private func updatePseudo(_ state: PseudoState, _ enabled: Bool) {
+    let wasEnabled = node.hasPseudo(state)
+    guard wasEnabled != enabled else { return }
+
+    let pseudoText = StateKeys.pseudoText
+    let hadPseudoTextBefore = node.hasPseudoSetFor(pseudoText)
+    let toggledStateTextKeys = node.getPseudoSetFlags(state.rawValue)
+    let changedTextKeys = StateKeys(
+      low: toggledStateTextKeys.low & pseudoText.low,
+      high: toggledStateTextKeys.high & pseudoText.high
+    )
+
     node.setPseudo(state, enabled)
-    onStyleChange(StateKeys.pseudoText)
+
+    // Rebuild text only when the toggled pseudo-state can affect text.
+    // This still forces a restore when returning to the normal state.
+    if changedTextKeys != .none {
+      let hasPseudoTextAfter = node.hasPseudoSetFor(pseudoText)
+      if hadPseudoTextBefore || hasPseudoTextAfter {
+        onStyleChange(changedTextKeys.low, changedTextKeys.high)
+      }
+    }
     style.mBorderRender.invalidateCache()
     setNeedsDisplay()
   }
@@ -280,9 +349,14 @@ extension Button {
     let point = touch.location(in: self)
     let inside = bounds.contains(point)
     updatePseudo(.active, inside)
-    #if DEBUG
-    print("[DEBUG] Button.touchesMoved inside:\(inside) point:\(point) frame:\(self.frame)")
-    #endif
   }
-  
+
+  public override func willMove(toWindow newWindow: UIWindow?) {
+    super.willMove(toWindow: newWindow)
+    if newWindow == nil && node.hasPseudo(.active) {
+      touchStartTime = nil
+      updatePseudo(.active, false)
+    }
+  }
+
 }

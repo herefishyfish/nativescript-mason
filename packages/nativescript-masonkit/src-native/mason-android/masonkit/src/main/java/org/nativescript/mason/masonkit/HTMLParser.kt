@@ -1,7 +1,30 @@
 package org.nativescript.mason.masonkit
 
 import android.content.Context
-import org.nativescript.mason.masonkit.enums.*
+import android.os.Build
+import android.view.ViewGroup
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
+import org.nativescript.mason.masonkit.enums.AlignContent
+import org.nativescript.mason.masonkit.enums.AlignItems
+import org.nativescript.mason.masonkit.enums.AlignSelf
+import org.nativescript.mason.masonkit.enums.BoxSizing
+import org.nativescript.mason.masonkit.enums.Clear
+import org.nativescript.mason.masonkit.enums.Direction
+import org.nativescript.mason.masonkit.enums.Display
+import org.nativescript.mason.masonkit.enums.FlexDirection
+import org.nativescript.mason.masonkit.enums.FlexWrap
+import org.nativescript.mason.masonkit.enums.GridAutoFlow
+import org.nativescript.mason.masonkit.enums.JustifyContent
+import org.nativescript.mason.masonkit.enums.JustifyItems
+import org.nativescript.mason.masonkit.enums.JustifySelf
+import org.nativescript.mason.masonkit.enums.ListStylePosition
+import org.nativescript.mason.masonkit.enums.ListStyleType
+import org.nativescript.mason.masonkit.enums.ObjectFit
+import org.nativescript.mason.masonkit.enums.Overflow
+import org.nativescript.mason.masonkit.enums.Position
+import org.nativescript.mason.masonkit.enums.TextAlign
+import org.nativescript.mason.masonkit.enums.TextType
 
 class HTMLParser(private val mason: Mason, internal var context: Context) {
 
@@ -14,8 +37,14 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
 
   fun parseInto(html: String, element: Element) {
     val children = parse(html)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      (element.view as? ViewGroup)?.suppressLayout(true)
+    }
     for (child in children) {
       element.append(child)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      (element.view as? ViewGroup)?.suppressLayout(false)
     }
   }
 
@@ -24,14 +53,35 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
   // region Tokenizer
 
   private sealed class Token {
-    data class OpenTag(val name: String, val attributes: Map<String, String>, val selfClosing: Boolean) : Token()
+    data class OpenTag(
+      val name: String,
+      val attributes: Map<String, String>,
+      val selfClosing: Boolean
+    ) : Token()
+
     data class CloseTag(val name: String) : Token()
     data class Text(val content: String) : Token()
   }
 
   companion object {
+    // Single shared splitter reused for every space-delimited shorthand
+    // (gap, inset, flex, grid-auto-flow, text-decoration, …).
+    private val WHITESPACE = Regex("\\s+")
+
     private val VOID_ELEMENTS = setOf(
-      "br", "hr", "img", "input", "meta", "link", "area", "base", "col", "embed", "source", "track", "wbr"
+      "br",
+      "hr",
+      "img",
+      "input",
+      "meta",
+      "link",
+      "area",
+      "base",
+      "col",
+      "embed",
+      "source",
+      "track",
+      "wbr"
     )
   }
 
@@ -222,13 +272,20 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
 
   private fun createElement(name: String, attributes: Map<String, String>): Node {
     val element: Element = when (name) {
-      // Container elements
-      "div", "section", "header", "footer", "article", "main", "nav", "aside" ->
+      // Container / block-level elements
+      "div", "section", "header", "footer", "article", "main", "nav", "aside",
+      "figure", "figcaption", "address", "details", "summary", "hgroup",
+      "dl", "dt", "dd", "form", "fieldset", "picture", "hr" ->
         mason.createView(context)
 
       // Text elements
       "p" -> mason.createTextView(context, TextType.P)
-      "span" -> mason.createTextView(context, TextType.Span)
+      // Inline / phrasing text elements share an inline (span) box so they flow
+      // within the surrounding line instead of breaking it.
+      "span", "small", "mark", "sub", "sup", "u", "s", "strike", "del", "ins",
+      "abbr", "cite", "q", "dfn", "kbd", "samp", "var", "time", "output",
+      "data", "bdi", "bdo", "big", "tt", "label", "ruby", "wbr" ->
+        mason.createTextView(context, TextType.Span)
       "code" -> mason.createTextView(context, TextType.Code)
       "pre" -> mason.createTextView(context, TextType.Pre)
       "h1" -> mason.createTextView(context, TextType.H1)
@@ -267,6 +324,9 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
         val inputType = mapInputType(attributes["type"])
         mason.createInput(context, inputType)
       }
+
+      // Multi-line text input
+      "textarea" -> mason.createTextArea(context)
 
       // Button
       "button" -> mason.createButton(context)
@@ -320,6 +380,9 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
         "grid" -> style.display = Display.Grid
         "block" -> style.display = Display.Block
         "inline" -> style.display = Display.Inline
+        "inline-block" -> style.display = Display.InlineBlock
+        "inline-flex" -> style.display = Display.InlineFlex
+        "inline-grid" -> style.display = Display.InlineGrid
         "none" -> style.display = Display.None
       }
 
@@ -365,26 +428,41 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
 
       "flex-shrink" -> value.toFloatOrNull()?.let { style.flexShrink = it }
 
-      "gap" -> parseLengthPercentage(value)?.let { v ->
-        style.gap = Size(v, v)
+      "gap" -> {
+        // `gap` accepts one value (both axes) or two (`row-gap column-gap`).
+        val gapTokens = value.split(WHITESPACE).filter { it.isNotEmpty() }
+        if (gapTokens.size >= 2) {
+          val row = parseLengthPercentage(gapTokens[0])
+          val column = parseLengthPercentage(gapTokens[1])
+          if (row != null && column != null) style.gap = Size(row, column)
+        } else {
+          parseLengthPercentage(value)?.let { v -> style.gap = Size(v, v) }
+        }
       }
 
-      "color" -> parseColor(value)?.let { style.color = it }
+      "row-gap" -> parseLengthPercentage(value)?.let { v ->
+        style.gap = Size(v, style.gap.height)
+      }
+      "column-gap" -> parseLengthPercentage(value)?.let { v ->
+        style.gap = Size(style.gap.width, v)
+      }
 
-      "background-color" -> parseColor(value)?.let { style.backgroundColor = it }
+      "color" -> style.setColor(value)
+
+      "background-color" -> style.setBackgroundColor(value)
 
       "font-size" -> parseFloatValue(value)?.let { style.fontSize = it.toInt() }
 
       "font-weight" -> when (value) {
-        "bold", "700" -> style.fontWeight = FontFace.NSCFontWeight.Bold
-        "normal", "400" -> style.fontWeight = FontFace.NSCFontWeight.Normal
-        "100", "thin" -> style.fontWeight = FontFace.NSCFontWeight.Thin
-        "200" -> style.fontWeight = FontFace.NSCFontWeight.ExtraLight
-        "300", "light" -> style.fontWeight = FontFace.NSCFontWeight.Light
-        "500", "medium" -> style.fontWeight = FontFace.NSCFontWeight.Medium
-        "600", "semibold" -> style.fontWeight = FontFace.NSCFontWeight.SemiBold
-        "800" -> style.fontWeight = FontFace.NSCFontWeight.ExtraBold
-        "900", "black" -> style.fontWeight = FontFace.NSCFontWeight.Black
+        "bold", "700" -> style.fontWeight = FontWeight.Bold
+        "normal", "400" -> style.fontWeight = FontWeight.Normal
+        "100", "thin" -> style.fontWeight = FontWeight.Thin
+        "200" -> style.fontWeight = FontWeight.ExtraLight
+        "300", "light" -> style.fontWeight = FontWeight.Light
+        "500", "medium" -> style.fontWeight = FontWeight.Medium
+        "600", "semibold" -> style.fontWeight = FontWeight.SemiBold
+        "800" -> style.fontWeight = FontWeight.ExtraBold
+        "900", "black" -> style.fontWeight = FontWeight.Black
       }
 
       "width" -> parseDimension(value)?.let { d ->
@@ -402,21 +480,37 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
       "max-width" -> parseDimension(value)?.let { style.maxWidth = it }
       "max-height" -> parseDimension(value)?.let { style.maxHeight = it }
 
+      "border" -> parseBorderShorthand(style, value)
+
+      "border-left" -> parseBorderSideShorthand(style, Border.Side.Left, value)
+
+      "border-right" -> parseBorderSideShorthand(style, Border.Side.Right, value)
+
+      "border-top" -> parseBorderSideShorthand(style, Border.Side.Top, value)
+
+      "border-bottom" -> parseBorderSideShorthand(style, Border.Side.Bottom, value)
+
+      "border-radius" -> style.borderRadius = value
+
       "padding" -> parseLengthPercentage(value)?.let { v ->
         style.padding = Rect(v, v, v, v)
       }
+
       "padding-left" -> parseLengthPercentage(value)?.let { v ->
         val current = style.padding
         style.padding = Rect(current.top, current.right, current.bottom, v)
       }
+
       "padding-right" -> parseLengthPercentage(value)?.let { v ->
         val current = style.padding
         style.padding = Rect(current.top, v, current.bottom, current.left)
       }
+
       "padding-top" -> parseLengthPercentage(value)?.let { v ->
         val current = style.padding
         style.padding = Rect(v, current.right, current.bottom, current.left)
       }
+
       "padding-bottom" -> parseLengthPercentage(value)?.let { v ->
         val current = style.padding
         style.padding = Rect(current.top, current.right, v, current.left)
@@ -425,6 +519,7 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
       "margin" -> parseLengthPercentageAuto(value)?.let { v ->
         style.margin = Rect(v, v, v, v)
       }
+
       "margin-left" -> parseLengthPercentageAuto(value)?.let { style.marginLeft = it }
       "margin-right" -> parseLengthPercentageAuto(value)?.let { style.marginRight = it }
       "margin-top" -> parseLengthPercentageAuto(value)?.let { style.marginTop = it }
@@ -435,20 +530,232 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
         "absolute" -> style.position = Position.Absolute
       }
 
-      "overflow" -> when (value) {
-        "visible" -> style.overflow = Point(Overflow.Visible, Overflow.Visible)
-        "hidden" -> style.overflow = Point(Overflow.Hidden, Overflow.Hidden)
-        "scroll" -> style.overflow = Point(Overflow.Scroll, Overflow.Scroll)
-        "clip" -> style.overflow = Point(Overflow.Clip, Overflow.Clip)
-        "auto" -> style.overflow = Point(Overflow.Auto, Overflow.Auto)
-      }
+      "overflow" -> parseOverflow(value)?.let { style.overflow = Point(it, it) }
+      "overflow-x" -> parseOverflow(value)?.let { style.overflowX = it }
+      "overflow-y" -> parseOverflow(value)?.let { style.overflowY = it }
 
       "text-align" -> when (value) {
         "left" -> style.textAlign = TextAlign.Left
         "center" -> style.textAlign = TextAlign.Center
         "right" -> style.textAlign = TextAlign.Right
         "justify" -> style.textAlign = TextAlign.Justify
+        "start" -> style.textAlign = TextAlign.Start
+        "end" -> style.textAlign = TextAlign.End
       }
+
+      // region Additional flex / grid alignment
+
+      "align-content" -> when (value) {
+        "flex-start", "start" -> style.alignContent = AlignContent.Start
+        "flex-end", "end" -> style.alignContent = AlignContent.End
+        "center" -> style.alignContent = AlignContent.Center
+        "stretch" -> style.alignContent = AlignContent.Stretch
+        "space-between" -> style.alignContent = AlignContent.SpaceBetween
+        "space-around" -> style.alignContent = AlignContent.SpaceAround
+        "space-evenly" -> style.alignContent = AlignContent.SpaceEvenly
+        "normal" -> style.alignContent = AlignContent.Normal
+      }
+
+      "justify-items" -> when (value) {
+        "flex-start", "start" -> style.justifyItems = JustifyItems.Start
+        "flex-end", "end" -> style.justifyItems = JustifyItems.End
+        "center" -> style.justifyItems = JustifyItems.Center
+        "stretch" -> style.justifyItems = JustifyItems.Stretch
+        "baseline" -> style.justifyItems = JustifyItems.Baseline
+        "normal" -> style.justifyItems = JustifyItems.Normal
+      }
+
+      "justify-self" -> when (value) {
+        "flex-start", "start" -> style.justifySelf = JustifySelf.Start
+        "flex-end", "end" -> style.justifySelf = JustifySelf.End
+        "center" -> style.justifySelf = JustifySelf.Center
+        "stretch" -> style.justifySelf = JustifySelf.Stretch
+        "baseline" -> style.justifySelf = JustifySelf.Baseline
+        "normal" -> style.justifySelf = JustifySelf.Normal
+      }
+
+      "flex" -> applyFlexShorthand(value, style)
+      "flex-basis" -> parseDimension(value)?.let { style.flexBasis = it }
+
+      // endregion
+
+      // region Positioning
+
+      "inset" -> applyInsetShorthand(value, style)
+      "top" -> parseLengthPercentageAuto(value)?.let { v ->
+        val c = style.inset
+        style.inset = Rect(v, c.right, c.bottom, c.left)
+      }
+      "right" -> parseLengthPercentageAuto(value)?.let { v ->
+        val c = style.inset
+        style.inset = Rect(c.top, v, c.bottom, c.left)
+      }
+      "bottom" -> parseLengthPercentageAuto(value)?.let { v ->
+        val c = style.inset
+        style.inset = Rect(c.top, c.right, v, c.left)
+      }
+      "left" -> parseLengthPercentageAuto(value)?.let { v ->
+        val c = style.inset
+        style.inset = Rect(c.top, c.right, c.bottom, v)
+      }
+
+      "aspect-ratio" -> style.aspectRatio = parseAspectRatio(value)
+
+      "box-sizing" -> when (value) {
+        "border-box" -> style.boxSizing = BoxSizing.BorderBox
+        "content-box" -> style.boxSizing = BoxSizing.ContentBox
+      }
+
+      "direction" -> when (value) {
+        "ltr" -> style.direction = Direction.LTR
+        "rtl" -> style.direction = Direction.RTL
+        "inherit" -> style.direction = Direction.Inherit
+      }
+
+      // endregion
+
+      // region Grid
+
+      "grid-template-columns" -> style.gridTemplateColumns = value
+      "grid-template-rows" -> style.gridTemplateRows = value
+      "grid-template-areas" -> style.gridTemplateAreas = value
+      "grid-auto-rows" -> style.gridAutoRows = value
+      "grid-auto-columns" -> style.gridAutoColumns = value
+      "grid-auto-flow" -> when (value) {
+        "row" -> style.gridAutoFlow = GridAutoFlow.Row
+        "column" -> style.gridAutoFlow = GridAutoFlow.Column
+        "row dense", "dense row", "dense" -> style.gridAutoFlow = GridAutoFlow.RowDense
+        "column dense", "dense column" -> style.gridAutoFlow = GridAutoFlow.ColumnDense
+      }
+      "grid-column" -> style.gridColumn = value
+      "grid-row" -> style.gridRow = value
+      "grid-area" -> style.gridArea = value
+      "grid-column-start" -> style.gridColumnStart = value
+      "grid-column-end" -> style.gridColumnEnd = value
+      "grid-row-start" -> style.gridRowStart = value
+      "grid-row-end" -> style.gridRowEnd = value
+
+      // endregion
+
+      // region Visual (pass-through CSS string parsers)
+
+      "corner-shape" -> style.cornerShape = value
+      "box-shadow" -> style.boxShadow = value
+      "text-shadow" -> style.textShadow = value
+      "filter" -> style.filter = value
+      "backdrop-filter" -> style.backdropFilter = value
+      "transform" -> style.transform = value
+      "background" -> style.background = value
+      "background-image" -> style.backgroundImage = value
+      "background-repeat" -> style.backgroundRepeat = value
+      "background-position" -> style.backgroundPosition = value
+      "background-size" -> style.backgroundSize = value
+
+      "z-index" -> value.toIntOrNull()?.let { style.zIndex = it }
+
+      "float" -> when (value) {
+        "none" -> style.float = org.nativescript.mason.masonkit.enums.Float.None
+        "left" -> style.float = org.nativescript.mason.masonkit.enums.Float.Left
+        "right" -> style.float = org.nativescript.mason.masonkit.enums.Float.Right
+      }
+
+      "clear" -> when (value) {
+        "none" -> style.clear = Clear.None
+        "left" -> style.clear = Clear.Left
+        "right" -> style.clear = Clear.Right
+        "both" -> style.clear = Clear.Both
+      }
+
+      "object-fit" -> when (value) {
+        "fill" -> style.objectFit = ObjectFit.Fill
+        "contain" -> style.objectFit = ObjectFit.Contain
+        "cover" -> style.objectFit = ObjectFit.Cover
+        "none" -> style.objectFit = ObjectFit.None
+        "scale-down" -> style.objectFit = ObjectFit.ScaleDown
+      }
+
+      "list-style-type" -> when (value) {
+        "none" -> style.listStyleType = ListStyleType.None
+        "disc" -> style.listStyleType = ListStyleType.Disc
+        "circle" -> style.listStyleType = ListStyleType.Circle
+        "square" -> style.listStyleType = ListStyleType.Square
+        "decimal" -> style.listStyleType = ListStyleType.Decimal
+      }
+      "list-style-position" -> when (value) {
+        "inside" -> style.listStylePosition = ListStylePosition.Inside
+        "outside" -> style.listStylePosition = ListStylePosition.Outside
+      }
+
+      // endregion
+
+      // region Text / font
+
+      "font-family" -> style.fontFamily = value
+      "font-style" -> when (value) {
+        "italic" -> style.fontStyle = FontStyle.Italic
+        "oblique" -> style.fontStyle = FontStyle.Oblique()
+        "normal" -> style.fontStyle = FontStyle.Normal
+      }
+      "line-height" -> if (value != "normal") parseFloatValue(value)?.let { style.lineHeight = it }
+      "letter-spacing" -> if (value == "normal") {
+        style.letterSpacing = 0f
+      } else {
+        parseFloatValue(value)?.let { style.letterSpacing = it }
+      }
+      "font-variant-numeric" -> style.fontVariantNumericString = value
+
+      "text-decoration", "text-decoration-line" -> when (firstToken(value)) {
+        "none" -> style.decorationLine = Styles.DecorationLine.None
+        "underline" -> style.decorationLine = Styles.DecorationLine.Underline
+        "overline" -> style.decorationLine = Styles.DecorationLine.Overline
+        "line-through" -> style.decorationLine = Styles.DecorationLine.LineThrough
+      }
+      "text-decoration-color" -> parseColor(value)?.let { style.decorationColor = it }
+      "text-decoration-style" -> when (value) {
+        "solid" -> style.decorationStyle = Styles.DecorationStyle.Solid
+        "double" -> style.decorationStyle = Styles.DecorationStyle.Double
+        "dotted" -> style.decorationStyle = Styles.DecorationStyle.Dotted
+        "dashed" -> style.decorationStyle = Styles.DecorationStyle.Dashed
+        "wavy" -> style.decorationStyle = Styles.DecorationStyle.Wavy
+      }
+
+      "text-transform" -> when (value) {
+        "none" -> style.textTransform = Styles.TextTransform.None
+        "capitalize" -> style.textTransform = Styles.TextTransform.Capitalize
+        "uppercase" -> style.textTransform = Styles.TextTransform.Uppercase
+        "lowercase" -> style.textTransform = Styles.TextTransform.Lowercase
+      }
+
+      "white-space" -> when (value) {
+        "normal" -> style.whiteSpace = Styles.WhiteSpace.Normal
+        "pre" -> style.whiteSpace = Styles.WhiteSpace.Pre
+        "pre-wrap" -> style.whiteSpace = Styles.WhiteSpace.PreWrap
+        "pre-line" -> style.whiteSpace = Styles.WhiteSpace.PreLine
+        "nowrap" -> style.whiteSpace = Styles.WhiteSpace.NoWrap
+        "break-spaces" -> style.whiteSpace = Styles.WhiteSpace.BreakSpaces
+      }
+
+      "text-wrap" -> when (value) {
+        "wrap" -> style.textWrap = Styles.TextWrap.Wrap
+        "nowrap" -> style.textWrap = Styles.TextWrap.NoWrap
+        "balance" -> style.textWrap = Styles.TextWrap.Balance
+        "pretty" -> style.textWrap = Styles.TextWrap.Pretty
+      }
+
+      "text-overflow" -> when (value) {
+        "clip" -> style.textOverflow = Styles.TextOverflow.Clip
+        "ellipsis" -> style.textOverflow = Styles.TextOverflow.Ellipse
+      }
+
+      "text-justify" -> when (value) {
+        "none" -> style.textJustify = Styles.TextJustify.None
+        "auto" -> style.textJustify = Styles.TextJustify.Auto
+        "inter-word" -> style.textJustify = Styles.TextJustify.InterWord
+        "inter-character" -> style.textJustify = Styles.TextJustify.InterCharacter
+        "distribute" -> style.textJustify = Styles.TextJustify.Distribute
+      }
+
+      // endregion
     }
   }
 
@@ -456,29 +763,18 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
 
   // region Value Parsers
 
-  private fun parseLengthPercentage(value: String): LengthPercentage? {
-    return when {
-      value.endsWith("%") -> value.dropLast(1).toFloatOrNull()?.let { LengthPercentage.Percent(it) }
-      value.endsWith("px") -> value.dropLast(2).toFloatOrNull()?.let { LengthPercentage.Points(it) }
-      else -> value.toFloatOrNull()?.let { LengthPercentage.Points(it) }
-    }
-  }
-
-  private fun parseLengthPercentageAuto(value: String): LengthPercentageAuto? {
-    if (value == "auto") return LengthPercentageAuto.Auto
-    return when {
-      value.endsWith("%") -> value.dropLast(1).toFloatOrNull()?.let { LengthPercentageAuto.Percent(it) }
-      value.endsWith("px") -> value.dropLast(2).toFloatOrNull()?.let { LengthPercentageAuto.Points(it) }
-      else -> value.toFloatOrNull()?.let { LengthPercentageAuto.Points(it) }
-    }
-  }
+  // Length and color parsing delegate to the canonical package-level parsers
+  // (Border.kt / Background.kt). That keeps device-scale and percentage handling
+  // consistent with every other code path (margins, borders, backgrounds) and
+  // reuses the shared length/color regexes instead of duplicating them here.
 
   private fun parseDimension(value: String): Dimension? {
-    if (value == "auto") return Dimension.Auto
-    return when {
-      value.endsWith("%") -> value.dropLast(1).toFloatOrNull()?.let { Dimension.Percent(it) }
-      value.endsWith("px") -> value.dropLast(2).toFloatOrNull()?.let { Dimension.Points(it) }
-      else -> value.toFloatOrNull()?.let { Dimension.Points(it) }
+    return when (val lpa = parseLengthPercentageAuto(value)) {
+      LengthPercentageAuto.Auto -> Dimension.Auto
+      is LengthPercentageAuto.Points -> Dimension.Points(lpa.points)
+      is LengthPercentageAuto.Percent -> Dimension.Percent(lpa.percentage)
+      LengthPercentageAuto.Zero -> Dimension.Points(0f)
+      null -> null
     }
   }
 
@@ -492,53 +788,78 @@ class HTMLParser(private val mason: Mason, internal var context: Context) {
     }
   }
 
-  private fun parseColor(value: String): Int? {
-    val trimmed = value.trim()
-    if (trimmed.startsWith("#")) {
-      val hex = trimmed.substring(1)
-      return when (hex.length) {
-        3 -> {
-          // #RGB -> #RRGGBB
-          val r = hex[0].digitToInt(16)
-          val g = hex[1].digitToInt(16)
-          val b = hex[2].digitToInt(16)
-          (0xFF shl 24) or (r * 0x11 shl 16) or (g * 0x11 shl 8) or (b * 0x11)
-        }
-        6 -> {
-          val rgb = hex.toLongOrNull(16) ?: return null
-          (0xFF000000 or rgb).toInt()
-        }
-        8 -> {
-          // #RRGGBBAA
-          val rgba = hex.toLongOrNull(16) ?: return null
-          val r = (rgba shr 24) and 0xFF
-          val g = (rgba shr 16) and 0xFF
-          val b = (rgba shr 8) and 0xFF
-          val a = rgba and 0xFF
-          ((a shl 24) or (r shl 16) or (g shl 8) or b).toInt()
-        }
-        else -> null
-      }
-    }
-    return namedColor(trimmed)
+  private fun parseOverflow(value: String): Overflow? = when (value) {
+    "visible" -> Overflow.Visible
+    "hidden" -> Overflow.Hidden
+    "scroll" -> Overflow.Scroll
+    "clip" -> Overflow.Clip
+    "auto" -> Overflow.Auto
+    else -> null
   }
 
-  private fun namedColor(name: String): Int? {
-    return when (name.lowercase()) {
-      "black" -> 0xFF000000.toInt()
-      "white" -> 0xFFFFFFFF.toInt()
-      "red" -> 0xFFFF0000.toInt()
-      "green" -> 0xFF008000.toInt()
-      "blue" -> 0xFF0000FF.toInt()
-      "yellow" -> 0xFFFFFF00.toInt()
-      "cyan" -> 0xFF00FFFF.toInt()
-      "magenta" -> 0xFFFF00FF.toInt()
-      "gray", "grey" -> 0xFF808080.toInt()
-      "orange" -> 0xFFFFA500.toInt()
-      "purple" -> 0xFF800080.toInt()
-      "transparent" -> 0x00000000
-      else -> null
+  /** First whitespace-delimited token (e.g. the line keyword of a `text-decoration` shorthand). */
+  private fun firstToken(value: String): String =
+    value.split(WHITESPACE).firstOrNull { it.isNotEmpty() } ?: value
+
+  /** Parses `aspect-ratio` as a ratio (`16 / 9`) or a single number (`1.5`). */
+  private fun parseAspectRatio(value: String): Float? {
+    val v = value.lowercase()
+    if (v == "auto") return null
+    if (v.contains("/")) {
+      val parts = v.split("/")
+      if (parts.size == 2) {
+        val w = parts[0].trim().toFloatOrNull()
+        val h = parts[1].trim().toFloatOrNull()
+        if (w != null && h != null && h != 0f) return w / h
+      }
+      return null
     }
+    return v.toFloatOrNull()
+  }
+
+  /**
+   * Parses the `flex` shorthand (`none`, `auto`, `<grow>`, `<grow> <shrink>`,
+   * `<grow> <shrink> <basis>`, `<grow> <basis>`).
+   */
+  private fun applyFlexShorthand(value: String, style: Style) {
+    when (value.trim().lowercase()) {
+      "none" -> { style.flexGrow = 0f; style.flexShrink = 0f; style.flexBasis = Dimension.Auto; return }
+      "auto" -> { style.flexGrow = 1f; style.flexShrink = 1f; style.flexBasis = Dimension.Auto; return }
+      "initial" -> { style.flexGrow = 0f; style.flexShrink = 1f; style.flexBasis = Dimension.Auto; return }
+    }
+
+    var grow: Float? = null
+    var shrink: Float? = null
+    var basis: Dimension? = null
+    for (token in value.split(WHITESPACE).filter { it.isNotEmpty() }) {
+      // A plain unitless number is a grow/shrink factor; anything else is a basis.
+      if (token == "auto" || token.endsWith("%") || token.endsWith("px")) {
+        basis = parseDimension(token)
+      } else {
+        val n = token.toFloatOrNull()
+        if (n != null) {
+          if (grow == null) grow = n else if (shrink == null) shrink = n
+        } else {
+          basis = parseDimension(token)
+        }
+      }
+    }
+    style.flexGrow = grow ?: 1f
+    style.flexShrink = shrink ?: 1f
+    // `flex: 1` resolves basis to 0; an explicit basis token overrides that.
+    style.flexBasis = basis ?: Dimension.Points(0f)
+  }
+
+  /** Parses the `inset` shorthand (1–4 values, CSS order top / right / bottom / left). */
+  private fun applyInsetShorthand(value: String, style: Style) {
+    val parsed = value.split(WHITESPACE).filter { it.isNotEmpty() }
+      .mapNotNull { parseLengthPercentageAuto(it) }
+    if (parsed.isEmpty()) return
+    val top = parsed[0]
+    val right = if (parsed.size > 1) parsed[1] else top
+    val bottom = if (parsed.size > 2) parsed[2] else top
+    val left = if (parsed.size > 3) parsed[3] else right
+    style.inset = Rect(top, right, bottom, left)
   }
 
   // endregion

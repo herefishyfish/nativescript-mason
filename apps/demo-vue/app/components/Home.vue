@@ -1,202 +1,171 @@
 <template>
   <Frame>
     <Page>
-      <ActionBar>
-        <Label text="Home?" class="text-white bg-gray-800" />
+      <ActionBar actionBarHidden="true">
+        <span text="Mason Demos" class="text-white" style="font-size: 20; font-weight: bold;" />
       </ActionBar>
-      <!-- <div>
-        <input placeholder="Type here..." />
-        <input type="button" value="Tapp" />
-      </div> -->
-
-
-      <div class="section">
-  <div class="left">1</div>
-  <!-- <div class="left">2</div>
-  <div class="right">3</div> -->
-  <!-- <p>
-    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Morbi tristique
-    sapien ac erat tincidunt, sit amet dignissim lectus vulputate. Donec id
-    iaculis velit. Aliquam vel malesuada erat. Praesent non magna ac massa
-    aliquet tincidunt vel in massa. Phasellus feugiat est vel leo finibus
-    congue.
-  </p> -->
-</div>
-
-
-      <!-- <div style="margin:12;">
-        <h3>Float test</h3>
-        <div>
-          <div style="float: left; width: 50px; height: 50px; border: 2px solid red; background: pink;"></div>
-          <p>
-            This paragraph should wrap around the floated box. Lorem ipsum dolor sit amet, consectetur
-            adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi.
-            Nulla quis sem at nibh elementum imperdiet. Duis sagittis ipsum. Praesent mauris.
-          </p>
+      <div class="page" style="overflow-y: scroll;">
+        <div class="hero">
+          <p style="font-size: 18; font-weight: bold; color: white;">Mason Demos — Examples</p>
+          <p style="font-size: 12; color: #eee; margin-top: 6">Quick access to plugin demos and web-style samples</p>
         </div>
-        <div style="clear: both;"></div>
-      </div> -->
-
-        <!--
-      <div height="100%">
-        <div>
-          <h4>This is a Column-Reverse</h4>
-          <div id="col-rev" class="content">
-            <div class="box red">A</div>
-            <div class="box lightblue">B</div>
-            <div class="box yellow">C</div>
+        <div class="demo-grid">
+          <div class="demo-card">
+            <p class="card-title">Flexbox</p>
+            <p class="card-desc">Flex layout patterns</p>
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('flexbox')" />
           </div>
-          <h4>This is a Row-Reverse</h4>
-          <div id="row-rev" class="content">
-            <div class="box red">A</div>
-            <div class="box lightblue">B</div>
-            <div class="box yellow">C</div>
+
+          <div class="demo-card">
+            <p class="card-title">Grid</p>
+            <p class="card-desc">Grid layout examples</p>
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('grid')" />
+          </div>
+
+          <div class="demo-card">
+            <p class="card-title">Web Samples</p>
+            <p class="card-desc">100+ web-style samples</p>
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('web-samples')" />
+          </div>
+
+          <div class="demo-card">
+            <p class="card-title">Professions</p>
+            <p class="card-desc">10 profession examples</p>
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('professions')" />
+          </div>
+
+          <div class="demo-card">
+            <p class="card-title">Lynx Examples</p>
+            <p class="card-desc">Styling & animation ports</p>
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('lynx')" />
+          </div>
+
+          <div class="demo-card">
+            <p class="card-title">Showcase</p>
+            <p class="card-desc">Mason Showcase</p>
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('showcase')" />
+          </div>
+
+          <div class="demo-card">
+            <p class="card-title">React Native</p>
+            <p class="card-desc">React Native examples</p>
+            <button class="btn-primary" :text="'Open'" @click="() => navigate('react-native')" />
           </div>
         </div>
-      </div>
-
--->
-      <!--
-      <div>
-        <p>
-          top: <img style="vertical-align: top" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          middle: <img style="vertical-align: middle" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          bottom: <img style="vertical-align: bottom" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          super: <img style="vertical-align: super" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          sub: <img style="vertical-align: sub" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-        </p>
-
-        <p>
-          text-top: <img style="vertical-align: text-top" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          text-bottom: <img style="vertical-align: text-bottom" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          0.2em: <img style="vertical-align: 0.2em" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          -1em: <img style="vertical-align: -1em" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          20%: <img style="vertical-align: 20%" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-          -100%: <img style="vertical-align: -100%" src="https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png" alt="star" />
-        </p>
 
       </div>
-    -->
-
-      <!-- <div>
-        <div style="display: inline-block;" class="box" id="one">One</div>
-        <div style="display: inline-block; top: 20; left: 20; position: relative;" class="box" id="two">Two</div>
-        <div style="display: inline-block;" class="box" id="three">Three</div>
-        <div style="display: inline-block;" class="box" id="four">Four</div>
-      </div> -->
-      <!-- <div> -->
-
-      <!-- <div style="width: 300px; height: 300px;">
-      <div style="margin: 10; height: 150px; width: 150px; background: red; border: 1px solid #444444;">
-        Hello world
-      </div>
-      <sbutton style="margin: 10;">Click me</sbutton>
-      </div>
-      </div> -->
-
-
-      <!-- left 5% / 15% 60% repeat-x
-  url("https://d78af7b0-82e5-4390-93c4-bba28463aa0f.mdnplay.dev/shared-assets/images/examples/star.png"); -->
-
-
-      <!-- <div class="wrapper">
-        <div class="box a">A</div>
-        <div class="box b">B</div>
-        <div class="box c">C</div>
-        <div class="box d">D</div>
-      </div> -->
-
-
-      <!-- <div class="wrapper">
-        <div class="box a">a</div>
-        <div class="box b">b</div>
-      </div> -->
-
     </Page>
   </Frame>
 </template>
 
 <script lang="ts" setup>
 import { $navigateTo } from 'nativescript-vue';
-import NativescriptMasonkit from '../plugin-demos/nativescript-masonkit.vue'
-import Grid from '~/plugin-demos/Grid.vue';
-import { StackLayout } from '@nativescript/core';
+import FlexboxDemo from '~/plugin-demos/FlexboxDemo.vue';
+import GridDemo from '~/plugin-demos/GridDemo.vue';
+import BoxShadowDemo from '~/plugin-demos/BoxShadowDemo.vue';
+import TransformDemo from '~/plugin-demos/TransformDemo.vue';
+import TypographyDemo from '~/plugin-demos/TypographyDemo.vue';
+import SpacingDemo from '~/plugin-demos/SpacingDemo.vue';
+import ShowcaseDemo from '~/plugin-demos/ShowcaseDemo.vue';
+import GridArea from '~/plugin-demos/Grid-Area.vue';
+import WebSamplesIndex from '~/web-samples/WebSamplesIndex.vue';
+import ProfessionList from '~/web-samples/ProfessionList.vue';
+import LynxIndex from '~/lynx/LynxIndex.vue';
+import ReactNative from '~/react-native/sample.vue';
 
-const viewDemo = (args) => {
-  const label = args.object;
-  console.log(`Tapped on label: ${label.text}`);
-  $navigateTo(NativescriptMasonkit);
-}
-const viewFeature = (args) => {
-  switch (args) {
-    case 'block':
-      console.log('Block feature selected');
-      break;
-    case 'flex':
-      console.log('FlexBox feature selected');
-      break;
-    case 'grid':
-      $navigateTo(Grid)
-      break;
-  }
-}
+const navigate = (demo: string) => {
+  const demos = {
+    flexbox: FlexboxDemo,
+    grid: GridDemo,
+    shadows: BoxShadowDemo,
+    transforms: TransformDemo,
+    typography: TypographyDemo,
+    spacing: SpacingDemo,
+    showcase: ShowcaseDemo,
+    'grid-area': GridArea,
+    'web-samples': WebSamplesIndex,
+    professions: ProfessionList,
+    lynx: LynxIndex,
+    'react-native': ReactNative
+  };
+  $navigateTo(demos[demo]);
+};
 </script>
 
 <style scoped>
-.content {
-  width: 200px;
-  height: 200px;
-  border: 1 solid #c3c3c3;
+.page {
+  padding: 16;
+  background-color: #fafafa;
+  overflow-y: auto;
+}
+
+.hero {
+  background-color: #1a1a2e;
+  border-radius: 16;
+  padding: 24;
+  margin-bottom: 20;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10;
+}
+
+.demo-card {
+  background-color: white;
+  border-radius: 12;
+  padding: 14;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.045);
 }
 
-.box {
-  width: 50px;
-  height: 50px;
+.icon-circle {
+  width: 44;
+  height: 44;
+  border-radius: 22;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-#col-rev {
-  flex-direction: column-reverse;
+.icon-text {
+  color: white;
+  font-size: 18;
+  font-weight: bold;
 }
 
-#row-rev {
-  flex-direction: row-reverse;
+.card-title {
+  font-size: 14;
+  font-weight: bold;
+  color: #1a1a2e;
 }
 
-.red {
+.card-desc {
+  font-size: 10;
+  color: #888;
+  text-align: center;
+}
+
+.btn-primary {
+  background-color: #1a73e8;
+  color: #ffffff;
+  padding: 10 18;
+  border-radius: 10;
+  font-weight: 600;
+  border-style: none;
+}
+
+button:active {
+  color: green;
   background-color: red;
 }
 
-.lightblue {
-  background-color: lightblue;
-}
-
-.yellow {
-  background-color: yellow;
-}
-
-
-.section {
-  background-color: red;
-  box-sizing: border-box;
-  border: 1px solid blue;
-  width: 100%;
-  float: left;
-}
-
-div {
-  margin: 5px;
-  width: 50px;
-  height: 150px;
-}
-
-.left {
-  float: left;
-  background: pink;
-}
-
-.right {
-  float: right;
-  background: cyan;
+.demo-card button {
+  width: 80;
 }
 </style>

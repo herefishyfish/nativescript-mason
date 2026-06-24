@@ -7,7 +7,8 @@
 
 import Foundation
 import UIKit
-
+import QuartzCore
+import FontManager
 
 private func getDimension(_ value: Float,_ type: Int) -> MasonDimension? {
   switch (type) {
@@ -56,78 +57,79 @@ public struct StyleKeys {
   public static let JUSTIFY_SELF = 11
   public static let JUSTIFY_CONTENT = 12
   
+  // Contiguous types, then contiguous values per group
   public static let INSET_LEFT_TYPE = 13
-  public static let INSET_LEFT_VALUE = 14 // float (4 bytes: 14-17)
-  public static let INSET_RIGHT_TYPE = 18
-  public static let INSET_RIGHT_VALUE = 19 // float (4 bytes: 19-22)
-  public static let INSET_TOP_TYPE = 23
-  public static let INSET_TOP_VALUE = 24 // float (4 bytes: 24-27)
-  public static let INSET_BOTTOM_TYPE = 28
-  public static let INSET_BOTTOM_VALUE = 29 // float (4 bytes: 29-32)
-  
+  public static let INSET_RIGHT_TYPE = 14
+  public static let INSET_TOP_TYPE = 15
+  public static let INSET_BOTTOM_TYPE = 16
+  public static let INSET_LEFT_VALUE = 17   // f32 (4 bytes: 17-20)
+  public static let INSET_RIGHT_VALUE = 21  // f32 (4 bytes: 21-24)
+  public static let INSET_TOP_VALUE = 25    // f32 (4 bytes: 25-28)
+  public static let INSET_BOTTOM_VALUE = 29 // f32 (4 bytes: 29-32)
+
   public static let MARGIN_LEFT_TYPE = 33
-  public static let MARGIN_LEFT_VALUE = 34 // float (4 bytes: 34-37)
-  public static let MARGIN_RIGHT_TYPE = 38
-  public static let MARGIN_RIGHT_VALUE = 39 // float (4 bytes: 39-42)
-  public static let MARGIN_TOP_TYPE = 43
-  public static let MARGIN_TOP_VALUE = 44 // float (4 bytes: 44-47)
-  public static let MARGIN_BOTTOM_TYPE = 48
-  public static let MARGIN_BOTTOM_VALUE = 49 // float (4 bytes: 49-52)
-  
+  public static let MARGIN_RIGHT_TYPE = 34
+  public static let MARGIN_TOP_TYPE = 35
+  public static let MARGIN_BOTTOM_TYPE = 36
+  public static let MARGIN_LEFT_VALUE = 37   // f32 (4 bytes: 37-40)
+  public static let MARGIN_RIGHT_VALUE = 41  // f32 (4 bytes: 41-44)
+  public static let MARGIN_TOP_VALUE = 45    // f32 (4 bytes: 45-48)
+  public static let MARGIN_BOTTOM_VALUE = 49 // f32 (4 bytes: 49-52)
+
   public static let PADDING_LEFT_TYPE = 53
-  public static let PADDING_LEFT_VALUE = 54 // float (4 bytes: 54-57)
-  public static let PADDING_RIGHT_TYPE = 58
-  public static let PADDING_RIGHT_VALUE = 59 // float (4 bytes: 59-62)
-  public static let PADDING_TOP_TYPE = 63
-  public static let PADDING_TOP_VALUE = 64 // float (4 bytes: 64-67)
-  public static let PADDING_BOTTOM_TYPE = 68
-  public static let PADDING_BOTTOM_VALUE = 69 // float (4 bytes: 69-72)
-  
+  public static let PADDING_RIGHT_TYPE = 54
+  public static let PADDING_TOP_TYPE = 55
+  public static let PADDING_BOTTOM_TYPE = 56
+  public static let PADDING_LEFT_VALUE = 57   // f32 (4 bytes: 57-60)
+  public static let PADDING_RIGHT_VALUE = 61  // f32 (4 bytes: 61-64)
+  public static let PADDING_TOP_VALUE = 65    // f32 (4 bytes: 65-68)
+  public static let PADDING_BOTTOM_VALUE = 69 // f32 (4 bytes: 69-72)
+
   public static let BORDER_LEFT_TYPE = 73
-  public static let BORDER_LEFT_VALUE = 74 // float (4 bytes: 74-77)
-  public static let BORDER_RIGHT_TYPE = 78
-  public static let BORDER_RIGHT_VALUE = 79 // float (4 bytes: 79-82)
-  public static let BORDER_TOP_TYPE = 83
-  public static let BORDER_TOP_VALUE = 84 // float (4 bytes: 84-87)
-  public static let BORDER_BOTTOM_TYPE = 88
-  public static let BORDER_BOTTOM_VALUE = 89 // float (4 bytes: 89-92)
-  
-  public static let FLEX_GROW = 93 // float (4 bytes: 93-96)
-  public static let FLEX_SHRINK = 97 // float (4 bytes: 97-100)
-  
+  public static let BORDER_RIGHT_TYPE = 74
+  public static let BORDER_TOP_TYPE = 75
+  public static let BORDER_BOTTOM_TYPE = 76
+  public static let BORDER_LEFT_VALUE = 77   // f32 (4 bytes: 77-80)
+  public static let BORDER_RIGHT_VALUE = 81  // f32 (4 bytes: 81-84)
+  public static let BORDER_TOP_VALUE = 85    // f32 (4 bytes: 85-88)
+  public static let BORDER_BOTTOM_VALUE = 89 // f32 (4 bytes: 89-92)
+
+  public static let FLEX_GROW = 93   // f32 (4 bytes: 93-96)
+  public static let FLEX_SHRINK = 97 // f32 (4 bytes: 97-100)
+
   public static let FLEX_BASIS_TYPE = 101
-  public static let FLEX_BASIS_VALUE = 102 // float (4 bytes: 102-105)
-  
+  public static let FLEX_BASIS_VALUE = 102 // f32 (4 bytes: 102-105)
+
   public static let WIDTH_TYPE = 106
-  public static let WIDTH_VALUE = 107 // float (4 bytes: 107-110)
-  public static let HEIGHT_TYPE = 111
-  public static let HEIGHT_VALUE = 112 // float (4 bytes: 112-115)
-  
+  public static let HEIGHT_TYPE = 107
+  public static let WIDTH_VALUE = 108  // f32 (4 bytes: 108-111)
+  public static let HEIGHT_VALUE = 112 // f32 (4 bytes: 112-115)
+
   public static let MIN_WIDTH_TYPE = 116
-  public static let MIN_WIDTH_VALUE = 117 // float (4 bytes: 117-120)
-  public static let MIN_HEIGHT_TYPE = 121
-  public static let MIN_HEIGHT_VALUE = 122 // float (4 bytes: 122-125)
-  
+  public static let MIN_HEIGHT_TYPE = 117
+  public static let MIN_WIDTH_VALUE = 118  // f32 (4 bytes: 118-121)
+  public static let MIN_HEIGHT_VALUE = 122 // f32 (4 bytes: 122-125)
+
   public static let MAX_WIDTH_TYPE = 126
-  public static let MAX_WIDTH_VALUE = 127 // float (4 bytes: 127-130)
-  public static let MAX_HEIGHT_TYPE = 131
-  public static let MAX_HEIGHT_VALUE = 132 // float (4 bytes: 132-135)
-  
+  public static let MAX_HEIGHT_TYPE = 127
+  public static let MAX_WIDTH_VALUE = 128  // f32 (4 bytes: 128-131)
+  public static let MAX_HEIGHT_VALUE = 132 // f32 (4 bytes: 132-135)
+
   public static let GAP_ROW_TYPE = 136
-  public static let GAP_ROW_VALUE = 137 // float (4 bytes: 137-140)
-  public static let GAP_COLUMN_TYPE = 141
-  public static let GAP_COLUMN_VALUE = 142 // float (4 bytes: 142-145)
-  
-  public static let ASPECT_RATIO = 146 // float (4 bytes: 146-149)
+  public static let GAP_COLUMN_TYPE = 137
+  public static let GAP_ROW_VALUE = 138    // f32 (4 bytes: 138-141)
+  public static let GAP_COLUMN_VALUE = 142 // f32 (4 bytes: 142-145)
+
+  public static let ASPECT_RATIO = 146 // f32 (4 bytes: 146-149)
   public static let GRID_AUTO_FLOW = 150
   public static let GRID_COLUMN_START_TYPE = 151
-  public static let GRID_COLUMN_START_VALUE = 152 // float (4 bytes: 152-155)
-  public static let GRID_COLUMN_END_TYPE = 156
-  public static let GRID_COLUMN_END_VALUE = 157 // float (4 bytes: 157-160)
-  public static let GRID_ROW_START_TYPE = 161
-  public static let GRID_ROW_START_VALUE = 162 // float (4 bytes: 162-165)
-  public static let GRID_ROW_END_TYPE = 166
-  public static let GRID_ROW_END_VALUE = 167 // float (4 bytes: 167-170)
+  public static let GRID_COLUMN_END_TYPE = 152
+  public static let GRID_ROW_START_TYPE = 153
+  public static let GRID_ROW_END_TYPE = 154
+  public static let GRID_COLUMN_START_VALUE = 155 // f32 (4 bytes: 155-158)
+  public static let GRID_COLUMN_END_VALUE = 159   // f32 (4 bytes: 159-162)
+  public static let GRID_ROW_START_VALUE = 163    // f32 (4 bytes: 163-166)
+  public static let GRID_ROW_END_VALUE = 167      // f32 (4 bytes: 167-170)
   public static let SCROLLBAR_WIDTH = 171 // float (4 bytes: 171-174)
   public static let ALIGN = 175
   public static let BOX_SIZING = 176
@@ -141,17 +143,13 @@ public struct StyleKeys {
   public static let MAX_CONTENT_WIDTH = 190 // float (4 bytes: 190-193)
   public static let MAX_CONTENT_HEIGHT = 194 // float (4 bytes: 194-197)
   
-  // ----------------------------
   // Border Style (per side)
-  // ----------------------------
   public static let BORDER_LEFT_STYLE = 198
   public static let BORDER_RIGHT_STYLE = 199
   public static let BORDER_TOP_STYLE = 200
   public static let BORDER_BOTTOM_STYLE = 201
   
-  // ----------------------------
   // Border Color (per side)
-  // ----------------------------
   public static let BORDER_LEFT_COLOR = 202 // u32 (4 bytes: 202-205)
   public static let BORDER_RIGHT_COLOR = 206 // u32 (4 bytes: 206-209)
   public static let BORDER_TOP_COLOR = 210 // u32 (4 bytes: 210-213)
@@ -159,49 +157,32 @@ public struct StyleKeys {
   
   // ============================================================
   // Border Radius (elliptical + squircle exponent)
-  // Each corner = 5 fields (12 bytes total):
-  //   x_type (1), x_value (4), y_type (1), y_value (4), exponent (4)
+  // 8 types (1 byte each), then 8 values (f32), then 4 exponents (f32)
   // ============================================================
-  
-  // ----------------------------
-  // Top-left corner (12 bytes)
-  // ----------------------------
   public static let BORDER_RADIUS_TOP_LEFT_X_TYPE = 218
-  public static let BORDER_RADIUS_TOP_LEFT_X_VALUE = 219 // float (4 bytes: 219-222)
-  public static let BORDER_RADIUS_TOP_LEFT_Y_TYPE = 223
-  public static let BORDER_RADIUS_TOP_LEFT_Y_VALUE = 224 // float (4 bytes: 224-227)
-  public static let BORDER_RADIUS_TOP_LEFT_EXPONENT = 228 // float (4 bytes: 228-231)
+  public static let BORDER_RADIUS_TOP_LEFT_Y_TYPE = 219
+  public static let BORDER_RADIUS_TOP_RIGHT_X_TYPE = 220
+  public static let BORDER_RADIUS_TOP_RIGHT_Y_TYPE = 221
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE = 222
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE = 223
+  public static let BORDER_RADIUS_BOTTOM_LEFT_X_TYPE = 224
+  public static let BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE = 225
+
+  public static let BORDER_RADIUS_TOP_LEFT_X_VALUE = 226      // f32 (4 bytes: 226-229)
+  public static let BORDER_RADIUS_TOP_LEFT_Y_VALUE = 230      // f32 (4 bytes: 230-233)
+  public static let BORDER_RADIUS_TOP_RIGHT_X_VALUE = 234     // f32 (4 bytes: 234-237)
+  public static let BORDER_RADIUS_TOP_RIGHT_Y_VALUE = 238     // f32 (4 bytes: 238-241)
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE = 242  // f32 (4 bytes: 242-245)
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE = 246  // f32 (4 bytes: 246-249)
+  public static let BORDER_RADIUS_BOTTOM_LEFT_X_VALUE = 250   // f32 (4 bytes: 250-253)
+  public static let BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE = 254   // f32 (4 bytes: 254-257)
+
+  public static let BORDER_RADIUS_TOP_LEFT_EXPONENT = 258     // f32 (4 bytes: 258-261)
+  public static let BORDER_RADIUS_TOP_RIGHT_EXPONENT = 262    // f32 (4 bytes: 262-265)
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 266 // f32 (4 bytes: 266-269)
+  public static let BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270  // f32 (4 bytes: 270-273)
   
-  // ----------------------------
-  // Top-right corner
-  // ----------------------------
-  public static let BORDER_RADIUS_TOP_RIGHT_X_TYPE = 232
-  public static let BORDER_RADIUS_TOP_RIGHT_X_VALUE = 233 // float (4 bytes: 233-236)
-  public static let BORDER_RADIUS_TOP_RIGHT_Y_TYPE = 237
-  public static let BORDER_RADIUS_TOP_RIGHT_Y_VALUE = 238 // float (4 bytes: 238-241)
-  public static let BORDER_RADIUS_TOP_RIGHT_EXPONENT = 242 // float (4 bytes: 242-245)
-  
-  // ----------------------------
-  // Bottom-right corner
-  // ----------------------------
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE = 246
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE = 247 // float (4 bytes: 247-250)
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE = 251
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE = 252 // float (4 bytes: 252-255)
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 256 // float (4 bytes: 256-259)
-  
-  // ----------------------------
-  // Bottom-left corner
-  // ----------------------------
-  public static let BORDER_RADIUS_BOTTOM_LEFT_X_TYPE = 260
-  public static let BORDER_RADIUS_BOTTOM_LEFT_X_VALUE = 261 // float (4 bytes: 261-264)
-  public static let BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE = 265
-  public static let BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE = 266 // float (4 bytes: 266-269)
-  public static let BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270 // float (4 bytes: 270-273)
-  
-  // ----------------------------
   // Float
-  // ----------------------------
   public static let FLOAT = 274
   public static let CLEAR = 275
   
@@ -283,6 +264,53 @@ public struct StyleKeys {
   // font-variant-numeric bitmask (byte) + state
   public static let FONT_VARIANT_NUMERIC = 419 // byte (bitmask)
   public static let FONT_VARIANT_NUMERIC_STATE = 420 // byte
+
+  // Transform buffer region (bytes 422-559)
+  public static let TRANSFORM_COUNT = 422     // u8: number of inline ops (0-6)
+  public static let TRANSFORM_FLAGS = 423     // u8: bit 0 = HAS_MATRIX, bit 1 = IS_3D
+  public static let TRANSFORM_OP_0 = 424      // 12 bytes: type(u8) + pad(3) + a(f32) + b(f32)
+  public static let TRANSFORM_OP_1 = 436
+  public static let TRANSFORM_OP_2 = 448
+  public static let TRANSFORM_OP_3 = 460
+  public static let TRANSFORM_OP_4 = 472
+  public static let TRANSFORM_OP_5 = 484
+  public static let TRANSFORM_MATRIX = 496    // 64 bytes: 16 x f32 (4x4 column-major)
+  public static let TRANSFORM_OP_SIZE = 12
+  public static let MAX_INLINE_TRANSFORM_OPS = 6
+  public static let TRANSFORM_FLAG_HAS_MATRIX: UInt8 = 0x01
+  public static let TRANSFORM_FLAG_IS_3D: UInt8 = 0x02
+
+  public static let OBJECT_POSITION_X_TYPE = 560
+  public static let OBJECT_POSITION_Y_TYPE = 561
+  public static let OBJECT_POSITION_X_VALUE = 562    // f32
+  public static let OBJECT_POSITION_Y_VALUE = 566    // f32
+  public static let OBJECT_POSITION_STATE = 570
+  public static let WRITING_MODE = 571
+  public static let WRITING_MODE_STATE = 572
+  public static let UNICODE_BIDI = 573
+  public static let UNICODE_BIDI_STATE = 574
+  public static let HYPHENS = 575
+  public static let HYPHENS_STATE = 576
+  public static let CARET_COLOR = 577                // u32
+  public static let CARET_COLOR_STATE = 581
+  public static let WORD_SPACING = 582               // f32
+  public static let WORD_SPACING_TYPE = 586
+  public static let WORD_SPACING_STATE = 587
+  public static let FONT_STRETCH = 588               // i32 (pct * 100)
+  public static let FONT_STRETCH_STATE = 592
+}
+
+@objc public enum TransformOpType: UInt8 {
+  case none = 0
+  case translate = 1
+  case translateX = 2
+  case translateY = 3
+  case scale = 4
+  case scaleX = 5
+  case scaleY = 6
+  case rotate = 7
+  case skewX = 8
+  case skewY = 9
 }
 
 
@@ -387,11 +415,55 @@ public struct StateKeys: Equatable {
   public static let fontFamily = StateKeys(69)
   public static let letterSpacing = StateKeys(70)
   public static let fontVariantNumeric = StateKeys(71)
+  public static let objectPosition = StateKeys(72)
+  public static let writingMode = StateKeys(73)
+  public static let unicodeBidi = StateKeys(74)
+  public static let hyphens = StateKeys(75)
+  public static let caretColor = StateKeys(76)
+  public static let wordSpacing = StateKeys(77)
+  public static let fontStretch = StateKeys(78)
 
   /// Union of all text-relevant keys that may differ in a pseudo buffer.
   public static let pseudoText = StateKeys(
-    low:  color.low | fontSize.low | textAlign.low | fontWeight.low | fontStyle.low | fontFamily.low,
-    high: color.high | fontSize.high | textAlign.high | fontWeight.high | fontStyle.high | fontFamily.high | fontVariantNumeric.high
+    low: color.low
+      | fontSize.low
+      | fontWeight.low
+      | fontStyle.low
+      | fontFamily.low
+      | textWrap.low
+      | whiteSpace.low
+      | textTransform.low
+      | decorationLine.low
+      | decorationColor.low
+      | decorationStyle.low
+      | letterSpacing.low
+      | textJustify.low
+      | backgroundColor.low
+      | lineHeight.low
+      | textAlign.low
+      | textOverflow.low
+      | textShadow.low
+      | verticalAlign.low,
+    high: color.high
+      | fontSize.high
+      | fontWeight.high
+      | fontStyle.high
+      | fontFamily.high
+      | fontVariantNumeric.high
+      | textWrap.high
+      | whiteSpace.high
+      | textTransform.high
+      | decorationLine.high
+      | decorationColor.high
+      | decorationStyle.high
+      | letterSpacing.high
+      | textJustify.high
+      | backgroundColor.high
+      | lineHeight.high
+      | textAlign.high
+      | textOverflow.high
+      | textShadow.high
+      | verticalAlign.high
   )
 }
 
@@ -453,6 +525,8 @@ struct FontMetrics {
 @objc(MasonStyle)
 @objcMembers
 public class MasonStyle: NSObject {
+  private static let transformFnRegex: NSRegularExpression? = try? NSRegularExpression(pattern: "(\\w+)\\(([^)]*)\\)", options: [])
+
   public internal(set) var font: NSCFontFace!
   private var _cachedResolvedFont: NSCFontFace? = nil
   private var _resolvedFontKey: UInt64 = 0
@@ -483,8 +557,13 @@ public class MasonStyle: NSObject {
   }
   
   private func syncFontMetricsNow(){
-    guard let font = font.uiFont else {return}
-    
+    guard let baseFont = font.uiFont else {return}
+
+    // `font.uiFont` is built at a fixed size; size it to the actual fontSize so
+    // metrics feed the correct line-box height (else font-size doesn't relayout).
+    let size = CGFloat(resolvedFontSize)
+    let font = size > 0 ? baseFont.withSize(size) : baseFont
+
     // UIFont properties:
     // - ascender: positive value, distance from baseline to top
     // - descender: negative value, distance from baseline to bottom
@@ -533,6 +612,9 @@ public class MasonStyle: NSObject {
   internal var isDirty: UInt64 = 0
   // high 64-bit half for expanded 128-bit state keys
   internal var isDirtyHigh: UInt64 = 0
+  /// Monotonically increasing counter bumped on every style sync.
+  /// Used by MasonNode to invalidate cached getDefaultAttributes().
+  internal private(set) var styleVersion: UInt64 = 0
   internal var isSlowDirty = false {
     didSet {
       if (!inBatch) {
@@ -556,7 +638,6 @@ public class MasonStyle: NSObject {
   }
   
   internal var isValueInitialized: Bool  = false
-  internal var isTextValueInitialized: Bool = false
   
   private weak var styleChangeListener: StyleChangeListener? = nil
   
@@ -566,10 +647,12 @@ public class MasonStyle: NSObject {
   
   
   internal func notifyTextStyleChanged(_ low: UInt64, _ high: UInt64) {
+    styleVersion &+= 1
     styleChangeListener?.onStyleChange(low, high)
   }
   
   internal func notifyTextStyleChanged(_ state: StateKeys) {
+    styleVersion &+= 1
     styleChangeListener?.onStyleChange(state.low, state.high)
   }
   
@@ -689,7 +772,7 @@ public class MasonStyle: NSObject {
   public init(node: MasonNode) {
     self.node = node
     super.init()
-    font =  NSCFontFace(family: "sans-serif",owner: self)
+    font =  NSCFontFace(family: "sans-serif")
     mBackground = Background(style: self)
   }
   
@@ -703,7 +786,7 @@ public class MasonStyle: NSObject {
     }
   }
   
-  private func setOrAppendState(_ value: StateKeys) {
+  internal func setOrAppendState(_ value: StateKeys) {
     setStateFromHalves(value.low, value.high)
   }
 
@@ -759,44 +842,274 @@ public class MasonStyle: NSObject {
     let lowDirty = isDirty
     let highDirty = isDirtyHigh
     if (lowDirty > 0 || highDirty > 0) {
-      var invalidate = false
-      let value = StateKeys(low: isDirty, high: highDirty)
-      let colorDirty = value.contains(.color)
-      let sizeDirty = value.contains(.fontSize)
-      let weightDirty = value.contains(.fontWeight)
-      let styleDirty = value.contains(.fontStyle)
-      if (value.contains(.textTransform) || value.contains(.textWrap) || value.contains(.whiteSpace) || value.contains(.textOverflow) || colorDirty || value.contains(.backgroundColor) || value.contains(.decorationColor) || value.contains(.decorationLine) || sizeDirty || weightDirty || styleDirty || value.contains(.letterSpacing) || value.contains(.lineHeight)
-      ) {
-        invalidate = true
-      }
-      
+      let value = StateKeys(low: lowDirty, high: highDirty)
+
+      // All text-relevant keys that TextEngine.onStyleChange checks.
+      // Forward the intersection of dirty flags and text keys so the
+      // engine takes the correct layout vs visual-only branch.
+      let textKeys: [StateKeys] = [
+        .color, .fontSize, .fontWeight, .fontStyle, .fontFamily,
+        .textTransform, .textWrap, .whiteSpace, .textOverflow,
+        .backgroundColor, .decorationColor, .decorationLine, .decorationStyle,
+        .letterSpacing, .lineHeight, .textAlign, .textJustify,
+        .verticalAlign, .textShadow, .fontVariantNumeric,
+        .hyphens, .wordSpacing, .writingMode, .unicodeBidi, .fontStretch,
+        .decorationThinkness
+      ]
+
       var state: StateKeys = .none
-      
-      if (styleDirty) {
-        state = state.union(.fontStyle)
+      for key in textKeys {
+        if value.contains(key) {
+          state = state.union(key)
+        }
       }
-      
-      if (weightDirty) {
-        state = state.union(.fontWeight)
-      }
-      
-      if (sizeDirty) {
-        state = state.union(.fontSize)
-      }
-      
-      if (colorDirty) {
-        state = state.union(.color)
-      }
-      
-      
-      if(invalidate){
-        pendingInvalidation = pendingInvalidation.union(.pending)
-      }
-      
+
       if (state != .none) {
+        pendingInvalidation = pendingInvalidation.union(.pending)
         notifyTextStyleChanged(state)
       }
     }
+  }
+
+  // Transform (buffer-backed)
+
+  private struct TransformOp {
+    let type: UInt8
+    let a: Float
+    let b: Float
+  }
+
+  private func writeTransformToBuffer(_ input: String) {
+    let ops = parseTransformOps(input)
+    prepareMut()
+
+    if ops.isEmpty {
+      setUInt8(StyleKeys.TRANSFORM_COUNT, 0)
+      setUInt8(StyleKeys.TRANSFORM_FLAGS, 0)
+      return
+    }
+
+    // Sentinel check: matrix/matrix3d already written by parser
+    if ops.count == 1 && ops[0].type == 255 { return }
+
+    if ops.count > StyleKeys.MAX_INLINE_TRANSFORM_OPS {
+      flattenOpsToMatrix(ops)
+      return
+    }
+
+    // Write inline ops
+    setUInt8(StyleKeys.TRANSFORM_COUNT, UInt8(ops.count))
+    setUInt8(StyleKeys.TRANSFORM_FLAGS, 0)
+    for i in 0..<ops.count {
+      let base = StyleKeys.TRANSFORM_OP_0 + i * StyleKeys.TRANSFORM_OP_SIZE
+      setUInt8(base, ops[i].type)
+      setUInt8(base + 1, 0) // padding
+      setUInt8(base + 2, 0)
+      setUInt8(base + 3, 0)
+      setFloat(base + 4, ops[i].a)
+      setFloat(base + 8, ops[i].b)
+    }
+    // Zero remaining slots
+    for i in ops.count..<StyleKeys.MAX_INLINE_TRANSFORM_OPS {
+      let base = StyleKeys.TRANSFORM_OP_0 + i * StyleKeys.TRANSFORM_OP_SIZE
+      setUInt8(base, 0)
+      setUInt8(base + 1, 0)
+      setUInt8(base + 2, 0)
+      setUInt8(base + 3, 0)
+      setFloat(base + 4, 0)
+      setFloat(base + 8, 0)
+    }
+  }
+
+  private func parseTransformOps(_ input: String) -> [TransformOp] {
+    if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [] }
+    var ops: [TransformOp] = []
+    let fnRegex = MasonStyle.transformFnRegex
+    let ns = input as NSString
+    guard let matches = fnRegex?.matches(in: input, options: [], range: NSRange(location: 0, length: ns.length)) else { return [] }
+    for m in matches {
+      guard m.numberOfRanges >= 3 else { continue }
+      let name = ns.substring(with: m.range(at: 1)).lowercased()
+      let rawArgs = ns.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespaces)
+      let args = rawArgs.replacingOccurrences(of: ",", with: " ").split(separator: " ").map { String($0) }
+      switch name {
+      case "translate":
+        ops.append(TransformOp(type: TransformOpType.translate.rawValue, a: parseTransformLength(args, 0), b: parseTransformLength(args, 1)))
+      case "translatex":
+        ops.append(TransformOp(type: TransformOpType.translateX.rawValue, a: parseTransformLength(args, 0), b: 0))
+      case "translatey":
+        ops.append(TransformOp(type: TransformOpType.translateY.rawValue, a: 0, b: parseTransformLength(args, 0)))
+      case "scale":
+        let sx = parseTransformNumber(args, 0, 1.0)
+        let sy = parseTransformNumber(args, 1, Double(sx))
+        ops.append(TransformOp(type: TransformOpType.scale.rawValue, a: sx, b: sy))
+      case "scalex":
+        ops.append(TransformOp(type: TransformOpType.scaleX.rawValue, a: parseTransformNumber(args, 0, 1.0), b: 1))
+      case "scaley":
+        ops.append(TransformOp(type: TransformOpType.scaleY.rawValue, a: 1, b: parseTransformNumber(args, 0, 1.0)))
+      case "rotate":
+        ops.append(TransformOp(type: TransformOpType.rotate.rawValue, a: parseTransformAngleDeg(args.first ?? "0"), b: 0))
+      case "skewx":
+        ops.append(TransformOp(type: TransformOpType.skewX.rawValue, a: parseTransformAngleDeg(args.first ?? "0"), b: 0))
+      case "skewy":
+        ops.append(TransformOp(type: TransformOpType.skewY.rawValue, a: parseTransformAngleDeg(args.first ?? "0"), b: 0))
+      case "matrix":
+        let nums = args.compactMap { Float($0.replacingOccurrences(of: "px", with: "")) }
+        if nums.count >= 6 {
+          writeMatrixToBuffer(nums[0], nums[1], nums[2], nums[3], nums[4], nums[5])
+          return [TransformOp(type: 255, a: 0, b: 0)] // sentinel
+        }
+      case "matrix3d":
+        let nums = args.compactMap { Float($0.replacingOccurrences(of: "px", with: "")) }
+        if nums.count >= 16 {
+          writeMatrix3dToBuffer(nums)
+          return [TransformOp(type: 255, a: 0, b: 0)] // sentinel
+        }
+      default: break
+      }
+    }
+    return ops
+  }
+
+  private func writeMatrixToBuffer(_ a: Float, _ b: Float, _ c: Float, _ d: Float, _ tx: Float, _ ty: Float) {
+    setUInt8(StyleKeys.TRANSFORM_COUNT, 0)
+    setUInt8(StyleKeys.TRANSFORM_FLAGS, StyleKeys.TRANSFORM_FLAG_HAS_MATRIX)
+    let base = StyleKeys.TRANSFORM_MATRIX
+    // Column 0: [a, b, 0, 0]
+    setFloat(base, a); setFloat(base + 4, b); setFloat(base + 8, 0); setFloat(base + 12, 0)
+    // Column 1: [c, d, 0, 0]
+    setFloat(base + 16, c); setFloat(base + 20, d); setFloat(base + 24, 0); setFloat(base + 28, 0)
+    // Column 2: [0, 0, 1, 0]
+    setFloat(base + 32, 0); setFloat(base + 36, 0); setFloat(base + 40, 1); setFloat(base + 44, 0)
+    // Column 3: [tx, ty, 0, 1]
+    setFloat(base + 48, tx); setFloat(base + 52, ty); setFloat(base + 56, 0); setFloat(base + 60, 1)
+  }
+
+  private func writeMatrix3dToBuffer(_ nums: [Float]) {
+    setUInt8(StyleKeys.TRANSFORM_COUNT, 0)
+    setUInt8(StyleKeys.TRANSFORM_FLAGS, StyleKeys.TRANSFORM_FLAG_HAS_MATRIX | StyleKeys.TRANSFORM_FLAG_IS_3D)
+    let base = StyleKeys.TRANSFORM_MATRIX
+    for i in 0..<16 { setFloat(base + i * 4, nums[i]) }
+  }
+
+  private func flattenOpsToMatrix(_ ops: [TransformOp]) {
+    var a: Float = 1; var b: Float = 0; var c: Float = 0; var d: Float = 1; var tx: Float = 0; var ty: Float = 0
+    for op in ops {
+      switch TransformOpType(rawValue: op.type) ?? .none {
+      case .translate: tx += a * op.a + c * op.b; ty += b * op.a + d * op.b
+      case .translateX: tx += a * op.a; ty += b * op.a
+      case .translateY: tx += c * op.b; ty += d * op.b
+      case .scale: a *= op.a; b *= op.a; c *= op.b; d *= op.b
+      case .scaleX: a *= op.a; b *= op.a
+      case .scaleY: c *= op.b; d *= op.b
+      case .rotate:
+        let rad = op.a * .pi / 180.0
+        let cosV = cos(rad); let sinV = sin(rad)
+        let na = a * cosV + c * sinV; let nb = b * cosV + d * sinV
+        let nc = a * (-sinV) + c * cosV; let nd = b * (-sinV) + d * cosV
+        a = na; b = nb; c = nc; d = nd
+      case .skewX:
+        let t = tan(op.a * .pi / 180.0)
+        let nc = a * t + c; let nd = b * t + d
+        c = nc; d = nd
+      case .skewY:
+        let t = tan(op.a * .pi / 180.0)
+        let na = a + c * t; let nb = b + d * t
+        a = na; b = nb
+      case .none: break
+      }
+    }
+    writeMatrixToBuffer(a, b, c, d, tx, ty)
+  }
+
+  internal func applyTransformFromBuffer() {
+    guard let view = node.view else { return }
+    let count = Int(getUInt8(StyleKeys.TRANSFORM_COUNT))
+    let flags = getUInt8(StyleKeys.TRANSFORM_FLAGS)
+
+    if count == 0 && (flags & StyleKeys.TRANSFORM_FLAG_HAS_MATRIX) == 0 {
+      // Only reset if currently transformed
+      if view.transform != .identity || !CATransform3DIsIdentity(view.layer.transform) {
+        if Thread.isMainThread {
+          view.transform = .identity; view.layer.transform = CATransform3DIdentity
+        } else {
+          DispatchQueue.main.async { view.transform = .identity; view.layer.transform = CATransform3DIdentity }
+        }
+      }
+      return
+    }
+
+    if (flags & StyleKeys.TRANSFORM_FLAG_HAS_MATRIX) != 0 {
+      let base = StyleKeys.TRANSFORM_MATRIX
+      if (flags & StyleKeys.TRANSFORM_FLAG_IS_3D) != 0 {
+        // Full 4x4 matrix
+        var t = CATransform3DIdentity
+        t.m11 = CGFloat(getFloat(base));      t.m12 = CGFloat(getFloat(base + 4))
+        t.m13 = CGFloat(getFloat(base + 8));  t.m14 = CGFloat(getFloat(base + 12))
+        t.m21 = CGFloat(getFloat(base + 16)); t.m22 = CGFloat(getFloat(base + 20))
+        t.m23 = CGFloat(getFloat(base + 24)); t.m24 = CGFloat(getFloat(base + 28))
+        t.m31 = CGFloat(getFloat(base + 32)); t.m32 = CGFloat(getFloat(base + 36))
+        t.m33 = CGFloat(getFloat(base + 40)); t.m34 = CGFloat(getFloat(base + 44))
+        t.m41 = CGFloat(getFloat(base + 48)); t.m42 = CGFloat(getFloat(base + 52))
+        t.m43 = CGFloat(getFloat(base + 56)); t.m44 = CGFloat(getFloat(base + 60))
+        DispatchQueue.main.async { view.layer.transform = t }
+      } else {
+        // 2D affine embedded in 4x4
+        let a = CGFloat(getFloat(base)); let b = CGFloat(getFloat(base + 4))
+        let c = CGFloat(getFloat(base + 16)); let d = CGFloat(getFloat(base + 20))
+        let tx = CGFloat(getFloat(base + 48)); let ty = CGFloat(getFloat(base + 52))
+        let affine = CGAffineTransform(a: a, b: b, c: c, d: d, tx: tx, ty: ty)
+        DispatchQueue.main.async { view.transform = affine }
+      }
+    } else {
+      // Compose inline ops
+      var affine = CGAffineTransform.identity
+      for i in 0..<count {
+        let opBase = StyleKeys.TRANSFORM_OP_0 + i * StyleKeys.TRANSFORM_OP_SIZE
+        let type = TransformOpType(rawValue: getUInt8(opBase)) ?? .none
+        let a = CGFloat(getFloat(opBase + 4))
+        let b = CGFloat(getFloat(opBase + 8))
+        switch type {
+        case .translate: affine = affine.translatedBy(x: a, y: b)
+        case .translateX: affine = affine.translatedBy(x: a, y: 0)
+        case .translateY: affine = affine.translatedBy(x: 0, y: b)
+        case .scale: affine = affine.scaledBy(x: a, y: b)
+        case .scaleX: affine = affine.scaledBy(x: a, y: 1)
+        case .scaleY: affine = affine.scaledBy(x: 1, y: b)
+        case .rotate: affine = affine.rotated(by: a * .pi / 180.0)
+        case .skewX:
+          let t = tan(a * .pi / 180.0)
+          affine = affine.concatenating(CGAffineTransform(a: 1, b: 0, c: t, d: 1, tx: 0, ty: 0))
+        case .skewY:
+          let t = tan(a * .pi / 180.0)
+          affine = affine.concatenating(CGAffineTransform(a: 1, b: t, c: 0, d: 1, tx: 0, ty: 0))
+        case .none: break
+        }
+      }
+      DispatchQueue.main.async { view.transform = affine }
+    }
+  }
+
+  private func parseTransformLength(_ args: [String], _ index: Int) -> Float {
+    guard index < args.count else { return 0 }
+    let s = args[index].trimmingCharacters(in: .whitespaces)
+    if s.hasSuffix("px") { return Float(s.dropLast(2)) ?? 0 }
+    if s.hasSuffix("%") { return Float(s.dropLast(1)) ?? 0 }
+    return Float(s) ?? 0
+  }
+
+  private func parseTransformAngleDeg(_ s: String) -> Float {
+    let v = s.trimmingCharacters(in: .whitespaces)
+    if v.hasSuffix("deg") { return Float(v.dropLast(3)) ?? 0 }
+    if v.hasSuffix("rad") { return (Float(v.dropLast(3)) ?? 0) * 180.0 / .pi }
+    return Float(v) ?? 0
+  }
+
+  private func parseTransformNumber(_ args: [String], _ index: Int, _ defaultValue: Double) -> Float {
+    guard index < args.count else { return Float(defaultValue) }
+    let s = args[index].trimmingCharacters(in: .whitespaces)
+    let cleaned = s.replacingOccurrences(of: "px", with: "").replacingOccurrences(of: "%", with: "")
+    return Float(cleaned) ?? Float(defaultValue)
   }
   
   
@@ -947,7 +1260,7 @@ public class MasonStyle: NSObject {
       prepareMut()
       setUInt8(StyleKeys.LIST_STYLE_POSITION, UInt8(newValue.rawValue))
       setUInt8(StyleKeys.LIST_STYLE_POSITION_STATE, StyleState.SET)
-      // todo state
+      setOrAppendState(.listStylePosition)
     }
   }
   
@@ -960,7 +1273,7 @@ public class MasonStyle: NSObject {
       prepareMut()
       setInt8(StyleKeys.LIST_STYLE_TYPE, newValue.rawValue)
       setInt8(StyleKeys.LIST_STYLE_TYPE_STATE, Int8(StyleState.SET))
-      // todo state
+      setOrAppendState(.listStyleType)
     }
   }
   
@@ -1097,7 +1410,7 @@ public class MasonStyle: NSObject {
     // Check pseudo string storage on node (Swift-side) using cascade order
     for state in PSEUDO_CSS_ORDER.reversed() {
       if node.hasPseudo(state) {
-        if let s = node.getPseudoString(state.rawValue, key: "filter"), !s.isEmpty {
+        if let s = node.getPseudoString(state.rawValue,"filter"), !s.isEmpty {
           return s
         }
       }
@@ -1381,6 +1694,54 @@ public class MasonStyle: NSObject {
     }
   }
   
+  public func setTextDecoration(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let line: DecorationLine
+    switch v {
+    case "none": line = .None
+    case "underline": line = .Underline
+    case "overline": line = .Overline
+    case "line-through": line = .LineThrough
+    default: return
+    }
+    decorationLine = line
+  }
+
+  public func setBorderColor(_ css: String) {
+    guard let color = UIColor(css: css) else { return }
+    mBorderLeft.color = color
+    mBorderTop.color = color
+    mBorderRight.color = color
+    mBorderBottom.color = color
+    setOrAppendState(.borderColor)
+    node.view?.setNeedsDisplay()
+  }
+
+  public func applyListStyleType(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let type: ListStyleType
+    switch v {
+    case "none": type = .None
+    case "disc": type = .Disc
+    case "circle": type = .Circle
+    case "square": type = .Square
+    case "decimal": type = .Decimal
+    default: return
+    }
+    listStyleType = type
+  }
+
+  public func applyListStylePosition(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let pos: ListStylePosition
+    switch v {
+    case "inside": pos = .Inside
+    case "outside": pos = .Outside
+    default: return
+    }
+    listStylePosition = pos
+  }
+
   public var fontSize: Int32 {
     get {
       return getInt32(StyleKeys.FONT_SIZE)
@@ -1389,13 +1750,13 @@ public class MasonStyle: NSObject {
       setInt32(StyleKeys.FONT_SIZE, newValue)
       setUInt8(StyleKeys.FONT_SIZE_TYPE, 0)
       setUInt8(StyleKeys.FONT_SIZE_STATE, StyleState.SET)
- 
+
       if(inBatch){
         setOrAppendState(StateKeys.fontSize)
       }else {
         notifyTextStyleChanged(StateKeys.fontSize)
       }
-      
+
       syncFontMetrics()
     }
   }
@@ -1411,15 +1772,15 @@ public class MasonStyle: NSObject {
       
       switch style {
       case .Normal:
-        font.style = "normal"
+        font.style = .normal()
         setInt32(StyleKeys.FONT_STYLE_SLANT, 0)
         break
       case .Italic:
-        font.style = "italic"
+        font.style = .italic()
         setInt32(StyleKeys.FONT_STYLE_SLANT, 0)
         break
       case .Oblique:
-        font.style = "oblique"
+        font.style = .oblique(withAngle: 0)
         setInt32(StyleKeys.FONT_STYLE_SLANT, slant)
         break
       }
@@ -1458,19 +1819,19 @@ public class MasonStyle: NSObject {
     let type = getInt8(StyleKeys.FONT_STYLE_TYPE)
     switch(type){
     case 0:
-      return NSCFontStyle.normal
+      return .normal()
     case 1:
-      return NSCFontStyle.italic
+      return .italic()
     case 2:
       let slant = getInt32(StyleKeys.FONT_STYLE_SLANT)
       if(slant > 0){
-        return NSCFontStyle.oblique(Int(slant))
+        return .oblique(withAngle: Int(slant))
       }else {
-        return NSCFontStyle.oblique(nil)
+        return .oblique(withAngle: 0)
       }
     default:
       // todo handle invalid cases
-      return font.fontDescriptors.styleValue
+      return font.fontDescriptors.style
     }
   }
   
@@ -1489,13 +1850,15 @@ public class MasonStyle: NSObject {
       }
       
       // Invalid font style
-      switch(font.fontDescriptors.styleValue){
+      switch(font.fontDescriptors.style.type){
       case .normal:
         return .Normal
       case .italic:
         return .Italic
-      case .oblique(_):
+      case .oblique:
         return .Oblique
+      @unknown default:
+        return .Normal
       }
       
     }
@@ -1509,13 +1872,13 @@ public class MasonStyle: NSObject {
         
         switch newValue {
         case .Normal:
-          font.style = "normal"
+          font.style = .normal()
           break
         case .Italic:
-          font.style = "italic"
+          font.style = .italic()
           break
         case .Oblique:
-          font.style = "oblique"
+          font.style = .oblique(withAngle: 0)
           break
         }
         invalidateResolvedFontCache()
@@ -1615,10 +1978,10 @@ public class MasonStyle: NSObject {
   
   public var fontFamily: String {
     get {
-      return font.fontFamily
+      return font.family
     }
     set {
-      let oldFamily = font.fontFamily
+      let oldFamily = font.family
       if (oldFamily != newValue) {
         guard let oldFont = font else {return}
         // Create new font with updated family
@@ -1627,7 +1990,7 @@ public class MasonStyle: NSObject {
         font.style = oldFont.style
         font.fontDescriptors.display = oldFont.fontDescriptors.display
         
-        font.loadSync { _ in }
+        font.loadSync(nil)
         
         syncFontMetrics()
         
@@ -1841,12 +2204,11 @@ public class MasonStyle: NSObject {
   // TODO
   public var direction: Direction{
     get {
-      return Direction(rawValue: getInt8(StyleKeys.POSITION))!
+      return Direction(rawValue: getInt8(StyleKeys.DIRECTION))!
     }
     set {
       prepareMut()
-      // todo
-      setInt8(StyleKeys.POSITION, newValue.rawValue)
+      setInt8(StyleKeys.DIRECTION, newValue.rawValue)
       
       setOrAppendState(StateKeys.direction)
       
@@ -2476,56 +2838,70 @@ public class MasonStyle: NSObject {
   public var boxShadow: String = "" {
     didSet {
       boxShadows = ShadowParser.parseBoxShadow(style: self, value: boxShadow)
-      
       if let view = node.view {
-        let hasOutsetShadows = boxShadows.contains { !$0.inset }
-        
-        if hasOutsetShadows {
-          // Add shadow layer to superview's layer so it can extend beyond view bounds
-          // without affecting the view's own clipping
-          if let superview = view.superview {
-            if !shadowLayerAdded || shadowLayerParent !== superview.layer {
-              mShadowLayer.removeFromSuperlayer()
-              superview.layer.insertSublayer(mShadowLayer, at: 0)
-              shadowLayerAdded = true
-              shadowLayerParent = superview.layer
-            }
-            mShadowLayer.updateBounds(viewBounds: view.bounds, viewFrame: view.frame)
-          }
-        } else if shadowLayerAdded {
-          mShadowLayer.isHidden = true
+        syncShadowLayer(view, viewBounds: view.bounds)
+
+        // Invalidate draw flags so _cachedHasBoxShadow is recalculated
+        // before the next draw() pass — prevents stale early-out.
+        if let masonView = view as? MasonUIView {
+          masonView.invalidateDrawFlags()
+        } else {
+          view.setNeedsDisplay()
         }
-        
-        view.setNeedsDisplay()
       }
     }
   }
+
+  /// Attach + position the outset box-shadow layer in the SUPERVIEW's layer,
+  /// below the child, so it paints beyond the child's bounds and sits behind it
+  /// (hosting it in the child's own layer renders the opaque fill as black wedges
+  /// over the child's transparent rounded corners).
+  private func syncShadowLayer(_ view: UIView, viewBounds: CGRect) {
+    let hasOutsetShadows = boxShadows.contains { !$0.inset }
+    guard hasOutsetShadows else {
+      if shadowLayerAdded { mShadowLayer.isHidden = true }
+      return
+    }
+    mShadowLayer.isHidden = false
+
+    guard let superview = view.superview else { return }
+    let host = superview.layer
+
+    if !shadowLayerAdded || shadowLayerParent !== host {
+      mShadowLayer.removeFromSuperlayer()
+      if let childLayer = view.layer as CALayer?, superview.layer.sublayers?.contains(childLayer) == true {
+        superview.layer.insertSublayer(mShadowLayer, below: childLayer)
+      } else {
+        superview.layer.insertSublayer(mShadowLayer, at: 0)
+      }
+      shadowLayerAdded = true
+      shadowLayerParent = host
+    }
+
+    mShadowLayer.updateBounds(viewBounds: viewBounds, viewFrame: view.frame, inOwnLayer: false)
+  }
   
+  /// Detach the outset-shadow layer (it lives in the superview's layer, so
+  /// removing the child alone leaves a ghost shadow). Call on view removal.
+  internal func removeShadowLayer() {
+    if shadowLayerAdded {
+      mShadowLayer.removeFromSuperlayer()
+      shadowLayerAdded = false
+      shadowLayerParent = nil
+    }
+  }
+
+  /// Reset shadow-layer bookkeeping when the layer was pulled externally.
+  /// Idempotent; does NOT touch the layer (the caller already removed it).
+  internal func markShadowLayerDetached() {
+    shadowLayerAdded = false
+    shadowLayerParent = nil
+  }
+
   /// Call this from layoutSubviews to update shadow layer bounds
   internal func updateShadowLayer(for bounds: CGRect) {
     guard let view = node.view else { return }
-    let hasOutsetShadows = boxShadows.contains { !$0.inset }
-    guard hasOutsetShadows else {
-      if shadowLayerAdded {
-        mShadowLayer.isHidden = true
-      }
-      return
-    }
-
-    // Add shadow layer on first layout if it wasn't added during boxShadow setter
-    // (e.g. boxShadow was set before the view had a superview)
-    if !shadowLayerAdded || shadowLayerParent !== view.superview?.layer {
-      if let superview = view.superview {
-        mShadowLayer.removeFromSuperlayer()
-        superview.layer.insertSublayer(mShadowLayer, at: 0)
-        shadowLayerAdded = true
-        shadowLayerParent = superview.layer
-      }
-    }
-
-    if shadowLayerAdded {
-      mShadowLayer.updateBounds(viewBounds: bounds, viewFrame: view.frame)
-    }
+    syncShadowLayer(view, viewBounds: bounds)
   }
   
   internal lazy var mBorderRender: CSSBorderRenderer  = {
@@ -2533,13 +2909,13 @@ public class MasonStyle: NSObject {
   }()
   
   
-  public var borderRadius: String {
-    get {
-      // todo
-      return ""
-    }
-    set {
-      CSSBorderRenderer.parseBorderRadius(self, newValue)
+  public var borderRadius: String = "" {
+    didSet {
+      CSSBorderRenderer.parseBorderRadius(self, borderRadius)
+      // Ensure draw flags are refreshed so border-radius-dependent
+      // rendering (background clip, overflow mask) picks up the change
+      // even when the view's size hasn't changed.
+      (node.view as? MasonUIView)?.invalidateDrawFlags()
     }
   }
   
@@ -2634,8 +3010,58 @@ public class MasonStyle: NSObject {
       mBorderRender.parseBorderShorthand(newValue)
     }
   }
-  
-  
+
+  public var paddingCss: String {
+    get {
+      return padding.cssValue
+    }
+    set {
+      CSSBorderRenderer.parsePaddingShorthand(self, newValue)
+    }
+  }
+
+  public var marginCss: String {
+    get {
+      return margin.cssValue
+    }
+    set {
+      CSSBorderRenderer.parseMarginShorthand(self, newValue)
+    }
+  }
+
+  public var insetCss: String {
+    get {
+      return inset.cssValue
+    }
+    set {
+      CSSBorderRenderer.parseInsetShorthand(self, newValue)
+    }
+  }
+
+  public var borderLeft: String = "" {
+    didSet {
+      mBorderRender.parseBorderSideShorthand(.left, borderLeft)
+    }
+  }
+
+  public var borderTop: String = "" {
+    didSet {
+      mBorderRender.parseBorderSideShorthand(.top, borderTop)
+    }
+  }
+
+  public var borderRight: String = "" {
+    didSet {
+      mBorderRender.parseBorderSideShorthand(.right, borderRight)
+    }
+  }
+
+  public var borderBottom: String = "" {
+    didSet {
+      mBorderRender.parseBorderSideShorthand(.bottom, borderBottom)
+    }
+  }
+
   internal var mBorderLeft: CSSBorderRenderer.BorderSide {
     return mBorderRender.left
   }
@@ -3045,6 +3471,17 @@ public class MasonStyle: NSObject {
     size = MasonSize(wh, wh)
   }
   
+  public func setSizePoints(_ width: Float, _ height: Float) {
+    prepareMut()
+    setInt8(StyleKeys.WIDTH_TYPE, MasonDimension.Kind.Points.rawValue)
+    setFloat(StyleKeys.WIDTH_VALUE, width)
+    
+    setInt8(StyleKeys.HEIGHT_TYPE, MasonDimension.Kind.Points.rawValue)
+    setFloat(StyleKeys.HEIGHT_VALUE, height)
+    
+    setOrAppendState(StateKeys.size)
+  }
+  
   
   
   public var width: MasonDimension {
@@ -3311,6 +3748,18 @@ public class MasonStyle: NSObject {
       })
     }
   }
+
+  private var _transformRaw: String?
+  public var transform: String {
+    set {
+      _transformRaw = newValue
+      writeTransformToBuffer(newValue)
+      applyTransformFromBuffer()
+    }
+    get {
+      return _transformRaw ?? ""
+    }
+  }
   
   
   private var _gridAutoRows: String?
@@ -3491,6 +3940,71 @@ public class MasonStyle: NSObject {
     }
   }
   
+  // MARK: - border-image (string-based, parsed natively)
+  
+  @objc public var borderImage: String = "" {
+    didSet {
+      if let view = node.view {
+        view.setNeedsDisplay()
+      }
+    }
+  }
+  
+  
+  // MARK: - backdrop-filter (string-based, parsed natively)
+
+  lazy var mBackdropFilter: CSSFilters.CSSFilter = {
+    CSSFilters.CSSFilter()
+  }()
+
+  @objc public var backdropFilter: String = "" {
+    didSet {
+      if backdropFilter.isEmpty && !mBackdropFilter.filters.isEmpty {
+        mBackdropFilter.reset()
+        if let view = node.view {
+          view.subviews.filter { $0.layer.name == "_mason_backdrop" }.forEach { $0.removeFromSuperview() }
+          view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop_layer" })?.removeFromSuperlayer()
+        }
+        return
+      }
+
+      mBackdropFilter.parse(css: backdropFilter)
+
+      if !mBackdropFilter.filters.isEmpty {
+        if let view = node.view {
+          mBackdropFilter.applyAsBackdrop(to: view)
+        }
+      }
+    }
+  }
+
+  /// Keep the backdrop effect view / layer sized to the host view. Called from
+  /// `MasonUIView.layoutSubviews` because `backdropFilter` is usually set before
+  /// the view has a non-zero bounds, so the initial frame in `applyAsBackdrop`
+  /// would otherwise stay `.zero` and the effect would never appear.
+  func updateBackdropFrames(for bounds: CGRect) {
+    guard !mBackdropFilter.filters.isEmpty, let view = node.view else { return }
+    if let effectView = view.subviews.first(where: { $0.layer.name == "_mason_backdrop" }) {
+      if effectView.frame != bounds { effectView.frame = bounds }
+    }
+    if let backdropLayer = view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop_layer" }) {
+      if backdropLayer.frame != bounds {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backdropLayer.frame = bounds
+        CATransaction.commit()
+      }
+    }
+  }
+  
+  
+  // MARK: - font-feature-settings (string-based)
+
+  @objc public var fontFeatureSettings: String = "normal" {
+    didSet {
+      notifyTextStyleChanged(StateKeys.fontFamily)
+    }
+  }
   
   public func updateNativeStyle() {
     if(inBatch || pendingInvalidation.contains(.invalidating) || pendingInvalidation.rawValue == 0){
@@ -3638,11 +4152,18 @@ public class MasonStyle: NSObject {
         if(state.contains(.zIndex)){
           element?.uiView.layer.zPosition = CGFloat(zIndex)
         }
+        if state.contains(.caretColor) {
+          notifyTextStyleChanged(.caretColor)
+        }
+        if state.contains(.objectPosition) {
+          (node.view as? Img)?.masonLayer.setNeedsLayout()
+        }
       }
       
       isSlowDirty = false
       isDirty = 0
       isDirtyHigh = 0
+      styleVersion &+= 1
       pendingInvalidation = pendingInvalidation.union(.invalidating)
       (node.view as? MasonElement)?.requestLayout()
       pendingInvalidation = .none
@@ -3652,18 +4173,29 @@ public class MasonStyle: NSObject {
     if (isDirty != 0 || isDirtyHigh != 0) {
       
       let element = node.view as? MasonElement
+      let state = StateKeys(low: isDirty, high: isDirtyHigh)
 
        updateTextStyle()
       
       if(isDirty > 0){
-        let state = StateKeys(low: isDirty, high: isDirtyHigh)
         if(state.contains(.zIndex)){
           element?.uiView.layer.zPosition = CGFloat(zIndex)
         }
       }
+
+      // Dispatch caret-color to input views
+      if state.contains(.caretColor) {
+        notifyTextStyleChanged(.caretColor)
+      }
+
+      // Dispatch object-position to image views
+      if state.contains(.objectPosition) {
+        (node.view as? Img)?.masonLayer.setNeedsLayout()
+      }
       
       isDirty = 0
       isDirtyHigh = 0
+      styleVersion &+= 1
       pendingInvalidation = pendingInvalidation.union(.invalidating)
       element?.requestLayout()
       pendingInvalidation = .none
@@ -3732,7 +4264,7 @@ extension MasonStyle {
     var parent = node.parent
     while (parent != nil) {
       // Check if parent has text values initialized
-      if (parent?.style.isTextValueInitialized == true) {
+      if (parent?.style.isValueInitialized == true) {
         return parent?.style
       }
       parent = parent?.parent
@@ -3765,9 +4297,9 @@ extension MasonStyle {
     
     // If family is inherited but weight/style are set, need to create a new FontFace
     let baseFamily = if (familyState == StyleState.INHERIT) {
-      parentStyleWithTextValues?.resolvedFontFace.fontFamily ?? font.fontFamily
+      parentStyleWithTextValues?.resolvedFontFace.family ?? font.family
     } else {
-      font.fontFamily
+      font.family
     }
     
     let resolvedWeight = if (weightState == StyleState.INHERIT) {
@@ -3785,7 +4317,7 @@ extension MasonStyle {
     
     
     // If everything matches current font, return it
-    if (font.fontFamily == baseFamily && font.weight == resolvedWeight && font.fontDescriptors.styleValue == resolvedStyle) {
+    if (font.family == baseFamily && font.weight == resolvedWeight && font.fontDescriptors.style == resolvedStyle) {
       return font
     }
     
@@ -3798,7 +4330,7 @@ extension MasonStyle {
     // Create a new FontFace with resolved properties and cache it
     let resolvedFont = NSCFontFace(family: baseFamily)
     resolvedFont.weight = resolvedWeight
-    resolvedFont.style = resolvedStyle.cssValue
+    resolvedFont.style = resolvedStyle
     _cachedResolvedFont = resolvedFont
     _resolvedFontKey = key
     
@@ -3816,7 +4348,7 @@ extension MasonStyle {
     var result = base
     for state in PSEUDO_CSS_ORDER {
       if (mask & state.rawValue) != 0 {
-        if let buf = node.getPseudoBuffer(state.rawValue),
+        if let buf = node.getPseudoBufferRaw(state.rawValue),
            buf.count > stateKey {
           let lowOfs = StyleKeys.PSEUDO_SET_MASK_LOW
           let highOfs = StyleKeys.PSEUDO_SET_MASK_HIGH
@@ -3842,7 +4374,7 @@ extension MasonStyle {
     var result = base
     for state in PSEUDO_CSS_ORDER {
       if (mask & state.rawValue) != 0 {
-        if let buf = node.getPseudoBuffer(state.rawValue),
+        if let buf = node.getPseudoBufferRaw(state.rawValue),
            buf.count > stateKey {
           // Check if this property was explicitly set in the pseudo buffer
           let lowOfs = StyleKeys.PSEUDO_SET_MASK_LOW
@@ -3882,7 +4414,7 @@ extension MasonStyle {
     // PERCENT == 1
     if (type == StyleState.SET) {
       let parentFontSize = {
-        if let parent = node.parent as? MasonTextNode, parent.style.isTextValueInitialized  {
+        if let parent = node.parent as? MasonTextNode, parent.style.isValueInitialized  {
           return parent.style.resolvedFontSize
         }else {
           return Constants.DEFAULT_FONT_SIZE
@@ -4098,5 +4630,93 @@ extension MasonStyle {
   func resetFontVariantNumericToInherit() {
     setUInt8(StyleKeys.FONT_VARIANT_NUMERIC_STATE, StyleState.INHERIT)
     notifyTextStyleChanged(StateKeys.fontVariantNumeric)
+  }
+
+  internal var resolvedBorderImageString: String {
+    for state in PSEUDO_CSS_ORDER.reversed() {
+      if node.hasPseudo(state) {
+        if let s = node.getPseudoString(state.rawValue, "border-image"), !s.isEmpty {
+          return s
+        }
+      }
+    }
+    return borderImage
+  }
+
+  internal var resolvedBackdropFilterString: String {
+    for state in PSEUDO_CSS_ORDER.reversed() {
+      if node.hasPseudo(state) {
+        if let s = node.getPseudoString(state.rawValue, "backdrop-filter"), !s.isEmpty {
+          return s
+        }
+      }
+    }
+    return backdropFilter
+  }
+
+
+  internal var resolvedFontFeatureSettingsString: String {
+    for state in PSEUDO_CSS_ORDER.reversed() {
+      if node.hasPseudo(state) {
+        if let s = node.getPseudoString(state.rawValue, "font-feature-settings"), !s.isEmpty {
+          return s
+        }
+      }
+    }
+    return fontFeatureSettings
+  }
+
+  internal var resolvedCaretColor: UInt32 {
+    let state = getUInt8(StyleKeys.CARET_COLOR_STATE)
+    if state == StyleState.SET {
+      return getUInt32(Int(StyleKeys.CARET_COLOR))
+    } else if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedCaretColor ?? resolvedColor
+    }
+    // auto → fall back to currentColor
+    return resolvedColor
+  }
+
+  internal var resolvedWordSpacing: Float {
+    let state = getUInt8(StyleKeys.WORD_SPACING_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedWordSpacing ?? getFloat(StyleKeys.WORD_SPACING)
+    }
+    if state == StyleState.SET {
+      return getFloat(StyleKeys.WORD_SPACING)
+    }
+    return 0
+  }
+
+  internal var resolvedWritingMode: UInt8 {
+    let state = getUInt8(StyleKeys.WRITING_MODE_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedWritingMode ?? getUInt8(StyleKeys.WRITING_MODE)
+    }
+    return getUInt8(StyleKeys.WRITING_MODE)
+  }
+
+  internal var resolvedUnicodeBidi: UInt8 {
+    let state = getUInt8(StyleKeys.UNICODE_BIDI_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedUnicodeBidi ?? getUInt8(StyleKeys.UNICODE_BIDI)
+    }
+    return getUInt8(StyleKeys.UNICODE_BIDI)
+  }
+
+  internal var resolvedHyphens: UInt8 {
+    let state = getUInt8(StyleKeys.HYPHENS_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedHyphens ?? getUInt8(StyleKeys.HYPHENS)
+    }
+    return getUInt8(StyleKeys.HYPHENS)
+  }
+
+  internal var resolvedFontStretch: Int32 {
+    let state = getUInt8(StyleKeys.FONT_STRETCH_STATE)
+    if state == StyleState.INHERIT {
+      return parentStyleWithTextValues?.resolvedFontStretch ?? getInt32(StyleKeys.FONT_STRETCH)
+    }
+    return getInt32(StyleKeys.FONT_STRETCH)
   }
 }

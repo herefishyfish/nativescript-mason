@@ -3,8 +3,11 @@ package org.nativescript.mason.masonkit
 import android.content.Context
 import android.content.res.Resources
 import android.text.TextPaint
+import android.util.Log
 import com.google.gson.Gson
 import dalvik.annotation.optimization.CriticalNative
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontFaceSet
 import org.nativescript.mason.masonkit.enums.TextType
 import org.nativescript.mason.masonkit.events.Event
 import java.lang.ref.WeakReference
@@ -28,9 +31,10 @@ class Mason {
   private val viewNodes = WeakHashMap<android.view.View, WeakReference<Node>>()
 
   private val nodeEventListeners =
-    mutableMapOf<Node, MutableMap<String, MutableMap<UUID, (Event) -> Unit>>>()
+    WeakHashMap<Node, MutableMap<String, MutableMap<UUID, (Event) -> Unit>>>()
 
-  // True while Rust holds a lock during compute — prevents re-entrant lock acquisition via prepareMut
+  // True while Rust holds a lock during compute — prevents re-entrant
+  // compute calls on the UI thread (e.g. layout → dirty → layout).
   @JvmField
   internal var inCompute = false
 
@@ -38,17 +42,19 @@ class Mason {
     private set
 
   init {
+    nativeSetDeviceScale(nativePtr, scale)
+
     // set default style font metrics
     val buffer = ObjectManager.shared[nativeGetBuffer(
       nativePtr, 0 // default handle
     )] as? ByteBuffer
 
-    buffer?.let {
-      FontFaceSet.instance.getOrNull("sans-serif")?.let { font ->
+    fun setFontData(face: FontFace) {
+      buffer?.let {
         val paint = TextPaint().apply {
           textSize =
             Constants.DEFAULT_FONT_SIZE * scale
-          this.typeface = font.font
+          this.typeface = face.font
         }
 
         val fm = paint.fontMetrics
@@ -75,6 +81,17 @@ class Mason {
         it.putFloat(StyleKeys.FONT_METRICS_LEADING_OFFSET, leading)
         it.putFloat(StyleKeys.FONT_METRICS_CAP_HEIGHT_OFFSET, capHeight)
       }
+    }
+
+    val defaultFont = FontFace("sans-serif")
+    FontFaceSet.instance.addOnLoadingDoneListener { face ->
+      if (face == defaultFont) {
+        setFontData(face)
+      }
+    }
+    FontFaceSet.instance.add(defaultFont)
+    defaultFont.addOnReloadListener { face, error ->
+      setFontData(face)
     }
   }
 
@@ -114,12 +131,12 @@ class Mason {
 
   /** Public wrapper for native float rects (convenience for JVM callers). */
   fun getFloatRects(node: Node): FloatArray {
-    return nativeNodeGetFloatRects(nativePtr, node.nativePtr)
+    return NativeHelpers.nativeNodeGetFloatRects(nativePtr, node.nativePtr)
   }
 
   /** Public wrapper to retrieve Android ids associated with float rects. */
   fun getFloatRectAndroidIds(node: Node): IntArray {
-    return nativeNodeGetFloatRectAndroidIds(nativePtr, node.nativePtr)
+    return NativeHelpers.nativeNodeGetFloatRectAndroidIds(nativePtr, node.nativePtr)
   }
 
   fun printArenaStats() {
@@ -137,6 +154,7 @@ class Mason {
     val byId = byType.getOrPut(type) { mutableMapOf() }
 
     byId[id] = listener
+    Log.d("Mason", "addEventListener node=${node.objectId()} type=$type id=$id")
     return id
   }
 
@@ -151,6 +169,7 @@ class Mason {
   }
 
   fun dispatch(event: Event) {
+    Log.d("Mason", "dispatch type=${event.type} target=${event.target?.node?.objectId()}")
     val path = mutableListOf<Node>()
     var current: Node? = event.target?.node
     while (current != null) {
@@ -168,6 +187,7 @@ class Mason {
           ?.toList()
           ?: continue
 
+      Log.d("Mason", "dispatch: invoking ${listeners.size} listeners on node=${node.objectId()}")
       for (listener in listeners) {
         if (event.immediatePropagationStopped) break
         listener(event)
@@ -284,6 +304,21 @@ class Mason {
     return node
   }
 
+  fun createButtonNode(measure: MeasureFunc): Node {
+    val func = MeasureFuncImpl(WeakReference(measure))
+    val nodePtr = NativeHelpers.nativeNodeNewButtonWithContext(nativePtr, func.objectId)
+    val node = Node(this, nodePtr).apply {
+      nodes[nodePtr] = WeakReference(this)
+      measureFunc = measure
+      measureFuncImpl = func
+    }
+    NativeHelpers.nativeSetAndroidNode(nativePtr, node.nativePtr, node.objectId)
+
+    track(node)
+
+    return node
+  }
+
   fun createLineBreakNode(measure: MeasureFunc): Node {
     val func = MeasureFuncImpl(WeakReference(measure))
     val nodePtr = NativeHelpers.nativeNodeNewLineBreakWithContext(nativePtr, func.objectId)
@@ -337,6 +372,10 @@ class Mason {
     return TextView(context, this, type, isAnonymous)
   }
 
+  fun createTextArea(context: Context): TextArea {
+    return TextArea(context, this)
+  }
+
   fun createImageView(context: Context): Img {
     return Img(context, this)
   }
@@ -371,7 +410,11 @@ class Mason {
   fun nodeForView(view: android.view.View): Node {
     return when (view) {
       is Element -> {
-        nodes[view.node.nativePtr]?.get() ?: run {
+        val existingRef = nodes[view.node.nativePtr]
+        val existing = existingRef?.get()
+        if (existing != null) {
+          existing
+        } else {
           val node = createNode().apply {
             this.view = view
           }
@@ -381,7 +424,11 @@ class Mason {
       }
 
       else -> {
-        viewNodes[view]?.get() ?: run {
+        val existingRef = viewNodes[view]
+        val existing = existingRef?.get()
+        if (existing != null) {
+          existing
+        } else {
           // is leaf to ensure it triggers android's view measure
           val node = createNode().apply {
             this.view = view
@@ -480,11 +527,40 @@ class Mason {
     @JvmStatic
     private external fun nativeGetBuffer(mason: Long, handle: Int): Int
 
+    /**
+     * Enable or disable CSS Preflight (web-normalised / Tailwind-like) defaults.
+     *
+     * When enabled every element starts with a clean slate:
+     *  - `box-sizing: border-box`
+     *  - `margin: 0`, `padding: 0`, `border-width: 0`
+     *  - `background: transparent`
+     *  - `list-style: none` on lists
+     *  - `display: block` on replaced elements (`<img>`)
+     *
+     * The flag is global; calling this also re-seeds the current Mason
+     * instance's arena so that unstyled nodes immediately inherit the new
+     * defaults.  Nodes that have already been individually styled are
+     * unaffected.
+     */
     @JvmStatic
-    private external fun nativeNodeGetFloatRects(mason: Long, node: Long): FloatArray
+    private external fun nativeSetPreflight(mason: Long, enabled: Boolean)
 
     @JvmStatic
-    private external fun nativeNodeGetFloatRectAndroidIds(mason: Long, node: Long): IntArray
+    private external fun nativeGetPreflight(): Boolean
 
   }
+
+  // Preflight
+
+  /**
+   * Whether CSS Preflight (web-normalised) defaults are active.
+   *
+   * Set this **before** creating views so that newly created nodes start from
+   * the preflight baseline.  Changing it after the fact re-seeds default
+   * handles but does not retroactively alter nodes that were already individually
+   * styled.
+   */
+  var preflight: Boolean
+    get() = nativeGetPreflight()
+    set(value) = nativeSetPreflight(nativePtr, value)
 }

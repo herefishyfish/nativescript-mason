@@ -27,25 +27,36 @@ class Scroll @JvmOverloads constructor(
   override val style: Style
     get() = node.style
 
+  // Effective scroll enable — updated after measurement for `auto` mode.
+  private var _enableScrollX: Boolean = false
+  private var _enableScrollY: Boolean = false
+
   override var enableScrollX: Boolean
-    get() {
-      return when (val value = node.style.values.get(StyleKeys.OVERFLOW_X)) {
-        Overflow.Scroll.value, Overflow.Auto.value -> true
-        Overflow.Visible.value, Overflow.Hidden.value, Overflow.Clip.value -> false
-        else -> throw IllegalArgumentException("Unknown overflow enum value: $value")
-      }
-    }
-    set(value) {}
+    get() = _enableScrollX
+    set(value) { _enableScrollX = value }
 
   override var enableScrollY: Boolean
-    get() {
-      return when (val value = node.style.values.get(StyleKeys.OVERFLOW_Y)) {
-        Overflow.Scroll.value, Overflow.Auto.value -> true
-        Overflow.Visible.value, Overflow.Hidden.value, Overflow.Clip.value -> false
-        else -> throw IllegalArgumentException("Unknown overflow enum value: $value")
-      }
-    }
-    set(value) {}
+    get() = _enableScrollY
+    set(value) { _enableScrollY = value }
+
+  private fun isScrollableX(): Boolean {
+    return node.style.values.get(StyleKeys.OVERFLOW_X) == Overflow.Scroll.value
+  }
+
+  private fun isScrollableY(): Boolean {
+    return node.style.values.get(StyleKeys.OVERFLOW_Y) == Overflow.Scroll.value
+  }
+
+  private fun isAutoX(): Boolean {
+    return node.style.values.get(StyleKeys.OVERFLOW_X) == Overflow.Auto.value
+  }
+
+  // Default `visible` on Y acts as `auto` (web-like); horizontal stays non-scrolling
+  // to avoid surprise sideways scroll. Explicit `hidden`/`clip`/`scroll` override.
+  private fun isAutoY(): Boolean {
+    val v = node.style.values.get(StyleKeys.OVERFLOW_Y)
+    return v == Overflow.Auto.value || v == Overflow.Visible.value
+  }
 
   constructor(context: Context, mason: Mason) : this(context, null, 0, true) {
     node = mason.createNode().apply {
@@ -82,13 +93,14 @@ class Scroll @JvmOverloads constructor(
   }
 
   override fun dispatchDraw(canvas: Canvas) {
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-    ViewUtils.dispatchDraw(this, canvas, style) {
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) {
       super.dispatchDraw(it)
     }
   }
 
-  // ── addView: manage Mason node tree, then delegate to FrameLayout ──────
+  // addView: manage Mason node tree, then delegate to FrameLayout
 
   override fun addView(child: android.view.View) {
     child ?: return
@@ -123,7 +135,27 @@ class Scroll @JvmOverloads constructor(
     node.addChildAt(childNode, index)
   }
 
-  // ── Measurement ────────────────────────────────────────────────────────
+  // removeView is the inverse of addView — drop the mason node (which detaches
+  // the android view under suppression via NodeUtils.removeView) so removals
+  // don't orphan the node and leave stale layout slots.
+
+  override fun removeView(view: android.view.View?) {
+    view ?: return
+    val childNode = if (view is Element) view.node else node.mason.nodeForView(view)
+    if (node.suppressChildOps > 0) { super.removeView(view); return }
+    if (childNode.parent == node) {
+      node.removeChild(childNode)
+      return
+    }
+    super.removeView(view)
+  }
+
+  override fun removeViewAt(index: Int) {
+    if (node.suppressChildOps > 0) { super.removeViewAt(index); return }
+    node.removeChildAt(index)
+  }
+
+  // Measurement
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val specWidth = MeasureSpec.getSize(widthMeasureSpec)
@@ -150,17 +182,6 @@ class Scroll @JvmOverloads constructor(
         val computedW = node.computedWidth.toInt()
         val computedH = node.computedHeight.toInt()
 
-        // Read content dimensions from the layout tree root (index 0).
-        val nv = node.layoutTree.cursor
-        nv.pointTo(0)
-        val cw = nv.contentWidth.toInt()
-        val ch = nv.contentHeight.toInt()
-
-        // Update scroll content dimensions — use content size when the axis
-        // is scrollable, otherwise use the box size (no scrolling needed).
-        scrollContentWidth = if (enableScrollX) maxOf(cw, computedW) else computedW
-        scrollContentHeight = if (enableScrollY) maxOf(ch, computedH) else computedH
-
         val measuredW = if (specWidthMode == MeasureSpec.EXACTLY) specWidth else computedW
         val measuredH = when (specHeightMode) {
           MeasureSpec.EXACTLY -> specHeight
@@ -168,17 +189,50 @@ class Scroll @JvmOverloads constructor(
           else -> computedH
         }
 
+        updateScrollState(measuredW, measuredH)
+
         setMeasuredDimension(measuredW, measuredH)
       } else {
         setMeasuredDimension(specWidth, specHeight)
-        post { requestLayout() }
       }
     } else {
       setMeasuredDimension(specWidth, specHeight)
     }
   }
 
-  // ── Layout ─────────────────────────────────────────────────────────────
+  /**
+   * Update [_enableScrollX], [_enableScrollY], [scrollContentWidth], and
+   * [scrollContentHeight] from the current layout-tree data.  Called after
+   * the layout engine has computed this node.
+   */
+  private fun updateScrollState(viewportW: Int = -1, viewportH: Int = -1) {
+    val computedW = node.computedWidth.toInt()
+    val computedH = node.computedHeight.toInt()
+
+    val nv = node.layoutTree.cursor
+    nv.pointTo(0)
+    val cw = nv.contentWidth.toInt()
+    val ch = nv.contentHeight.toInt()
+
+    // For a height:auto container computedH == contentH, so comparing them would
+    // never report overflow. Use the actual laid-out viewport size instead.
+    val vpW = when { viewportW >= 0 -> viewportW; width > 0 -> width; else -> computedW }
+    val vpH = when { viewportH >= 0 -> viewportH; height > 0 -> height; else -> computedH }
+
+    // Taffy content size (cw/ch) excludes the container's own padding; the
+    // scrollable region must include it (the computed box), else the bottom
+    // padding is unreachable. Use the larger of content size and computed box.
+    val fullW = maxOf(cw, computedW)
+    val fullH = maxOf(ch, computedH)
+
+    _enableScrollX = isScrollableX() || (isAutoX() && fullW > vpW)
+    _enableScrollY = isScrollableY() || (isAutoY() && fullH > vpH)
+
+    scrollContentWidth = if (_enableScrollX) maxOf(fullW, vpW) else vpW
+    scrollContentHeight = if (_enableScrollY) maxOf(fullH, vpH) else vpH
+  }
+
+  // Layout
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
     // Run base TwoDScrollView logic (focus, scroll-position clamping).
@@ -194,6 +248,11 @@ class Scroll @JvmOverloads constructor(
       }
       if (node.layoutTree.nodeCount != 0) {
         applyLayoutFlat(node, node.layoutTree)
+      }
+    } else {
+      // When laid out by a parent Element, the parent computed our layout.
+      if (node.layoutTree.nodeCount > 0) {
+        updateScrollState(r - l, b - t)
       }
     }
 

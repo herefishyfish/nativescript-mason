@@ -42,12 +42,11 @@ export class Tree {
     this._base = base ?? new org.nativescript.mason.masonkit.Mason();
   }
 
-  static {
-    this._tree = new Tree(org.nativescript.mason.masonkit.Mason.getShared());
-    this._tree._base.setDeviceScale(Screen.mainScreen.scale);
-  }
-
   static get instance() {
+    if (!Tree._tree) {
+      Tree._tree = new Tree(org.nativescript.mason.masonkit.Mason.getShared());
+      Tree._tree._base.setDeviceScale(Screen.mainScreen.scale);
+    }
     return Tree._tree;
   }
 
@@ -117,6 +116,11 @@ export class Tree {
     return this.native.createBr(context);
   }
 
+  createTextArea(context) {
+    //@ts-ignore
+    return this.native.createTextArea(context);
+  }
+
   createInputView(context?, type?: InputType) {
     switch (type) {
       case 'number':
@@ -171,5 +175,13 @@ export class Tree {
 
   createListItem(context) {
     return this.native.createListItem(context);
+  }
+
+  get preflight(): boolean {
+    return this.native.getPreflight();
+  }
+
+  set preflight(value: boolean) {
+    this.native.setPreflight(value);
   }
 }

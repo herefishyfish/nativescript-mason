@@ -15,6 +15,8 @@ use std::ffi::c_void;
 mod node;
 pub mod style;
 
+
+
 const INLINE_SEGMENT_CLASS: &str = "org/nativescript/mason/masonkit/InlineSegment";
 
 const INLINE_SEGMENT_TEXT_CLASS: &str = "org/nativescript/mason/masonkit/InlineSegment$Text";
@@ -198,6 +200,8 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                 "nativeSetAndroidNode",
                 "nativeNodeNewImage",
                 "nativeNodeNewImageWithContext",
+                "nativeNodeNewButton",
+                "nativeNodeNewButtonWithContext",
                 "nativeNodeNewLineBreak",
                 "nativeNodeNewLineBreakWithContext",
                 "nativeNodeNewListItem",
@@ -242,6 +246,8 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     "(JJ[Lorg/nativescript/mason/masonkit/InlineSegment;)V",
                     "(JJI)V",
                     "(JJI)V",
+                    "(J)J",
+                    "(JI)J",
                     "(J)J",
                     "(JI)J",
                     "(J)J",
@@ -293,6 +299,8 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     "!(JI)J",
                     "!(J)J",
                     "!(JI)J",
+                    "!(J)J",
+                    "!(JI)J",
                     "!(JJ)I",
                     "!(JJI)I",
                     "!(JJI)I",
@@ -336,6 +344,8 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     node::NodeNativeSetAndroidNode as *mut c_void,
                     node::NodeNativeNewImageNode as *mut c_void,
                     node::NodeNativeNewImageNodeWithContext as *mut c_void,
+                    node::NodeNativeNewButtonNode as *mut c_void,
+                    node::NodeNativeNewButtonNodeWithContext as *mut c_void,
                     node::NodeNativeNewLineBreakNodeNormal as *mut c_void,
                     node::NodeNativeNewLineBreakNodeWithContext as *mut c_void,
                     node::NodeNativeNewListItemNodeNormal as *mut c_void,
@@ -381,6 +391,8 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     node::NodeNativeSetAndroidNodeNormal as *mut c_void,
                     node::NodeNativeNewImageNodeNormal as *mut c_void,
                     node::NodeNativeNewImageNodeWithContextNormal as *mut c_void,
+                    node::NodeNativeNewButtonNodeNormal as *mut c_void,
+                    node::NodeNativeNewButtonNodeWithContextNormal as *mut c_void,
                     node::NodeNativeNewLineBreakNodeNormal as *mut c_void,
                     node::NodeNativeNewLineBreakNodeWithContextNormal as *mut c_void,
                     node::NodeNativeNewListItemNodeNormal as *mut c_void,
@@ -717,6 +729,7 @@ pub extern "system" fn MasonNativeSetDeviceScale(taffy: jlong, scale: jfloat) {
     native_set_device_scale(taffy, scale);
 }
 
+
 #[no_mangle]
 pub extern "system" fn MasonNativeSetDeviceScaleNormal(
     _env: JNIEnv,
@@ -778,5 +791,39 @@ pub extern "system" fn Java_org_nativescript_mason_masonkit_Mason_nativePrintAre
         let stats = mason.arena_state();
 
         log::info!("Arena stats: {:#?}", stats);
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_org_nativescript_mason_masonkit_Mason_nativeSetPreflight(
+    _: JNIEnv,
+    _: JObject,
+    mason: jlong,
+    enabled: jni::sys::jboolean,
+) {
+    mason_core::PREFLIGHT_ENABLED.store(
+        enabled != 0,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    if mason == 0 {
+        return;
+    }
+    unsafe {
+        let mason = &mut *(mason as *mut Mason);
+        mason.reset_arena_defaults();
+    }
+}
+
+
+#[no_mangle]
+pub extern "system" fn Java_org_nativescript_mason_masonkit_Mason_nativeGetPreflight(
+    _: JNIEnv,
+    _: JObject,
+) -> jni::sys::jboolean {
+    if mason_core::PREFLIGHT_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+        1
+    } else {
+        0
     }
 }

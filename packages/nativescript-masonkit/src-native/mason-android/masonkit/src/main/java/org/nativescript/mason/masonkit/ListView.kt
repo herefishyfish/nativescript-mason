@@ -3,7 +3,6 @@ package org.nativescript.mason.masonkit
 import android.content.Context
 import android.graphics.Canvas
 import android.util.AttributeSet
-import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -38,17 +37,22 @@ class ListView @JvmOverloads constructor(
   }
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-
-    ViewUtils.dispatchDraw(this, canvas, style) {
+    // Draw children's outset box shadows at parent level, after this view's own
+    // background/border so an opaque parent background can't paint over them.
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) {
       super.dispatchDraw(it)
     }
   }
 
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach { it.shader = null } // force rebuild on next draw
+    style.mBackground?.layers?.forEach {
+      it.shader = null
+      it.shaderWidth = -1
+      it.shaderHeight = -1
+    } // force rebuild on next draw
     style.mBorderRenderer.invalidate()
     super.onSizeChanged(w, h, oldw, oldh)
   }

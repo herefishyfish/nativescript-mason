@@ -1,6 +1,7 @@
 package org.nativescript.mason.masonkit
 
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
@@ -21,6 +22,7 @@ class Spans {
     DecorationLine,
     Justify,
     Tracking,
+    LetterSpacing,
     Size,
     Typeface
   }
@@ -29,7 +31,11 @@ class Spans {
     val type: Type
   }
 
-  class TypefaceSpan(private val typeface: Typeface, private val isBold: Boolean = false, private val isItalic: Boolean = false) :
+  class TypefaceSpan(
+    private val typeface: Typeface,
+    private val isBold: Boolean = false,
+    private val isItalic: Boolean = false
+  ) :
     android.text.style.MetricAffectingSpan(),
     NSCSpan {
     override val type: Type
@@ -62,15 +68,55 @@ class Spans {
       get() = Type.Typeface
   }
 
-  class SizeSpan(size: Int, scale: Boolean = false) :
-    android.text.style.AbsoluteSizeSpan(size, scale), NSCSpan {
+  class SizeSpan(val attributes: TextDefaultAttributes, val scale: Boolean = false) :
+    android.text.style.AbsoluteSizeSpan(attributes.fontSize ?: Constants.DEFAULT_FONT_SIZE, scale),
+    NSCSpan {
     override val type: Type
       get() = Type.Size
+
+    override fun getSize(): Int {
+      return attributes.fontSize ?: Constants.DEFAULT_FONT_SIZE
+    }
+
+    override fun updateDrawState(ds: TextPaint) {
+      val size = attributes.fontSize ?: Constants.DEFAULT_FONT_SIZE
+      if (scale) {
+        ds.textSize = size * ds.density
+      } else {
+        ds.textSize = size.toFloat()
+      }
+    }
   }
 
   class ScaleXSpan(scale: Float) : android.text.style.ScaleXSpan(scale), NSCSpan {
     override val type: Type
       get() = Type.Justify
+  }
+
+  /**
+   * CSS `letter-spacing` tracking via [TextPaint.setLetterSpacing] (EM units) — not
+   * ScaleXSpan, which distorts glyph widths. [letterSpacingPx] is physical px;
+   * divide by textSize for EMs. Matches iOS `.kern`.
+   */
+  class LetterSpacingSpan(private val letterSpacingPx: Float) :
+    android.text.style.MetricAffectingSpan(), NSCSpan {
+    override val type: Type
+      get() = Type.LetterSpacing
+
+    override fun updateDrawState(tp: TextPaint?) {
+      tp?.let { apply(it) }
+    }
+
+    override fun updateMeasureState(textPaint: TextPaint) {
+      apply(textPaint)
+    }
+
+    private fun apply(tp: TextPaint) {
+      val textSize = tp.textSize
+      if (textSize > 0f) {
+        tp.letterSpacing = letterSpacingPx / textSize
+      }
+    }
   }
 
   // used to track empty children
@@ -109,7 +155,8 @@ class Spans {
       get() = Type.DecorationLine
   }
 
-  class UnderlineSpan(val color: Int, private val thicknessPx: Float = 0f) : LineBackgroundSpan, NSCSpan {
+  class UnderlineSpan(val color: Int, private val thicknessPx: Float = 0f) : LineBackgroundSpan,
+    NSCSpan {
     override val type: Type
       get() = Type.DecorationLine
 
@@ -135,7 +182,8 @@ class Spans {
       // Draw underline slightly below baseline using descent
       val y = baseline + fm.descent + (thicknessPx / 2f)
 
-      paint.strokeWidth = if (thicknessPx > 0f) thicknessPx else (oldStrokeWidth.takeIf { it > 0f } ?: 1f)
+      paint.strokeWidth =
+        if (thicknessPx > 0f) thicknessPx else (oldStrokeWidth.takeIf { it > 0f } ?: 1f)
 
       canvas.drawLine(
         left.toFloat(),
@@ -163,17 +211,35 @@ class Spans {
     }
   }
 
-  class BackgroundColorSpan(val color: Int) : android.text.style.BackgroundColorSpan(color),
+  class BackgroundColorSpan(val attributes: TextDefaultAttributes) :
+    android.text.style.BackgroundColorSpan(attributes.backgroundColor ?: Color.TRANSPARENT),
     NSCSpan {
     override val type: Type
       get() = Type.BackgroundColor
+
+    override fun getBackgroundColor(): Int {
+      return attributes.backgroundColor ?: Color.TRANSPARENT
+    }
+
+    override fun updateDrawState(textPaint: TextPaint) {
+      textPaint.bgColor = attributes.backgroundColor ?: Color.TRANSPARENT
+    }
   }
 
-  class ForegroundColorSpan(val color: Int) : android.text.style.ForegroundColorSpan(color),
+  class ForegroundColorSpan(val attributes: TextDefaultAttributes) :
+    android.text.style.ForegroundColorSpan(attributes.color ?: Color.BLACK),
     NSCSpan {
-
     override val type: Type
       get() = Type.ForegroundColor
+
+
+    override fun getForegroundColor(): Int {
+      return attributes.color ?: Color.BLACK
+    }
+
+    override fun updateDrawState(textPaint: TextPaint) {
+      textPaint.color = attributes.color ?: Color.BLACK
+    }
   }
 
   class OverlineSpan(
@@ -216,7 +282,8 @@ class Spans {
     }
   }
 
-  class BlockQuoteBackgroundSpan(private val color: Int, private val barWidthPx: Float) : LineBackgroundSpan {
+  class BlockQuoteBackgroundSpan(private val color: Int, private val barWidthPx: Float) :
+    LineBackgroundSpan {
 
     override fun drawBackground(
       canvas: Canvas,

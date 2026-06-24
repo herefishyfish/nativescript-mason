@@ -37,11 +37,10 @@ export class Tree {
     this._base = base ?? NSCMason.new();
   }
 
-  static {
-    this._tree = new Tree(NSCMason.shared);
-  }
-
   static get instance() {
+    if (!Tree._tree) {
+      Tree._tree = new Tree(NSCMason.shared);
+    }
     return Tree._tree;
   }
 
@@ -85,6 +84,7 @@ export class Tree {
   }
 
   createTextNode() {
+    //@ts-ignore
     return this.native.createTextNode('');
   }
 
@@ -102,6 +102,10 @@ export class Tree {
 
   createBr() {
     return this.native.createBr();
+  }
+
+  createTextArea() {
+    return this.native.createTextArea();
   }
 
   createInputView(context?, type?: InputType) {
@@ -144,5 +148,28 @@ export class Tree {
 
   createListItem() {
     return this.native.createListItem();
+  }
+
+  /**
+   * Enable or disable CSS Preflight (web-normalised / Tailwind-like) defaults.
+   *
+   * When `true` every element starts from a clean, browser-normalised slate:
+   *  - `box-sizing: border-box`
+   *  - `margin: 0`, `padding: 0`, `border-width: 0`
+   *  - `background: transparent`
+   *  - `list-style: none` on lists
+   *  - `display: block` on `<img>`
+   *
+   * Set this **before** creating views for the cleanest result.  Changing it
+   * afterwards re-seeds the arena so that unstyled nodes immediately pick up
+   * the new defaults; nodes that were already individually styled are
+   * not affected.
+   */
+  get preflight(): boolean {
+    return this.native.preflight;
+  }
+
+  set preflight(value: boolean) {
+    this.native.preflight = value;
   }
 }

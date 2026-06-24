@@ -56,12 +56,16 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
   func onStyleChange(_ low: UInt64, _ high: UInt64) {
     let state = StateKeys(low: low, high: high)
     let color = state.contains(.color)
+    let caretColorChanged = state.contains(.caretColor)
     let size = state.contains(.fontSize)
     let font = state.contains(.fontWeight) || state.contains(.fontStyle) || state.contains(.fontFamily)
     switch self.type {
     case .Text, .Number, .Email, .Password, .Tel, .Url:
       if(color){
         textInput.textColor = UIColor.colorFromARGB(style.resolvedColor)
+        textInput.tintColor = UIColor.colorFromARGB(style.resolvedCaretColor)
+      } else if(caretColorChanged){
+        textInput.tintColor = UIColor.colorFromARGB(style.resolvedCaretColor)
       }
       if(font || size){
         let resolved = style.resolvedFontFace
@@ -110,7 +114,7 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
     field.owner = self
     
     if(style.font.uiFont == nil){
-      style.font.loadSync { _ in }
+      style.font.loadSync(nil)
     }
     if let font = style.font.uiFont {
       field.font = font
@@ -124,7 +128,7 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
     let input = MasonPasswordInput()
     input.owner = self
     if(style.font.uiFont == nil){
-      style.font.loadSync { _ in }
+      style.font.loadSync(nil)
     }
     if let font = style.font.uiFont {
       input.font = font
@@ -616,10 +620,10 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
     }
     switch type {
     case .Text, .Email, .Password, .Tel, .Url:
-      textInput.tintColor = UIColor.colorFromARGB(style.resolvedColor)
+      textInput.tintColor = UIColor.colorFromARGB(style.resolvedCaretColor)
       configure { style in
-        style.border = "2px"
-        style.borderRadius = "4px"
+        style.border = "1"
+        style.borderRadius = "4"
         style.padding = MasonRect(.Points(scale), .Points(scale * 2), .Points(scale), .Points(scale * 2))
         style.textAlign = TextAlign.Center
       }
@@ -657,8 +661,8 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
       break
     case .Button, .Submit:
       configure { style in
-        style.border = "2px"
-        style.borderRadius = "4px"
+        style.border = "1"
+        style.borderRadius = "4"
         style.padding = MasonRect(.Points(1), .Points(6), .Points(1), .Points(6))
         style.textAlign = TextAlign.Center
       }
@@ -679,8 +683,8 @@ public class MasonInput: UIView,MasonEventTarget, MasonElement, StyleChangeListe
       break
     case .Number:
       configure { style in
-        style.border = "2px"
-        style.borderRadius = "4px"
+        style.border = "1"
+        style.borderRadius = "4"
         style.padding = MasonRect(.Points(1), .Points(2), .Points(1), .Points(2))
         style.textAlign = TextAlign.Center
       }

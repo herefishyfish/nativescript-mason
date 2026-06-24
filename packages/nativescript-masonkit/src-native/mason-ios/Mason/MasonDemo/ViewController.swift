@@ -10,7 +10,7 @@ import Mason
 
 class ViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate, UICollectionViewDelegateFlowLayout, MasonList.MasonListDelegate, UIScrollViewDelegate {
   
-  let scale = Float(UIScreen.main.scale)
+  let scale = NSCMason.scale
   
   var items: [String] = []
   var olVirtualData: [String] = []
@@ -28,7 +28,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
   
   let document = NSCMason.shared.createDocument()
   
-  let body = NSCMason.shared.createScrollView()
+  let body = NSCMason.shared.createView()
 
   // Hacker News state
   var hnIds: [Int] = []
@@ -64,7 +64,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     
     
     func setupView(){
-      let scale = Float(UIScreen.main.scale)
+      let scale = NSCMason.scale
       bodyView.configure { style in
         style.alignItems = .Center
         style.flexDirection = .Column
@@ -101,7 +101,38 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     guard view.subviews.first is MasonUIView else {return}
     //      view.uiView.frame.origin.x += view.safeAreaInsets.left
     //                view.uiView.frame.origin.y += view.safeAreaInsets.top
+    // Add Transform demo launcher if not present
+    if navigationController != nil {
+      if navigationItem.rightBarButtonItem == nil {
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Transform", style: .plain, target: self, action: #selector(openTransform))
+      }
+    } else {
+      // Fallback: add a small floating button in the top-right
+      if view.viewWithTag(0xF00D) == nil {
+        let btn = UIButton(type: .system)
+        btn.setTitle("Transform", for: .normal)
+        btn.translatesAutoresizingMaskIntoConstraints = false
+        btn.addTarget(self, action: #selector(openTransform), for: .touchUpInside)
+        btn.tag = 0xF00D
+        view.addSubview(btn)
+        NSLayoutConstraint.activate([
+          btn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+          btn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12)
+        ])
+      }
+    }
     
+
+  }
+
+  @objc func openTransform() {
+    let vc = TransformViewController()
+    if let nav = navigationController {
+      nav.pushViewController(vc, animated: true)
+    } else {
+      let nav = UINavigationController(rootViewController: vc)
+      present(nav, animated: true, completion: nil)
+    }
   }
   
   override func viewSafeAreaInsetsDidChange() {
@@ -786,8 +817,66 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     body.addView(root)
   }
 
+  // Compact red-tile grid reproduction (no bottom-artifact)
+  func redGridSample() {
+    let root = mason.createView()
+    root.display = .Flex
+    root.flexDirection = .Column
+    root.style.padding = MasonRect(uniform: .Points(toPx(8)))
+
+    let container = mason.createView()
+    container.display = .Flex
+    container.flexDirection = .Row
+    container.style.flexWrap = .Wrap
+    container.style.gap = MasonSize(.Points(0), .Points(0))
+
+    // header colored pixels
+    let header = mason.createView()
+    header.display = .Flex
+    header.flexDirection = .Row
+    header.style.flexWrap = .NoWrap
+    header.style.marginBottom = .Points(toPx(6))
+
+    let colors = ["#FF5C5C","#FFB86B","#FFF36B","#9BFF6B","#6BFFEA","#6BA6FF","#C56BFF","#FF6BD1"]
+    for c in colors {
+      let dot = mason.createView()
+      dot.style.setSizeWidth(.Points(toPx(8)))
+      dot.style.setSizeHeight(.Points(toPx(8)))
+      dot.style.background = c
+      header.addView(dot)
+    }
+
+    container.addView(header)
+
+    // compute grid dimensions from screen px and add ~50dip padding to height
+    let box = toPx(10)
+    let maxWidthPx = Float(UIScreen.main.bounds.width) * scale
+    let maxHeightPx = Float(UIScreen.main.bounds.height) * scale + toPx(50)
+
+    let cols = max(1, Int(floor(Double(maxWidthPx / box))))
+    let rows = max(1, Int(floor(Double(maxHeightPx / box))))
+
+    for _ in 0..<rows {
+      for _ in 0..<cols {
+        let v = mason.createView()
+        v.style.setSizeWidth(.Points(box))
+        v.style.setSizeHeight(.Points(box))
+        let rand = Int.random(in: 0...0xFFFFFF)
+        let hex = String(format: "#%06X", rand)
+        v.style.background = hex
+        v.style.border = "1px solid #000000"
+        container.addView(v)
+      }
+    }
+
+    root.addView(container)
+    body.addView(root)
+  }
+
   // MARK: - Gallery Demo (polished cards)
   func gallerySample() {
+    body.style.background = "#FAFBFC"
+    
     let root = mason.createView()
     root.display = .Flex
     root.flexDirection = .Column
@@ -814,11 +903,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       card.style.background = "#FFFFFF"
       card.style.borderRadius = "8px"
       card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"
-      card.style.overflow = MasonPoint(uniform: .Clip)
 
       let iv = mason.createImageView()
-      iv.style.setSizeHeight(.Points(minWidth))
-      iv.style.setSizeWidth(.Percent(1))
+      iv.style.size = MasonSize(.Percent(1), .Points(minWidth))
       iv.style.objectFit = .Cover
       loadImage("https://picsum.photos/seed/gallery\(i)/800/500", imageInstance: iv, parent: card.uiView)
       card.addView(iv)
@@ -826,7 +913,12 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       let meta = mason.createView()
       meta.display = .Flex
       meta.flexDirection = .Column
-      meta.style.padding = MasonRect(uniform: .Points(toPx(24)))
+      meta.style.padding = MasonRect(
+        .Points(toPx(16)),
+        .Points(toPx(12)),
+        .Points(toPx(12)),
+        .Points(toPx(12))
+      )
 
       let title = mason.createTextView(type: .Span)
       title.append(text: "Gallery Item #\(i)")
@@ -917,8 +1009,11 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     
     // Remove all Mason node children from the scroll body
     self.body.removeAllChildren()
-
-    self.body.invalidate()
+    
+    self.hnContainer = nil
+    self.hnIds = []
+    self.hnIndex = 0
+    self.hnLoading = false
   }
   
   deinit {
@@ -934,20 +1029,26 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     // body auto-computes in layoutSubviews when bounds change
   }
   override func viewDidLoad() {
-    NSCMason.shared.setDeviceScale(Float(UIScreen.main.scale))
+    NSCMason.shared.setDeviceScale(NSCMason.scale)
     super.viewDidLoad()
     // Add a simple demo picker at the top and the Mason body below it
-    let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle"])
-    demoPicker.selectedSegmentIndex = 7
+    let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle","Shadow","Display"])
+    demoPicker.selectedSegmentIndex = 3
     demoPicker.addTarget(self, action: #selector(demoChanged(_:)), for: .valueChanged)
     demoPicker.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(demoPicker)
 
     // Configure Mason scroll body and add to view
     body.style.overflowY = .Scroll
+    body.tag = 1
     //body.style.background = "#FFFFFF"
     // Add body to view and constrain it below the picker
     body.translatesAutoresizingMaskIntoConstraints = false
+    // add a Bug button below the picker to present BugViewController
+    let bugButton = UIButton(type: .system)
+    bugButton.setTitle("Open Bug Demo", for: .normal)
+    bugButton.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(bugButton)
     view.addSubview(body)
 
     NSLayoutConstraint.activate([
@@ -956,11 +1057,18 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       demoPicker.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
       demoPicker.heightAnchor.constraint(equalToConstant: 32),
 
-      body.topAnchor.constraint(equalTo: demoPicker.bottomAnchor, constant: 8),
+      bugButton.topAnchor.constraint(equalTo: demoPicker.bottomAnchor, constant: 8),
+      bugButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+      bugButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+      bugButton.heightAnchor.constraint(equalToConstant: 36),
+
+      body.topAnchor.constraint(equalTo: bugButton.bottomAnchor, constant: 8),
       body.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       body.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       body.bottomAnchor.constraint(equalTo: view.bottomAnchor)
     ])
+
+    bugButton.addTarget(self, action: #selector(openBug(_:)), for: .touchUpInside)
 
     // Run initial sample
     demoChanged(demoPicker)
@@ -1002,46 +1110,114 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
           case 1:
             textSample()
           case 2:
-            gridSample()
+            // Grid-Area demo using CSS grid template areas
+            grid_template_areas_500(body)
           case 3:
             gallerySample()
           case 4:
             hackerNewsSample()
     case 5:
-      renderPseudoDemo(body)
+      inputTest()
+    //  renderPseudoDemo(body)
     case 6:
       renderFloat(body)
      // renderFontVariantNumericDemo(body)
     case 7:
       renderSuperellipseDemo(body)
+    case 8:
+      renderShadowDemo(body)
+    case 9:
+      renderDisplayDemo(body)
     default:
       renderSuperellipseDemo(body)
     }
   }
+
+  @objc func openBug(_ sender: Any) {
+//    let vc = BugViewController()
+//    vc.modalPresentationStyle = .fullScreen
+//    present(vc, animated: true, completion: nil)
+    openTransform()
+  }
   
   func inputTest(){
     let root = mason.createView()
-    
-    let input = mason.createInput()
-    input.placeholder = "Enter Text"
-    
-    let txt = mason.createTextView()
-    
-    let node = MasonTextNode(mason: mason, data: "")
-    
-    txt.mason_append(node: node)
-    
-    root.append(input)
-    root.append(mason.createBr())
-    root.append(txt)
-    
-    input.addEventListener("input") { event in
-      node.data = input.value
-    }
-    
+    root.style.setSizeWidth(MasonDimension.Percent(1))
+    root.style.setSizeHeight(MasonDimension.Auto)
+
+    // Add a TextArea demo
+    let ta = mason.createTextArea()
+    ta.placeholder = "Enter multi-line text"
+//    ta.rows = 4
+//    ta.cols = 40
+//    ta.maxLength = 500
+  //  ta.value = "Initial textarea value\nLine 2"
+//    ta.style.setSizeWidth(MasonDimension.Percent(1))
+//    ta.style.setSizeHeight(MasonDimension.Auto)
+
+    root.append(ta)
+
     body.addView(root)
-    
-   // body.computeWithSize(scale * Float( self.body.bounds.width), scale * Float( self.body.bounds.height))
+  }
+
+  // MARK: - Shadow Demo
+
+  func renderShadowDemo(_ parent: MasonElement) {
+    let v = mason.createView()
+    v.display = .Flex
+    v.flexDirection = .Column
+    v.style.background = "linear-gradient(to right, rgb(255,53,26), rgb(0,235,235))"
+    v.style.borderRadius = "0 50% 0 0"
+    v.style.boxShadow = "3 5 5 black"
+    v.style.borderLeft = "2 rgb(0,235,235) dotted"
+    v.style.borderTop = "2 rgb(255,53,26) dashed"
+    v.style.setSizeWidth(MasonDimension.Points(toPx(150)))
+    v.style.setSizeHeight(MasonDimension.Points(toPx(150)))
+    v.style.marginTop = .Percent(0.5)
+    v.style.marginLeft = .Points(toPx(50))
+
+    parent.addView(v)
+  }
+  
+  func renderDisplayDemo(_ parent: MasonElement) {
+    let container = mason.createView()
+    container.configure { style in
+      style.display = .Block
+      style.padding = MasonRect(uniform: .Points(toPx(16)))
+      style.background = "#FFFFFF"
+    }
+
+    let demo = mason.createView()
+    demo.display = .Flex
+    demo.flexDirection = .Column
+    demo.style.background = "linear-gradient(to right, rgb(255,53,26), rgb(0,235,235))"
+    demo.style.borderRadius = "0 50% 0 0"
+    demo.style.boxShadow = "3 5 5 black"
+    demo.style.borderLeft = "2 rgb(0,235,235) dotted"
+    demo.style.borderTop = "2 rgb(255,53,26) dashed"
+    demo.style.setSizeWidth(MasonDimension.Points(toPx(150)))
+    demo.style.setSizeHeight(MasonDimension.Points(toPx(150)))
+
+    let toggle = mason.createButton()
+    toggle.textContent = "Hide"
+    toggle.configure { style in
+      style.marginTop = .Points(toPx(12))
+      style.textAlign = .Left
+    }
+
+    toggle.addEventListener("click") { _ in
+      if demo.style.display == .None {
+        demo.style.display = .Flex
+        toggle.textContent = "Hide"
+      } else {
+        demo.style.display = .None
+        toggle.textContent = "Show"
+      }
+    }
+
+    container.addView(demo)
+    container.addView(toggle)
+    parent.addView(container)
   }
   
   
@@ -1530,8 +1706,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       "sidebar2 sidebar2"
       "footer  footer"
       """
-      it.gridTemplateColumns = "20% auto"
-      it.gap = MasonSize(MasonLengthPercentage.Points(16), MasonLengthPercentage.Points(16))
+      // Match web sample: fixed 100px sidebar and flexible content column (convert dp -> px)
+      it.gridTemplateColumns = "\(toPx(100))px auto"
+      it.gap = MasonSize(MasonLengthPercentage.Points(toPx(8)), MasonLengthPercentage.Points(toPx(8)))
     }
 
 
@@ -1602,7 +1779,72 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     root.append(elements: [header, sidebar, sidebar2, content, footer])
 
     rootLayout.append(body)
-    
+
+    // Holy Grail layout (matches web sample)
+    let holy = mason.createView()
+    holy.configure { it in
+      it.display = Display.Grid
+      it.gridTemplateAreas = """
+      "hg-header hg-header hg-header"
+      "hg-left hg-main hg-right"
+      "hg-footer hg-footer hg-footer"
+      """
+      it.gridTemplateColumns = "\(toPx(70))px 1fr \(toPx(70))px"
+      it.gridTemplateRows = "\(toPx(48))px 1fr \(toPx(40))px"
+      it.gap = MasonSize(MasonLengthPercentage.Points(toPx(6)), MasonLengthPercentage.Points(toPx(6)))
+    }
+
+    let hh = mason.createView()
+    hh.append(text: "Header")
+    hh.style.background = "#0984E3"
+    hh.style.borderRadius = "8px"
+    hh.style.display = .Flex
+    hh.style.alignItems = .Center
+    hh.style.justifyContent = .Center
+    hh.style.gridArea = "hg-header"
+
+    let left = mason.createView()
+    left.append(text: "Left")
+    left.style.background = "#6C5CE7"
+    left.style.gridArea = "hg-left"
+    left.style.borderRadius = "8px"
+    left.style.display = .Flex
+    left.style.alignItems = .Center
+    left.style.justifyContent = .Center
+
+    let main = mason.createView()
+    main.append(text: "Main Content")
+    main.style.background = "#00B894"
+    main.style.gridArea = "hg-main"
+    main.style.borderRadius = "8px"
+    main.style.display = .Flex
+    main.style.alignItems = .Center
+    main.style.justifyContent = .Center
+
+    let right = mason.createView()
+    right.append(text: "Right")
+    right.style.background = "#E84393"
+    right.style.gridArea = "hg-right"
+    right.style.borderRadius = "8px"
+    right.style.display = .Flex
+    right.style.alignItems = .Center
+    right.style.justifyContent = .Center
+
+    let hf = mason.createView()
+    hf.append(text: "Footer")
+    hf.style.background = "#2D3436"
+    hf.style.gridArea = "hg-footer"
+    hf.style.borderRadius = "8px"
+
+    holy.append(hh)
+    holy.append(left)
+    holy.append(main)
+    holy.append(right)
+    holy.append(hf)
+
+    holy.style.setSizeHeight(toPx(240), 1)
+    rootLayout.append(holy)
+
     self.body.computeWithSize(scale * Float( self.body.bounds.width), scale * Float( self.body.bounds.height))
     
   }
@@ -1885,7 +2127,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     section.append(imgNarrow)
   }
 
-  func objectFit(_ scroll: Scroll) {
+  func objectFit(_ scroll: MasonUIView) {
     let section = mason.createView()
     let mdnLogoOnlyColor =
       "https://b4eb5495-cf4e-4b34-a1f5-d7ee06ed21f7.mdnplay.dev/en-US/docs/Web/CSS/Reference/Properties/object-fit/mdn_logo_only_color.png"
@@ -1919,7 +2161,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     )
   }
 
-  func renderFloat(_ view: Scroll) {
+  func renderFloat(_ view: MasonUIView) {
     let section = mason.createView()
     let one = mason.createView()
     one.append(text: "1")
@@ -1967,24 +2209,27 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
   
   // MARK: - Pseudo State Demo
 
-  private func pseudoSetBg(_ buf: UnsafeMutableBufferPointer<UInt8>, _ argb: UInt32) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBg(_ buf: NSMutableData, _ argb: UInt32) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = argb
     memcpy(base + StyleKeys.BACKGROUND_COLOR, &val, 4)
     base.advanced(by: StyleKeys.BACKGROUND_COLOR_STATE).pointee = 1
     MasonNode.markPseudoSet(buf, .backgroundColor)
   }
 
-  private func pseudoSetFontColor(_ buf: UnsafeMutableBufferPointer<UInt8>, _ argb: UInt32) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetFontColor(_ buf: NSMutableData, _ argb: UInt32) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = argb
     memcpy(base + StyleKeys.FONT_COLOR, &val, 4)
     base.advanced(by: StyleKeys.FONT_COLOR_STATE).pointee = 1
     MasonNode.markPseudoSet(buf, .color)
   }
 
-  private func pseudoSetBorderColor(_ buf: UnsafeMutableBufferPointer<UInt8>, _ argb: UInt32) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBorderColor(_ buf: NSMutableData, _ argb: UInt32) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = argb
     for offset in [StyleKeys.BORDER_LEFT_COLOR, StyleKeys.BORDER_RIGHT_COLOR,
                    StyleKeys.BORDER_TOP_COLOR, StyleKeys.BORDER_BOTTOM_COLOR] {
@@ -1993,8 +2238,9 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     MasonNode.markPseudoSet(buf, .borderColor)
   }
 
-  private func pseudoSetBorderWidth(_ buf: UnsafeMutableBufferPointer<UInt8>, _ px: Float) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBorderWidth(_ buf: NSMutableData, _ px: Float) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = px
     for (t, v) in [(StyleKeys.BORDER_LEFT_TYPE, StyleKeys.BORDER_LEFT_VALUE),
                    (StyleKeys.BORDER_RIGHT_TYPE, StyleKeys.BORDER_RIGHT_VALUE),
@@ -2006,18 +2252,20 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     MasonNode.markPseudoSet(buf, .border)
   }
 
-  private func pseudoSetBorderRadius(_ buf: UnsafeMutableBufferPointer<UInt8>, _ px: Float) {
-    guard buf.count > 0, let base = buf.baseAddress else { return }
+  private func pseudoSetBorderRadius(_ buf: NSMutableData, _ px: Float) {
+    guard !buf.isEmpty else { return }
+    let base = buf.mutableBytes.assumingMemoryBound(to: UInt8.self)
     var val = px
-    for xType in [StyleKeys.BORDER_RADIUS_TOP_LEFT_X_TYPE, StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_TYPE,
-                  StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_TYPE] {
-      base.advanced(by: xType).pointee = 0
-      memcpy(base + xType + 1, &val, 4)
-    }
-    for yType in [StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_TYPE, StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_TYPE,
-                  StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE] {
-      base.advanced(by: yType).pointee = 0
-      memcpy(base + yType + 1, &val, 4)
+    for (t, v) in [(StyleKeys.BORDER_RADIUS_TOP_LEFT_X_TYPE, StyleKeys.BORDER_RADIUS_TOP_LEFT_X_VALUE),
+                   (StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_TYPE, StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_VALUE),
+                   (StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE, StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE),
+                   (StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_TYPE, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_VALUE),
+                   (StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_TYPE, StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_VALUE),
+                   (StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_TYPE, StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_VALUE),
+                   (StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE, StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE),
+                   (StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE)] {
+      base.advanced(by: t).pointee = 0
+      memcpy(base + v, &val, 4)
     }
     MasonNode.markPseudoSet(buf, .borderRadius)
   }
@@ -2035,7 +2283,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
 
   // MARK: - Superellipse Demo
 
-  func renderSuperellipseDemo(_ view: Scroll) {
+  func renderSuperellipseDemo(_ view: MasonUIView) {
     let container = mason.createView()
     container.configure { style in
       style.display = .Block
@@ -2056,7 +2304,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       return label
     }
 
-    // ─── 1. Side-by-Side Comparison ────────────────────────────────
+    // 1. Side-by-Side Comparison
     container.append(sectionLabel("CIRCULAR VS SQUIRCLE"))
 
     let compRow = mason.createView()
@@ -2113,7 +2361,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     compRow.append(squircleCard)
     container.append(compRow)
 
-    // ─── 2. Exponent Spectrum ──────────────────────────────────────
+    // 2. Exponent Spectrum
     container.append(sectionLabel("EXPONENT SPECTRUM"))
 
     let samples: [(shape: String, label: String, bg: String, border: String)] = [
@@ -2149,7 +2397,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       container.append(card)
     }
 
-    // ─── 3. Per-Corner Mixed Shapes ────────────────────────────────
+    // 3. Per-Corner Mixed Shapes
     container.append(sectionLabel("PER-CORNER MIXED SHAPES"))
 
     let mixed = mason.createView()
@@ -2175,7 +2423,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     mixed.append(mixedLabel)
     container.append(mixed)
 
-    // ─── 4. App Icon Grid ──────────────────────────────────────────
+    // 4. App Icon Grid
     container.append(sectionLabel("APP ICON GRID — SQUIRCLE SHOWCASE"))
 
     let grid = mason.createView()
@@ -2203,7 +2451,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
     container.append(grid)
 
-    // ─── 5. Notification Banners ───────────────────────────────────
+    // 5. Notification Banners
     container.append(sectionLabel("NOTIFICATION BANNERS"))
 
     let banners: [(text: String, bg: String, border: String, fg: String)] = [
@@ -2238,7 +2486,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       container.append(banner)
     }
 
-    // ─── 6. Pill Buttons ───────────────────────────────────────────
+    // 6. Pill Buttons
     container.append(sectionLabel("PILL BUTTONS — CIRCULAR VS SQUIRCLE"))
 
     let pillRow = mason.createView()
@@ -2280,11 +2528,11 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     view.append(container)
   }
 
-  func renderPseudoDemo(_ view: Scroll) {
+  func renderPseudoDemo(_ view: MasonUIView) {
     let container = mason.createView()
     container.configure { style in
       style.display = .Block
-      style.padding = MasonRect(uniform: .Points(toPx(16)))
+     style.padding = MasonRect(uniform: .Points(toPx(16)))
       style.background = "#FFFFFF"
     }
 
@@ -2310,12 +2558,10 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       radius: String? = nil,
       paddingH: Float = 16,
       paddingV: Float = 10,
-      fullWidth: Bool = true
     ) -> Button {
       let btn = mason.createButton()
       btn.textContent = label
       btn.configure { style in
-        style.display = fullWidth ? .Block : .InlineBlock
         if let bg = bg { style.background = bg }
         if let fg = fg { style.color = self.argb(fg) }
         if let border = border { style.border = border }
@@ -2404,7 +2650,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     let pill = styledButton("Subscribe",
       bg: "#7C3AED", fg: "#FFFFFF",
       border: "0 solid #7C3AED", radius: "999",
-      paddingH: 24, paddingV: 10, fullWidth: false)
+      paddingH: 24, paddingV: 10)
     container.addView(pill)
 
     let pillHover = pill.node.preparePseudoBuffer(PseudoState.hover.rawValue)
@@ -2750,7 +2996,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     body.computeWithSize(scale * Float(body.bounds.width), scale * Float(body.bounds.height))
   }
   
-  func renderFontVariantNumericDemo(_ view: Scroll) {
+  func renderFontVariantNumericDemo(_ view: MasonUIView) {
     let container = mason.createView()
     container.configure { style in
       style.display = .Block
@@ -2758,7 +3004,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
       style.background = "#EEF2FF"
     }
 
-    // --- Title ---
+    // Title
     let title = mason.createTextView(type: .P)
     title.append(text: "font-variant-numeric")
     title.configure { style in
@@ -2769,7 +3015,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     }
     container.addView(title)
 
-    // --- Timer Row ---
+    // Timer Row
     let timerRow = mason.createView()
     timerRow.configure { style in
       style.display = .Flex
@@ -2839,7 +3085,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     timerRow.addView(rightCard)
     container.addView(timerRow)
 
-    // --- Showcase Cards ---
+    // Showcase Cards
     let variants: [(String, String)] = [
       ("lining-nums", "0123456789"),
       ("oldstyle-nums", "0123456789"),

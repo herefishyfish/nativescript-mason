@@ -12,13 +12,17 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONArray
 import org.json.JSONObject
-import org.nativescript.mason.masonkit.FontFace
+import org.nativescript.fontmanager.FontWeight
+import org.nativescript.mason.masonkit.Dimension
 import org.nativescript.mason.masonkit.LengthPercentage
 import org.nativescript.mason.masonkit.LengthPercentageAuto
+import org.nativescript.mason.masonkit.Li
+import org.nativescript.mason.masonkit.ListView
 import org.nativescript.mason.masonkit.Mason
 import org.nativescript.mason.masonkit.Rect
 import org.nativescript.mason.masonkit.Scroll
 import org.nativescript.mason.masonkit.Size
+import org.nativescript.mason.masonkit.TextView
 import org.nativescript.mason.masonkit.View
 import org.nativescript.mason.masonkit.enums.AlignItems
 import org.nativescript.mason.masonkit.enums.Display
@@ -42,9 +46,9 @@ class WebActivity : AppCompatActivity() {
   }
 
   lateinit var body: Scroll
-  lateinit var root: View
   lateinit var contentRoot: View
   lateinit var container: View
+  lateinit var demoList: ListView
 
   // Hacker News live state
   private var hnIds: List<Int> = listOf()
@@ -53,108 +57,145 @@ class WebActivity : AppCompatActivity() {
   private var hnLoading: Boolean = false
   private val mainHandler = Handler(Looper.getMainLooper())
 
+  private val demoNames = listOf(
+    "Web Sample",
+    "Pricing",
+    "FAQ",
+    "Grid Demo",
+    "Gallery",
+    "Hacker News",
+    "Box Shadow"
+  )
+
   private fun clearContent() {
     contentRoot.removeAllViews()
+    // Add a back bar at the top of every demo
+    val backBar = mason.createView(this)
+    backBar.display = Display.Flex
+    backBar.flexDirection = FlexDirection.Row
+    backBar.style.alignItems = AlignItems.Center
+    backBar.style.padding = Rect.withPx(toPx(12f), toPx(12f), toPx(12f), toPx(12f))
+    backBar.style.background = "#FFFFFF"
+    backBar.style.border = "0 0 1px 0 solid #E5E7EB"
+
+    val backBtn = mason.createButton(this)
+    backBtn.append("< Back")
+    backBtn.style.fontSize = 16
+    backBtn.style.fontWeight = FontWeight.Medium
+    backBtn.style.color = "#2196F3".toCSSColorInt()
+    backBtn.addEventListener("click") {
+      contentRoot.post {
+        clearContent()
+        showDemoList()
+      }
+    }
+    backBar.addView(backBtn)
+    contentRoot.append(backBar)
+  }
+
+  private fun showDemoList() {
+    body.style.padding = Rect.withPx(0f, 0f, 0f, 0f)
+    contentRoot.style.display = Display.None
+    demoList.style.display = Display.Flex
+    demoList.reload()
+  }
+
+  private fun showDemo(index: Int) {
+    demoList.style.display = Display.None
+    contentRoot.style.display = Display.Flex
+    when (index) {
+      0 -> webTextSample()
+      1 -> pricingSample()
+      2 -> faqSample()
+      3 -> gridDemoSample()
+      4 -> galleryDemoSample()
+      5 -> hackerNewsSample()
+      6 -> boxShadowSample()
+    }
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    // Build a container so the picker can sit above the scrolling content
+
     container = mason.createView(this)
     container.display = Display.Flex
     container.flexDirection = FlexDirection.Column
+    container.style.size = Size(Dimension.Percent(1f), Dimension.Percent(1f))
 
     body = mason.createScrollView(this)
-    root = mason.createView(this)
-    // top-level root (inside the scroll) holds the content container
     contentRoot = mason.createView(this)
-    body.addView(root)
     body.style.overflowY = Overflow.Scroll
 
-    // container: picker (added below) + scroll body
     body.addView(container)
 
     enableEdgeToEdge()
     setContentView(body)
-    ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+    ViewCompat.setOnApplyWindowInsetsListener(body) { v, insets ->
       val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      // apply padding to container so content respects system bars
-      root.style.setPadding(
+      body.style.setPadding(
         systemBars.left, systemBars.top, systemBars.right, systemBars.bottom
       )
       insets
     }
 
-    // build the example picker and default content
-    val pickerBar = mason.createView(this)
-    pickerBar.display = Display.Flex
-    pickerBar.flexDirection = FlexDirection.Row
-    pickerBar.style.justifyContent = JustifyContent.SpaceAround
-    pickerBar.style.alignItems = AlignItems.Center
-    pickerBar.style.padding = Rect.withPx(toPx(8f), toPx(8f), toPx(8f), toPx(8f))
-    pickerBar.style.background = "#FFFFFF"
-    pickerBar.style.marginBottom = LengthPercentageAuto.Points(toPx(12f))
-    // Ensure picker sits above content (touchable) by using a high z-index
-    pickerBar.style.zIndex = 10000
-    // Ensure contentRoot is behind picker
-    contentRoot.style.zIndex = 0
+    // Demo selection list
+    demoList = mason.createListView(this)
+    demoList.configure {
+      it.size = Size(Dimension.Percent(1f), Dimension.Points(resources.displayMetrics.heightPixels.toFloat()))
+    }
+    demoList.count = demoNames.size
 
-    fun addPickerButton(title: String, onClick: () -> Unit) {
-      val btn = mason.createButton(this)
-      btn.append(title)
-      btn.style.fontSize = 14
-      btn.style.fontWeight = FontFace.NSCFontWeight.Medium
-      btn.style.color = "#0F172A".toCSSColorInt()
-      btn.style.padding = Rect.withPx(toPx(8f), toPx(12f), toPx(8f), toPx(12f))
-      btn.style.borderRadius = "8px"
-      btn.style.background = "#F8FAFC"
-      // Ensure native clicks also trigger the sample switch (defensive)
-      btn.isClickable = true
-      // Also register at the Mason event layer
-      btn.addEventListener("click") {
-        contentRoot.post {
-          try {
-            onClick()
-          } catch (ex: Exception) {
-            Log.e("WebActivity", "error switching sample (mason)", ex)
+    demoList.listener = object : ListView.Listener {
+      override fun onCreate(type: Int): android.view.View {
+        val item = mason.createListItem(this@WebActivity)
+        val row = mason.createView(this@WebActivity)
+        row.configure {
+          it.display = Display.Flex
+          it.flexDirection = FlexDirection.Row
+          it.alignItems = AlignItems.Center
+          it.padding = Rect.withPx(toPx(16f), toPx(16f), toPx(16f), toPx(16f))
+        }
+        row.style.border = "0 0 1px 0 solid #E5E7EB"
+
+        val label = mason.createTextView(this@WebActivity)
+        label.fontSize = 18
+        label.fontWeight = FontWeight.Medium
+        label.color = "#0F172A".toCSSColorInt()
+        label.style.flexGrow = 1f
+        row.addView(label)
+
+        val chevron = mason.createTextView(this@WebActivity)
+        chevron.textContent = ">"
+        chevron.fontSize = 18
+        chevron.color = "#94A3B8".toCSSColorInt()
+        row.addView(chevron)
+
+        item.addView(row)
+        return item
+      }
+
+      override fun onBind(holder: ListView.Holder, index: Int) {
+        (holder.view as? Li)?.let { li ->
+          val row = li.getChildAt(0) as? android.view.ViewGroup
+          val label = row?.getChildAt(0) as? TextView
+          label?.textContent = demoNames[index]
+          li.addEventListener("click") {
+            showDemo(index)
           }
         }
       }
-      pickerBar.addView(btn)
+
+      override fun getItemViewType(position: Int): Int = 0
     }
 
-    addPickerButton("Web Sample") { webTextSample() }
-    addPickerButton("Pricing") { pricingSample() }
-    addPickerButton("FAQ") { faqSample() }
-    addPickerButton("Grid Demo") { gridDemoSample() }
-    addPickerButton("Gallery") { galleryDemoSample() }
-    addPickerButton("Hacker News") { hackerNewsSample() }
+    container.addView(demoList)
 
-    // place picker above the scroll body in the container
-    container.addView(pickerBar, 0)
-    // root already contains contentRoot
-    root.addView(contentRoot)
+    // contentRoot starts hidden; shown when a demo is selected
+    demoList.style.display = Display.None
+    body.addView(contentRoot)
 
-    // Ensure native Android view for picker is front-most and clickable
-    try {
-      val nativePicker = pickerBar.view
-      nativePicker.isClickable = true
-      nativePicker.bringToFront()
-      nativePicker.requestLayout()
-      nativePicker.invalidate()
-      // make sure contentRoot doesn't intercept touches
-      try {
-        contentRoot.view.isClickable = false
-      } catch (_: Exception) {
-      }
-    } catch (ex: Exception) {
-      Log.w("WebActivity", "unable to bring picker to front", ex)
-    }
-
-    // load default
-    // webTextSample()
-    //hackerNewsSample()
-    //gridDemoSample()
+    // Add a back button area above contentRoot
+  //  showDemoList()
     galleryDemoSample()
   }
 
@@ -246,7 +287,7 @@ class WebActivity : AppCompatActivity() {
     val rankView = mason.createTextView(this, TextType.Span)
     rankView.append(rank.toString())
     rankView.fontSize = 14
-    rankView.fontWeight = FontFace.NSCFontWeight.SemiBold
+    rankView.fontWeight = FontWeight.SemiBold
     rankView.color = "#64748B".toCSSColorInt()
     rankView.style.setSizeWidth(toPx(28f), 1.toByte())
     rankView.style.textAlign = TextAlign.Right
@@ -262,7 +303,7 @@ class WebActivity : AppCompatActivity() {
     val t = item.optString("title", "(no title)")
     title.append(t)
     title.fontSize = 16
-    title.fontWeight = FontFace.NSCFontWeight.SemiBold
+    title.fontWeight = FontWeight.SemiBold
     title.color = "#0F172A".toCSSColorInt()
     title.style.marginBottom = LengthPercentageAuto.Points(toPx(6f))
     // underline title to match Hacker News style
@@ -381,7 +422,8 @@ class WebActivity : AppCompatActivity() {
     val root = mason.createView(this)
     root.display = Display.Flex
     root.flexDirection = FlexDirection.Column
-    root.style.maxWidth = org.nativescript.mason.masonkit.Dimension.Points(resources.displayMetrics.widthPixels.toFloat())
+    root.style.maxWidth =
+      org.nativescript.mason.masonkit.Dimension.Points(resources.displayMetrics.widthPixels.toFloat())
     root.style.padding = Rect.withPx(toPx(16f), toPx(16f), toPx(16f), toPx(16f))
     contentRoot.append(root)
 
@@ -395,13 +437,13 @@ class WebActivity : AppCompatActivity() {
     root.addView(gallery)
 
     for (i in 1..8) {
-      val minWidth =  (resources.displayMetrics.widthPixels / 2).toFloat()
+      val minWidth = (resources.displayMetrics.widthPixels / 2).toFloat()
       val card = mason.createView(this)
       card.display = Display.Flex
       card.flexDirection = FlexDirection.Column
       card.style.setSizeWidth(0f, 1.toByte())
       card.style.flexGrow = 1f
-      card.style.minWidth = org.nativescript.mason.masonkit.Dimension.Points(minWidth)
+      card.style.minWidth = Dimension.Points(minWidth)
       card.style.background = "#FFFFFF"
       card.style.borderRadius = "8px"
       card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"
@@ -421,7 +463,7 @@ class WebActivity : AppCompatActivity() {
       val title = mason.createTextView(this, TextType.Span)
       title.append("Gallery Item #$i")
       title.fontSize = 16
-      title.fontWeight = FontFace.NSCFontWeight.Medium
+      title.fontWeight = FontWeight.Medium
       title.color = "#0F172A".toCSSColorInt()
       meta.addView(title)
 
@@ -454,7 +496,7 @@ class WebActivity : AppCompatActivity() {
     val logo = mason.createTextView(this, TextType.Span)
     logo.append("Y")
     logo.fontSize = 18
-    logo.fontWeight = FontFace.NSCFontWeight.SemiBold
+    logo.fontWeight = FontWeight.SemiBold
     logo.color = "#FFFFFF".toCSSColorInt()
     logo.style.marginRight = LengthPercentageAuto.Points(toPx(8f))
     logo.setOnClickListener {
@@ -470,7 +512,7 @@ class WebActivity : AppCompatActivity() {
     val hdrText = mason.createTextView(this, TextType.Span)
     hdrText.append("Hacker News — Top Stories")
     hdrText.fontSize = 18
-    hdrText.fontWeight = FontFace.NSCFontWeight.Bold
+    hdrText.fontWeight = FontWeight.Bold
     hdrText.color = "#FFFFFF".toCSSColorInt()
     header.addView(hdrText)
 
@@ -598,7 +640,7 @@ class WebActivity : AppCompatActivity() {
     heroTag.append("FEATURED DESTINATION")
     heroTag.color = "#FFFFFF".toCSSColorInt()
     heroTag.fontSize = 11
-    heroTag.fontWeight = FontFace.NSCFontWeight.SemiBold
+    heroTag.fontWeight = FontWeight.SemiBold
     heroTag.style.marginBottom = LengthPercentageAuto.Points(toPx(8f))
     heroContent.addView(heroTag)
 
@@ -606,7 +648,7 @@ class WebActivity : AppCompatActivity() {
     heroTitle.append("Discover the World")
     heroTitle.color = "#FFFFFF".toCSSColorInt()
     heroTitle.fontSize = 32
-    heroTitle.fontWeight = FontFace.NSCFontWeight.Bold
+    heroTitle.fontWeight = FontWeight.Bold
     heroTitle.style.marginBottom = LengthPercentageAuto.Points(toPx(8f))
     heroContent.addView(heroTitle)
 
@@ -643,7 +685,7 @@ class WebActivity : AppCompatActivity() {
       val statValue = mason.createTextView(this, TextType.Span)
       statValue.append(value)
       statValue.fontSize = 22
-      statValue.fontWeight = FontFace.NSCFontWeight.Bold
+      statValue.fontWeight = FontWeight.Bold
       statValue.color = "#1E293B".toCSSColorInt()
       statItem.addView(statValue)
 
@@ -668,7 +710,7 @@ class WebActivity : AppCompatActivity() {
     val title = mason.createTextView(this, TextType.H2)
     title.append("Pricing Plans")
     title.fontSize = 22
-    title.fontWeight = FontFace.NSCFontWeight.Bold
+    title.fontWeight = FontWeight.Bold
     pricingSection.addView(title)
 
     val plans = listOf(
@@ -694,13 +736,13 @@ class WebActivity : AppCompatActivity() {
       val n = mason.createTextView(this, TextType.H3)
       n.append(name)
       n.fontSize = 18
-      n.fontWeight = FontFace.NSCFontWeight.SemiBold
+      n.fontWeight = FontWeight.SemiBold
       card.addView(n)
 
       val p = mason.createTextView(this, TextType.Span)
       p.append(price)
       p.fontSize = 20
-      p.fontWeight = FontFace.NSCFontWeight.Bold
+      p.fontWeight = FontWeight.Bold
       p.style.marginBottom = LengthPercentageAuto.Points(toPx(8f))
       card.addView(p)
 
@@ -720,6 +762,28 @@ class WebActivity : AppCompatActivity() {
     contentRoot.append(pricingSection)
   }
 
+  private fun boxShadowSample() {
+    clearContent()
+    contentRoot.style.display = Display.Flex
+    contentRoot.style.background = "#FAFBFC"
+
+    val demo = mason.createView(this)
+    demo.display = Display.Flex
+    demo.flexDirection = FlexDirection.Column
+    demo.style.background = "linear-gradient(to right, rgb(255,53,26), rgb(0,235,235))"
+    demo.style.borderRadius = "0 50% 0 0"
+    demo.style.boxShadow = "3 5 5 black"
+    demo.style.borderLeft = "2 rgb(0,235,235) dotted"
+    demo.style.borderTop = "2 rgb(255,53,26) dashed"
+    demo.style.setSizeWidth(toPx(150f), 1.toByte())
+    demo.style.setSizeHeight(toPx(150f), 1.toByte())
+    // position roughly in the middle area for visibility
+    demo.style.marginTop = LengthPercentageAuto.Points(toPx(200f))
+    demo.style.marginLeft = LengthPercentageAuto.Points(toPx(100f))
+
+    contentRoot.append(demo)
+  }
+
   private fun faqSample() {
     clearContent()
     contentRoot.style.background = "#FFFFFF"
@@ -728,7 +792,7 @@ class WebActivity : AppCompatActivity() {
     val title = mason.createTextView(this, TextType.H2)
     title.append("Frequently Asked Questions")
     title.fontSize = 22
-    title.fontWeight = FontFace.NSCFontWeight.Bold
+    title.fontWeight = FontWeight.Bold
     faqSection.addView(title)
 
     val faqs = listOf(
@@ -744,7 +808,7 @@ class WebActivity : AppCompatActivity() {
       val qv = mason.createTextView(this, TextType.H3)
       qv.append(q)
       qv.fontSize = 16
-      qv.fontWeight = FontFace.NSCFontWeight.SemiBold
+      qv.fontWeight = FontWeight.SemiBold
       qv.style.marginBottom = LengthPercentageAuto.Points(toPx(6f))
       faqSection.addView(qv)
 

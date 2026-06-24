@@ -72,10 +72,7 @@ class SuperellipseActivity : AppCompatActivity() {
       )
       return header
     }
-
-    // ─────────────────────────────────────────────────────────────────
-    // 1. Side-by-Side Comparison: round vs squircle
-    // ─────────────────────────────────────────────────────────────────
+  // 1. Side-by-Side Comparison: round vs squircle
     container.addView(sectionHeader("CIRCULAR VS SQUIRCLE"))
 
     val comparison = mason.createView(this)
@@ -132,10 +129,7 @@ class SuperellipseActivity : AppCompatActivity() {
     comparison.addView(circularCard)
     comparison.addView(squircleCard)
     container.addView(comparison)
-
-    // ─────────────────────────────────────────────────────────────────
-    // 2. Exponent Spectrum
-    // ─────────────────────────────────────────────────────────────────
+  // 2. Exponent Spectrum
     container.addView(sectionHeader("EXPONENT SPECTRUM"))
 
     data class Sample(val shape: String, val label: String, val bg: String, val border: String)
@@ -178,10 +172,7 @@ class SuperellipseActivity : AppCompatActivity() {
       card.addView(text)
       container.addView(card)
     }
-
-    // ─────────────────────────────────────────────────────────────────
-    // 3. Per-Corner Mixed Shapes
-    // ─────────────────────────────────────────────────────────────────
+  // 3. Per-Corner Mixed Shapes
     container.addView(sectionHeader("PER-CORNER MIXED SHAPES"))
 
     val mixed = mason.createView(this)
@@ -205,10 +196,7 @@ class SuperellipseActivity : AppCompatActivity() {
     }
     mixed.addView(mixedLabel)
     container.addView(mixed)
-
-    // ─────────────────────────────────────────────────────────────────
-    // 4. App Icon Grid
-    // ─────────────────────────────────────────────────────────────────
+  // 4. App Icon Grid
     container.addView(sectionHeader("APP ICON GRID — SQUIRCLE"))
 
     val grid = mason.createView(this)
@@ -236,10 +224,7 @@ class SuperellipseActivity : AppCompatActivity() {
       grid.addView(icon)
     }
     container.addView(grid)
-
-    // ─────────────────────────────────────────────────────────────────
-    // 5. Notification Banners
-    // ─────────────────────────────────────────────────────────────────
+  // 5. Notification Banners
     container.addView(sectionHeader("NOTIFICATION BANNERS"))
 
     data class Banner(val text: String, val bg: String, val border: String, val fg: String)
@@ -282,10 +267,7 @@ class SuperellipseActivity : AppCompatActivity() {
       banner.addView(bannerText)
       container.addView(banner)
     }
-
-    // ─────────────────────────────────────────────────────────────────
-    // 6. Pill Buttons
-    // ─────────────────────────────────────────────────────────────────
+  // 6. Pill Buttons
     container.addView(sectionHeader("PILL BUTTONS"))
 
     val pillRow = mason.createView(this)
@@ -328,10 +310,7 @@ class SuperellipseActivity : AppCompatActivity() {
     pillRow.addView(pillButton("Circular", "#4F46E5", "#FFFFFF", "round"))
     pillRow.addView(pillButton("Squircle", "#059669", "#FFFFFF", "squircle"))
     container.addView(pillRow)
-
-    // ─────────────────────────────────────────────────────────────────
-    // Wire up: add the container to the scroll view
-    // ─────────────────────────────────────────────────────────────────
+  // Wire up: add the container to the scroll view
     layout.addView(container)
 
     enableEdgeToEdge()

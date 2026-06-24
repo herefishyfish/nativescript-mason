@@ -1,15 +1,17 @@
 // swift-interface-format-version: 1.0
-// swift-compiler-version: Apple Swift version 6.2.3 effective-5.10 (swiftlang-6.2.3.3.21 clang-1700.6.3.2)
-// swift-module-flags: -target arm64-apple-ios15.6 -enable-objc-interop -enable-library-evolution -swift-version 5 -enforce-exclusivity=checked -O -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -module-name Mason
-// swift-module-flags-ignorable: -no-verify-emitted-module-interface -formal-cxx-interoperability-mode=off -interface-compiler-version 6.2.3
+// swift-compiler-version: Apple Swift version 6.3.1 effective-5.10 (swiftlang-6.3.1.1.2 clang-2100.0.123.102)
+// swift-module-flags: -target arm64-apple-ios15.6 -enable-objc-interop -enable-library-evolution -swift-version 5 -O -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -module-name Mason
+// swift-module-flags-ignorable: -no-verify-emitted-module-interface -formal-cxx-interoperability-mode=off -interface-compiler-version 6.3.1
 import CoreImage.CIFilterBuiltins
 import CoreGraphics
 import CoreImage
 import CoreText
+import FontManager
 import Foundation
 @_exported import Mason
 import MetalKit
 import MetalPerformanceShaders
+import QuartzCore
 import Swift
 import UIKit
 import UniformTypeIdentifiers
@@ -17,123 +19,6 @@ import _Concurrency
 import _StringProcessing
 import _SwiftConcurrencyShims
 import simd
-@objc(NSCFontDisplay) public enum NSCFontDisplay : Swift.Int, Swift.RawRepresentable, Swift.Codable {
-  case auto
-  case block
-  case fallback
-  case optional
-  case swap
-  public typealias RawValue = Swift.Int
-  #if compiler(>=5.3) && $NonescapableTypes
-  public init?(rawValue: Swift.Int)
-  #endif
-  public var rawValue: Swift.Int {
-    get
-  }
-}
-@objc(NSCFontWeight) public enum NSCFontWeight : Swift.Int, Swift.RawRepresentable, Swift.Codable, Swift.CustomStringConvertible {
-  case thin
-  case extraLight
-  case light
-  case normal
-  case medium
-  case semiBold
-  case bold
-  case extraBold
-  case black
-  public var description: Swift.String {
-    get
-  }
-  public typealias RawValue = Swift.Int
-  #if compiler(>=5.3) && $NonescapableTypes
-  public init?(rawValue: Swift.Int)
-  #endif
-  public var rawValue: Swift.Int {
-    get
-  }
-  public var uiFontWeight: UIKit.UIFont.Weight {
-    get
-  }
-  public static func from(uiFontWeight: UIKit.UIFont.Weight) -> Mason.NSCFontWeight
-}
-@objcMembers @objc(NSCFontDescriptors) public class NSCFontDescriptors : ObjectiveC.NSObject, Swift.Codable, Foundation.NSMutableCopying {
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public func mutableCopy(with zone: ObjectiveC.NSZone? = nil) -> Any
-  #endif
-  @objc public init(family: Swift.String)
-  @objc public func update(_ value: Swift.String)
-  @objc public func setFontWeight(_ value: Swift.String)
-  @objc public func setFontStyle(_ value: Swift.String)
-  @objc deinit
-  public func encode(to encoder: any Swift.Encoder) throws
-  required public init(from decoder: any Swift.Decoder) throws
-}
-@objc(NSCFontFaceStatus) public enum NSCFontFaceStatus : Swift.Int, Swift.RawRepresentable {
-  case unloaded
-  case loading
-  case loaded
-  case error
-  public typealias RawValue = Swift.Int
-  #if compiler(>=5.3) && $NonescapableTypes
-  public init?(rawValue: Swift.Int)
-  #endif
-  public var rawValue: Swift.Int {
-    get
-  }
-}
-@_hasMissingDesignatedInitializers @objcMembers @objc(NSCFontFace) public class NSCFontFace : ObjectiveC.NSObject {
-  @objc public var font: CoreGraphics.CGFont? {
-    get
-  }
-  @objc public var fontData: Foundation.NSData? {
-    get
-  }
-  @objc public func updateDescriptor(value: Swift.String)
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public static func loadFromStyle(style: Swift.String) -> Mason.NSCFontFace?
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public static func importFromRemote(url: Swift.String, load: Swift.Bool, callback: @escaping ([Mason.NSCFontFace]?, Swift.String?) -> Swift.Void)
-  #endif
-  @objc public init(family: Swift.String)
-  @objc public init(family: Swift.String, owner style: Mason.MasonStyle)
-  @objc public init(family: Swift.String, source: Swift.String)
-  @objc public init(family: Swift.String, data source: Foundation.NSData)
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public init(_ family: Swift.String, _ source: Swift.String? = nil, _ descriptors: Mason.NSCFontDescriptors? = nil)
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public init(_ family: Swift.String, data: Foundation.NSData? = nil, _ descriptors: Mason.NSCFontDescriptors? = nil)
-  #endif
-  @objc public var status: Mason.NSCFontFaceStatus
-  @objc public var display: Mason.NSCFontDisplay
-  @objc public func setFontDisplay(value: Swift.String)
-  @objc public var style: Swift.String {
-    @objc get
-    @objc set
-  }
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public func setFontStyle(value: Swift.String, angle: Swift.String?)
-  #endif
-  @objc public var weight: Mason.NSCFontWeight {
-    @objc get
-    @objc set
-  }
-  @objc public func setFontWeight(value: Swift.String)
-  @objc public var family: Swift.String {
-    @objc get
-  }
-  @objc public var ascentOverride: Swift.String {
-    @objc get
-  }
-  @objc public var descentOverride: Swift.String {
-    @objc get
-  }
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public func load(_ callback: @escaping (Swift.String?) -> Swift.Void)
-  #endif
-  @objc deinit
-}
 @objcMembers @objc(MasonDocument) public class MasonDocument : ObjectiveC.NSObject {
   @objc final public let node: Mason.MasonNode
   @objc final public let mason: Mason.NSCMason
@@ -163,17 +48,13 @@ public struct Line<T> {
   @objc public static func FitContent(fit: Swift.Float) -> Mason.MinMax
   @objc public static func FitContentPercent(fit: Swift.Float) -> Mason.MinMax
   @objc public static let Auto: Mason.MinMax
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public static func fromTypeValue(_ minType: Swift.Int, _ minValue: Swift.Float, _ maxType: Swift.Int, _ maxValue: Swift.Float) -> Mason.MinMax?
-  #endif
   @objc public var cssValue: Swift.String {
     @objc get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var jsonValue: Swift.String? {
     @objc get
   }
-  #endif
   required public init(from decoder: any Swift.Decoder) throws
   public func encode(to encoder: any Swift.Encoder) throws
   @objc deinit
@@ -185,9 +66,7 @@ final public class CSSBorderRenderer {
     @objc override dynamic public func layoutSublayers()
     @objc override dynamic public init()
     @objc override dynamic public init(layer: Any)
-    #if compiler(>=5.3) && $NonescapableTypes
     @objc required dynamic public init?(coder: Foundation.NSCoder)
-    #endif
     @objc deinit
   }
   public enum BorderStyle : Swift.Equatable {
@@ -201,15 +80,11 @@ final public class CSSBorderRenderer {
     case ridge
     case inset
     case outset
-    #if compiler(>=5.3) && $NonescapableTypes
     public init?(rawValue: Swift.Int8)
-    #endif
     public var rawValue: Swift.Int8 {
       get
     }
-    #if compiler(>=5.3) && $NonescapableTypes
     public init?(name: Swift.String)
-    #endif
     public static func == (a: Mason.CSSBorderRenderer.BorderStyle, b: Mason.CSSBorderRenderer.BorderStyle) -> Swift.Bool
   }
   public class BorderSide : Swift.CustomStringConvertible {
@@ -241,7 +116,7 @@ final public class CSSBorderRenderer {
     }
     public static func == (a: Mason.CSSBorderRenderer.CornerRadius, b: Mason.CSSBorderRenderer.CornerRadius) -> Swift.Bool
   }
-  public struct BorderRadius {
+  public struct BorderRadius : Swift.Equatable {
     public var topLeft: Mason.CSSBorderRenderer.CornerRadius
     public var topRight: Mason.CSSBorderRenderer.CornerRadius
     public var bottomRight: Mason.CSSBorderRenderer.CornerRadius
@@ -249,6 +124,7 @@ final public class CSSBorderRenderer {
     public static var zero: Mason.CSSBorderRenderer.BorderRadius {
       get
     }
+    public static func == (a: Mason.CSSBorderRenderer.BorderRadius, b: Mason.CSSBorderRenderer.BorderRadius) -> Swift.Bool
   }
   final public var top: Mason.CSSBorderRenderer.BorderSide
   final public var right: Mason.CSSBorderRenderer.BorderSide
@@ -290,6 +166,9 @@ final public class CSSBorderRenderer {
   @objc @_Concurrency.MainActor @preconcurrency public func requestLayout()
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView)
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView, at: Swift.Int)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(_ view: UIKit.UIView)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(at index: Swift.Int)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeAllViews()
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func draw(_ rect: CoreFoundation.CGRect)
   @objc @_Concurrency.MainActor @preconcurrency public var textValues: Foundation.NSMutableData {
@@ -300,18 +179,11 @@ final public class CSSBorderRenderer {
   @objc deinit
 }
 extension Mason.Button {
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func touchesBegan(_ touches: Swift.Set<UIKit.UITouch>, with event: UIKit.UIEvent?)
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func touchesEnded(_ touches: Swift.Set<UIKit.UITouch>, with event: UIKit.UIEvent?)
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func touchesCancelled(_ touches: Swift.Set<UIKit.UITouch>, with event: UIKit.UIEvent?)
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func touchesMoved(_ touches: Swift.Set<UIKit.UITouch>, with event: UIKit.UIEvent?)
-  #endif
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func willMove(toWindow newWindow: UIKit.UIWindow?)
 }
 @_inheritsConvenienceInitializers @objc(NSCMason) @objcMembers public class NSCMason : ObjectiveC.NSObject {
   @objc public var nativePtr: Swift.OpaquePointer? {
@@ -324,9 +196,7 @@ extension Mason.Button {
   @objc public func nodeForView(_ view: UIKit.UIView, _ isLeaf: Swift.Bool = true) -> Mason.MasonNode
   @objc public func configureStyleForView(_ view: UIKit.UIView, _ block: (Mason.MasonStyle) -> Swift.Void)
   @objc public func styleForView(_ view: UIKit.UIView) -> Mason.MasonStyle
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public func styleForViewOrNode(_ viewOrNode: Any?) -> Mason.MasonStyle?
-  #endif
   @objc @discardableResult
   public func layoutForView(_ view: UIKit.UIView) -> Mason.MasonLayout
   @objc @discardableResult
@@ -356,11 +226,20 @@ extension Mason.Button {
   @objc public func printTree(_ node: Mason.MasonNode)
   @objc public func createTextNode() -> Mason.MasonNode
   @objc public func createImageNode() -> Mason.MasonNode
+  @objc public func createButtonNode() -> Mason.MasonNode
   @objc public func createLineBreakNode() -> Mason.MasonNode
   @objc public func createListView(isOrdered: Swift.Bool = false) -> Mason.MasonList
   public func createListItemNode(measure: @escaping Mason.MasonNode.MeasureFunc) -> Mason.MasonNode
   @objc public func createListItemNode() -> Mason.MasonNode
   @objc public func createListItem() -> Mason.MasonLi
+  @objc public func createTextArea() -> Mason.MasonTextArea
+  @objc public var preflight: Swift.Bool {
+    @objc get
+    @objc set
+  }
+  @objc public static var scale: Swift.Float {
+    @objc get
+  }
 }
 @_inheritsConvenienceInitializers @objcMembers @objc(MeasureOutput) public class MeasureOutput : ObjectiveC.NSObject {
   @objc override dynamic public init()
@@ -381,11 +260,9 @@ extension Mason.Button {
   @objc public var cssValue: Swift.String {
     @objc get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var jsonValue: Swift.String? {
     @objc get
   }
-  #endif
   required public init(from decoder: any Swift.Decoder) throws
   public func encode(to encoder: any Swift.Encoder) throws
   @objc deinit
@@ -438,9 +315,22 @@ public let MasonLengthPercentageSizeZero: Mason.MasonSize<Mason.MasonLengthPerce
   public var rawValue: Swift.Int32 {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Swift.Int32)
-  #endif
+}
+@objc(PseudoState) public enum PseudoState : Swift.UInt16 {
+  case `default` = 0
+  case hover = 0x01
+  case active = 0x02
+  case focus = 0x04
+  case focusWithin = 0x08
+  case focusVisible = 0x10
+  case disabled = 0x40
+  case checked = 0x80
+  public init?(rawValue: Swift.UInt16)
+  public typealias RawValue = Swift.UInt16
+  public var rawValue: Swift.UInt16 {
+    get
+  }
 }
 @_hasMissingDesignatedInitializers @objc(MasonNode) @objcMembers public class MasonNode : ObjectiveC.NSObject {
   @objc public var mason: Mason.NSCMason {
@@ -454,31 +344,36 @@ public let MasonLengthPercentageSizeZero: Mason.MasonSize<Mason.MasonLengthPerce
   @objc public var computedLayout: Mason.MasonLayout {
     get
   }
+  @objc public var isLayoutValid: Swift.Bool
   @objc public var document: Mason.MasonDocument? {
     get
   }
   public typealias MeasureFunc = (CoreFoundation.CGSize?, CoreFoundation.CGSize) -> CoreFoundation.CGSize
-  @objc public func setPseudoString(_ pseudoState: Swift.UInt16, key: Swift.String, value: Swift.String)
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public func getPseudoString(_ pseudoState: Swift.UInt16, key: Swift.String) -> Swift.String?
-  #endif
-  @objc public func clearPseudoString(_ pseudoState: Swift.UInt16, key: Swift.String)
+  @objc public func setPseudoString(_ pseudoState: Swift.UInt16, _ key: Swift.String, _ value: Swift.String)
+  @objc public func getPseudoString(_ pseudoState: Swift.UInt16, _ key: Swift.String) -> Swift.String?
+  @objc public func clearPseudoString(_ pseudoState: Swift.UInt16, _ key: Swift.String)
+  @objc public var pseudoMask: Swift.UInt16 {
+    @objc get
+  }
+  @objc public func hasPseudo(_ state: Mason.PseudoState) -> Swift.Bool
+  @objc public func setPseudo(_ state: Mason.PseudoState, _ enabled: Swift.Bool, autoDirty: Swift.Bool = true)
+  @objc public func getPseudoBuffer(_ flags: Swift.UInt16) -> Foundation.NSMutableData?
+  @objc public func preparePseudoBuffer(_ flags: Swift.UInt16) -> Foundation.NSMutableData
+  public func hasPseudoSetFor(_ key: Mason.StateKeys) -> Swift.Bool
+  public func hasPseudoSetInBuffer(_ flags: Swift.UInt16, _ key: Mason.StateKeys) -> Swift.Bool
+  public func getPseudoSetFlags(_ flags: Swift.UInt16) -> Mason.StateKeys
+  public static func markPseudoSet(buf: Swift.UnsafeMutableBufferPointer<Swift.UInt8>, key: Mason.StateKeys)
+  public static func markPseudoSet(_ buf: Foundation.NSMutableData, _ key: Mason.StateKeys)
   @objc public func getRootNode() -> Mason.MasonNode
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var parent: Mason.MasonNode? {
     @objc get
   }
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var parentNode: Mason.MasonNode? {
     @objc get
   }
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
   public var parentElement: (any Mason.MasonElement)? {
     get
   }
-  #endif
   @objc public var type: Mason.MasonNodeType {
     get
   }
@@ -494,44 +389,13 @@ public let MasonLengthPercentageSizeZero: Mason.MasonSize<Mason.MasonLengthPerce
     @objc get
   }
   @objc public func markDirty()
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public func getRoot() -> UIKit.UIView?
-  #endif
   @objc public func getDefaultAttributes() -> [Foundation.NSAttributedString.Key : Any]
 }
 extension Mason.MasonNode {
   @objc dynamic public func setChildren(value: [Mason.MasonNode])
   @objc dynamic public func appendChild(_ child: Mason.MasonNode)
   @objc dynamic public func removeAllChildren()
-}
-@objc(PseudoState) public enum PseudoState : Swift.UInt16 {
-  case `default` = 0
-  case hover = 0x01
-  case active = 0x02
-  case focus = 0x04
-  case focusWithin = 0x08
-  case focusVisible = 0x10
-  case disabled = 0x40
-  case checked = 0x80
-  #if compiler(>=5.3) && $NonescapableTypes
-  public init?(rawValue: Swift.UInt16)
-  #endif
-  public typealias RawValue = Swift.UInt16
-  public var rawValue: Swift.UInt16 {
-    get
-  }
-}
-extension Mason.MasonNode {
-  @objc dynamic public var pseudoMask: Swift.UInt16 {
-    @objc get
-  }
-  @objc dynamic public func hasPseudo(_ state: Mason.PseudoState) -> Swift.Bool
-  @objc dynamic public func setPseudo(_ state: Mason.PseudoState, _ enabled: Swift.Bool, autoDirty: Swift.Bool = true)
-  #if compiler(>=5.3) && $NonescapableTypes
-  public func getPseudoBuffer(_ flags: Swift.UInt16) -> Swift.UnsafeBufferPointer<Swift.UInt8>?
-  #endif
-  public func preparePseudoBuffer(_ flags: Swift.UInt16) -> Swift.UnsafeMutableBufferPointer<Swift.UInt8>
-  public static func markPseudoSet(_ buf: Swift.UnsafeMutableBufferPointer<Swift.UInt8>, _ key: Mason.StateKeys)
 }
 @objc public protocol MasonElementObjc : ObjectiveC.NSObjectProtocol {
   @objc var style: Mason.MasonStyle { get }
@@ -632,207 +496,6 @@ extension Mason.MasonElement {
   public func prepend(elements: [any Mason.MasonElement])
   public func prepend(nodes: [Mason.MasonNode])
 }
-@objc(MasonTextType) public enum MasonTextType : Swift.Int, Swift.RawRepresentable, Swift.CustomStringConvertible {
-  case None
-  case P
-  case Span
-  case Code
-  case H1
-  case H2
-  case H3
-  case H4
-  case H5
-  case H6
-  case Li
-  case Blockquote
-  case B
-  case Pre
-  case Strong
-  case Em
-  case I
-  case A
-  public typealias RawValue = Swift.Int32
-  public var rawValue: Mason.MasonTextType.RawValue {
-    get
-  }
-  #if compiler(>=5.3) && $NonescapableTypes
-  public init?(rawValue: Mason.MasonTextType.RawValue)
-  #endif
-  public var description: Swift.String {
-    get
-  }
-}
-public enum InlineSegmentPayload {
-  case text(width: Swift.Float, ascent: Swift.Float, descent: Swift.Float)
-  case inline(id: Swift.OpaquePointer, width: Swift.Float, height: Swift.Float, baseline: Swift.Float)
-}
-@objc @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class MasonTextLayer : QuartzCore.CALayer {
-  @objc override dynamic public init()
-  @objc override dynamic public init(layer: Any)
-  @objc override dynamic public func draw(in context: CoreGraphics.CGContext)
-  @objc deinit
-}
-@_hasMissingDesignatedInitializers @objc(MasonText) @objcMembers @_Concurrency.MainActor @preconcurrency public class MasonText : UIKit.UIView, Mason.MasonEventTarget, Mason.MasonElement, Mason.MasonElementObjc, Mason.TextContainer {
-  @_Concurrency.MainActor @preconcurrency @objc final public let node: Mason.MasonNode
-  @objc @_Concurrency.MainActor @preconcurrency final public let type: Mason.MasonTextType
-  @_Concurrency.MainActor @preconcurrency @objc public var engine: Mason.TextEngine {
-    @objc get
-    @objc set
-  }
-  @_Concurrency.MainActor @preconcurrency @objc override dynamic public class var layerClass: Swift.AnyClass {
-    @objc get
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var textValues: Foundation.NSMutableData {
-    @objc get
-  }
-  @_Concurrency.MainActor @preconcurrency @objc public func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
-  @_Concurrency.MainActor @preconcurrency @objc public var uiView: UIKit.UIView {
-    @objc get
-  }
-  @_Concurrency.MainActor @preconcurrency @objc public var style: Mason.MasonStyle {
-    @objc get
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public init(mason: Mason.NSCMason, type textType: Mason.MasonTextType)
-  @objc @_Concurrency.MainActor @preconcurrency public init(mason: Mason.NSCMason)
-  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func setNeedsDisplay()
-  @objc @_Concurrency.MainActor @preconcurrency public func requestLayout()
-  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
-  @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView)
-  @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView, at: Swift.Int)
-  @_Concurrency.MainActor @preconcurrency public var textOverflow: Mason.TextOverflow {
-    get
-    set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var textOverflowCompat: Mason.TextOverflowCompat {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var color: Swift.UInt32 {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public func setColor(ui color: UIKit.UIColor)
-  @objc @_Concurrency.MainActor @preconcurrency public var backgroundColorValue: Swift.UInt32 {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public func setBackgroundColor(ui color: UIKit.UIColor)
-  @objc @_Concurrency.MainActor @preconcurrency public var decorationColor: Swift.UInt32 {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public func setDecorationColor(ui color: UIKit.UIColor)
-  @objc @_Concurrency.MainActor @preconcurrency public var decorationLine: Mason.DecorationLine {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var fontSize: Swift.Int32 {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var fontStyle: Mason.FontStyle {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public func setFontStyle(_ style: Mason.FontStyle, slant: Swift.Int32)
-  @objc @_Concurrency.MainActor @preconcurrency public var fontWeight: Swift.String {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var textTransform: Mason.TextTransform {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var whiteSpace: Mason.WhiteSpace {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var textWrap: Mason.TextWrap {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var lineHeight: Swift.Float {
-    @objc get
-    @objc set
-  }
-  @objc @_Concurrency.MainActor @preconcurrency public var textContent: Swift.String {
-    @objc get
-    @objc set
-  }
-  @objc deinit
-}
-extension Mason.MasonText {
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc @discardableResult
-  @_Concurrency.MainActor @preconcurrency dynamic public func removeChild(_ child: Mason.MasonNode) -> Mason.MasonNode?
-  #endif
-}
-extension Mason.MasonText {
-  @objc @_Concurrency.MainActor @preconcurrency dynamic public func addChild(_ child: Mason.MasonNode)
-}
-@objc public protocol MasonCharacterData {
-  @objc var data: Swift.String { get set }
-  @objc var length: Swift.Int { get }
-  @objc @discardableResult
-  func appendData(_ s: Swift.String) -> Self
-  @objc @discardableResult
-  func insertData(_ s: Swift.String, at offset: Swift.Int) -> Self
-  @objc @discardableResult
-  func deleteData(offset: Swift.Int, count: Swift.Int) -> Self
-  @objc @discardableResult
-  func replaceData(offset: Swift.Int, count: Swift.Int, with s: Swift.String) -> Self
-  @objc func substringData(offset: Swift.Int, count: Swift.Int) -> Swift.String
-  @objc @discardableResult
-  func deleteData(range: Foundation.NSRange) -> Self
-  @objc @discardableResult
-  func replaceData(range: Foundation.NSRange, with s: Swift.String) -> Self
-}
-@_hasMissingDesignatedInitializers @objc(MasonTextNode) @objcMembers public class MasonTextNode : Mason.MasonNode, Mason.MasonCharacterData {
-  @objc public var data: Swift.String {
-    @objc get
-    @objc set
-  }
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public init(mason doc: Mason.NSCMason, data text: Swift.String, attributes attrs: [Foundation.NSAttributedString.Key : Any]? = nil)
-  #endif
-  @objc override dynamic public func appendChild(_ child: Mason.MasonNode)
-  @objc public var length: Swift.Int {
-    @objc get
-  }
-  @objc public func substringData(offset: Swift.Int, count: Swift.Int) -> Swift.String
-  @discardableResult
-  @objc public func appendData(_ s: Swift.String) -> Self
-  @discardableResult
-  @objc public func insertData(_ s: Swift.String, at offset: Swift.Int) -> Self
-  @discardableResult
-  @objc public func deleteData(offset: Swift.Int, count: Swift.Int) -> Self
-  @discardableResult
-  @objc public func replaceData(offset: Swift.Int, count: Swift.Int, with s: Swift.String) -> Self
-  @discardableResult
-  @objc public func deleteData(range: Foundation.NSRange) -> Self
-  @discardableResult
-  @objc public func replaceData(range: Foundation.NSRange, with s: Swift.String) -> Self
-  @objc deinit
-}
-extension Mason.MasonTextNode {
-  @objc dynamic public func attributed() -> Foundation.NSAttributedString
-}
-@objc(MasonTextContainer) public protocol TextContainer : ObjectiveC.NSObjectProtocol {
-  @objc var engine: Mason.TextEngine { get }
-  @objc var node: Mason.MasonNode { get }
-  @objc func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
-}
-extension Mason.TextContainer {
-  public func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
-}
-@_hasMissingDesignatedInitializers @objc(MasonTextEngine) public class TextEngine : ObjectiveC.NSObject {
-  public var textContent: Swift.String {
-    get
-    set
-  }
-  public func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
-  @objc deinit
-}
 @_hasMissingDesignatedInitializers @objcMembers @objc(MinSizing) public class MinSizing : ObjectiveC.NSObject, Swift.Codable {
   @objc public var value: Swift.Float {
     get
@@ -845,11 +508,9 @@ extension Mason.TextContainer {
   @objc public var cssValue: Swift.String {
     @objc get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var jsonValue: Swift.String? {
     @objc get
   }
-  #endif
   required public init(from decoder: any Swift.Decoder) throws
   public func encode(to encoder: any Swift.Encoder) throws
   @objc deinit
@@ -902,12 +563,10 @@ extension Mason.MasonEventTarget {
     @objc get
     @objc set
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc @_Concurrency.MainActor @preconcurrency public var valueAsDate: Foundation.Date? {
     @objc get
     @objc set
   }
-  #endif
   @objc @_Concurrency.MainActor @preconcurrency public var placeholder: Swift.String {
     @objc get
     @objc set
@@ -1128,22 +787,14 @@ public struct MasonNodeView {
       get
     }
     @objc @_Concurrency.MainActor @preconcurrency public static func initWithEmptyBackground() -> Mason.MasonList.MasonListCell
-    #if compiler(>=5.3) && $NonescapableTypes
     @_Concurrency.MainActor @preconcurrency public func setView(_ newView: (any Mason.MasonElement)?)
-    #endif
-    #if compiler(>=5.3) && $NonescapableTypes
     @objc @_Concurrency.MainActor @preconcurrency public func setView(compat view: (any Mason.MasonElementObjc)?)
-    #endif
-    #if compiler(>=5.3) && $NonescapableTypes
     @_Concurrency.MainActor @preconcurrency @objc override dynamic public func willMove(toSuperview newSuperview: UIKit.UIView?)
-    #endif
     @_Concurrency.MainActor @preconcurrency @objc override dynamic public func prepareForReuse()
     @_Concurrency.MainActor @preconcurrency @objc override dynamic public func preferredLayoutAttributesFitting(_ layoutAttributes: UIKit.UICollectionViewLayoutAttributes) -> UIKit.UICollectionViewLayoutAttributes
     @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
     @_Concurrency.MainActor @preconcurrency @objc override dynamic public init(frame: CoreFoundation.CGRect)
-    #if compiler(>=5.3) && $NonescapableTypes
     @_Concurrency.MainActor @preconcurrency @objc required dynamic public init?(coder: Foundation.NSCoder)
-    #endif
     @objc deinit
   }
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func draw(_ rect: CoreFoundation.CGRect)
@@ -1171,9 +822,7 @@ public struct MasonNodeView {
     @objc set
   }
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc @_Concurrency.MainActor @preconcurrency public func register(cellClass: Swift.AnyClass?, forCellWithReuseIdentifier identifier: Swift.String)
-  #endif
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ item: Mason.MasonLi)
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ item: Mason.MasonLi, at index: Swift.Int)
   @objc @_Concurrency.MainActor @preconcurrency public func reload()
@@ -1191,11 +840,9 @@ public struct MasonNodeView {
   @objc public var isRepeating: Swift.Bool {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var value: Any? {
     @objc get
   }
-  #endif
   @objc public static func Single(_ value: Mason.MinMax) -> Mason.TrackSizingFunction
   @objc public static func AutoRepeat(_ gridTrackRepetition: Mason.GridTrackRepetition, _ value: Swift.Array<Mason.MinMax>) -> Mason.TrackSizingFunction
   @objc public var cssValue: Swift.String {
@@ -1211,6 +858,7 @@ public struct MasonNodeView {
     public func invalidate()
     public func applyFast(in context: CoreGraphics.CGContext, rect: CoreFoundation.CGRect) -> Swift.Bool
     public func apply(to view: UIKit.UIView)
+    public func applyAsBackdrop(to view: UIKit.UIView)
     @objc deinit
   }
   @objc deinit
@@ -1227,11 +875,9 @@ public struct MasonNodeView {
   @objc public var cssValue: Swift.String {
     @objc get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var jsonValue: Swift.String? {
     @objc get
   }
-  #endif
   @objc public static let Auto: Mason.MasonDimensionCompat
   @objc public static let Zero: Mason.MasonDimensionCompat
   @objc deinit
@@ -1250,11 +896,9 @@ public struct MasonNodeView {
   @objc public var cssValue: Swift.String {
     @objc get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var jsonValue: Swift.String? {
     @objc get
   }
-  #endif
   @objc public static let Auto: Mason.MasonLengthPercentageAutoCompat
   @objc public static let Zero: Mason.MasonLengthPercentageAutoCompat
   @objc deinit
@@ -1273,11 +917,9 @@ public struct MasonNodeView {
   @objc public var cssValue: Swift.String {
     @objc get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var jsonValue: Swift.String? {
     @objc get
   }
-  #endif
   @objc public static let Zero: Mason.MasonLengthPercentageCompat
   @objc deinit
   public func encode(to encoder: any Swift.Encoder) throws
@@ -1295,48 +937,42 @@ public struct MasonNodeView {
   @objc public var cssValue: Swift.String {
     @objc get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public var jsonValue: Swift.String? {
     @objc get
   }
-  #endif
   @objc public static let Auto: Mason.GridPlacementCompat
   @objc deinit
 }
-@objc(NSCFontFaceSetStatus) public enum NSCFontFaceSetStatus : Swift.Int, Swift.RawRepresentable {
-  case loading
-  case loaded
-  public typealias RawValue = Swift.Int
-  #if compiler(>=5.3) && $NonescapableTypes
-  public init?(rawValue: Swift.Int)
-  #endif
-  public var rawValue: Swift.Int {
-    get
-  }
-}
-@_inheritsConvenienceInitializers @objcMembers @objc(NSCFontFaceSet) public class NSCFontFaceSet : ObjectiveC.NSObject {
-  @objc public static let instance: Mason.NSCFontFaceSet
-  @objc public var status: Mason.NSCFontFaceSetStatus
-  @objc public var onStatus: ((Mason.NSCFontFaceSetStatus) -> Swift.Void)?
-  @objc public func iter() -> Foundation.NSEnumerator
-  @objc public func array() -> [Any]
-  @objc public func get(_ fontFamily: Swift.String) -> Mason.NSCFontFace
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public func getOrNil(_ fontFamily: Swift.String) -> Mason.NSCFontFace?
-  #endif
-  @objc public func add(_ font: Mason.NSCFontFace)
-  @objc public func clear()
-  @objc public func delete(_ font: Mason.NSCFontFace)
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public func check(_ font: Swift.String, _ text: Swift.String?) -> Swift.Bool
-  #endif
-  #if compiler(>=5.3) && $NonescapableTypes
-  @objc public func load(_ font: Swift.String, _ text: Swift.String?, _ callback: @escaping ([Mason.NSCFontFace], Swift.String?) -> Swift.Void)
-  #endif
-  @objc public var size: Swift.Int {
+@_hasMissingDesignatedInitializers @objc(MasonTextArea) @objcMembers @_Concurrency.MainActor @preconcurrency public class MasonTextArea : Mason.MasonTextInput, Mason.MasonEventTarget, Mason.MasonElement, Mason.MasonElementObjc {
+  @_Concurrency.MainActor @preconcurrency @objc final public let node: Mason.MasonNode
+  @objc @_Concurrency.MainActor @preconcurrency final public let mason: Mason.NSCMason
+  @_Concurrency.MainActor @preconcurrency @objc public var uiView: UIKit.UIView {
     @objc get
   }
-  @objc override dynamic public init()
+  @_Concurrency.MainActor @preconcurrency @objc public var style: Mason.MasonStyle {
+    @objc get
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var rows: Swift.Int {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var cols: Swift.Int {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var name: Swift.String
+  @objc @_Concurrency.MainActor @preconcurrency public var maxLength: Swift.Int
+  @objc @_Concurrency.MainActor @preconcurrency public var value: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public init(mason doc: Mason.NSCMason)
+  @_Concurrency.MainActor @preconcurrency @objc required dynamic public init?(coder: Foundation.NSCoder)
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func draw(_ rect: CoreFoundation.CGRect)
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
+  @_Concurrency.MainActor @preconcurrency @objc override public func textViewDidChange(_ textView: UIKit.UITextView)
+  @objc @_Concurrency.MainActor @preconcurrency public func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
+  @_Concurrency.MainActor @preconcurrency @objc override public func textView(_ textView: UIKit.UITextView, shouldChangeTextIn range: Foundation.NSRange, replacementText text: Swift.String) -> Swift.Bool
   @objc deinit
 }
 @_inheritsConvenienceInitializers @objcMembers @objc(MasonEventOptions) public class MasonEventOptions : ObjectiveC.NSObject {
@@ -1377,9 +1013,7 @@ public struct MasonNodeView {
   @objc public var currentTarget: Any? {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public init(type eventType: Swift.String, bubbles eventBubbles: Swift.Bool = false, cancelable eventCancelable: Swift.Bool = false, options: Mason.MasonEventOptions? = nil)
-  #endif
   @objc public func preventDefault()
   @objc public func stopPropagation()
   @objc public func stopImmediatePropagation()
@@ -1388,18 +1022,14 @@ public struct MasonNodeView {
 @objcMembers @objc(MasonInputEvent) public class MasonInputEvent : Mason.MasonEvent {
   @objc final public let data: Swift.String?
   @objc final public let inputType: Swift.String?
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public init(type: Swift.String, data inputData: Swift.String? = nil, inputType masonInputType: Swift.String? = nil, options: Mason.MasonEventOptions? = nil)
-  #endif
   @objc deinit
 }
 @objcMembers @objc(MasonFileInputEvent) public class MasonFileInputEvent : Mason.MasonEvent {
   @objc final public let data: Swift.String?
   @objc final public let inputType: Swift.String?
   @objc final public let rawData: [Foundation.URL]
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public init(type: Swift.String, data inputData: Swift.String? = nil, inputType masonInputType: Swift.String? = nil, options: Mason.MasonEventOptions? = nil, rawData inputRawData: [Foundation.URL])
-  #endif
   @objc deinit
 }
 @objcMembers @objc(MasonMouseEvent) public class MasonMouseEvent : Mason.MasonEvent {
@@ -1454,9 +1084,7 @@ public struct MasonNodeView {
   @objc public var pageY: Swift.Float {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public init(type: Swift.String, options: Mason.MasonMouseEventOptions? = nil)
-  #endif
   @objc deinit
 }
 @objcMembers @objc(MasonDimensionRectCompat) public class MasonDimensionRectCompat : ObjectiveC.NSObject, Swift.Codable {
@@ -1521,66 +1149,66 @@ public struct StyleKeys {
   public static let JUSTIFY_SELF: Swift.Int
   public static let JUSTIFY_CONTENT: Swift.Int
   public static let INSET_LEFT_TYPE: Swift.Int
-  public static let INSET_LEFT_VALUE: Swift.Int
   public static let INSET_RIGHT_TYPE: Swift.Int
-  public static let INSET_RIGHT_VALUE: Swift.Int
   public static let INSET_TOP_TYPE: Swift.Int
-  public static let INSET_TOP_VALUE: Swift.Int
   public static let INSET_BOTTOM_TYPE: Swift.Int
+  public static let INSET_LEFT_VALUE: Swift.Int
+  public static let INSET_RIGHT_VALUE: Swift.Int
+  public static let INSET_TOP_VALUE: Swift.Int
   public static let INSET_BOTTOM_VALUE: Swift.Int
   public static let MARGIN_LEFT_TYPE: Swift.Int
-  public static let MARGIN_LEFT_VALUE: Swift.Int
   public static let MARGIN_RIGHT_TYPE: Swift.Int
-  public static let MARGIN_RIGHT_VALUE: Swift.Int
   public static let MARGIN_TOP_TYPE: Swift.Int
-  public static let MARGIN_TOP_VALUE: Swift.Int
   public static let MARGIN_BOTTOM_TYPE: Swift.Int
+  public static let MARGIN_LEFT_VALUE: Swift.Int
+  public static let MARGIN_RIGHT_VALUE: Swift.Int
+  public static let MARGIN_TOP_VALUE: Swift.Int
   public static let MARGIN_BOTTOM_VALUE: Swift.Int
   public static let PADDING_LEFT_TYPE: Swift.Int
-  public static let PADDING_LEFT_VALUE: Swift.Int
   public static let PADDING_RIGHT_TYPE: Swift.Int
-  public static let PADDING_RIGHT_VALUE: Swift.Int
   public static let PADDING_TOP_TYPE: Swift.Int
-  public static let PADDING_TOP_VALUE: Swift.Int
   public static let PADDING_BOTTOM_TYPE: Swift.Int
+  public static let PADDING_LEFT_VALUE: Swift.Int
+  public static let PADDING_RIGHT_VALUE: Swift.Int
+  public static let PADDING_TOP_VALUE: Swift.Int
   public static let PADDING_BOTTOM_VALUE: Swift.Int
   public static let BORDER_LEFT_TYPE: Swift.Int
-  public static let BORDER_LEFT_VALUE: Swift.Int
   public static let BORDER_RIGHT_TYPE: Swift.Int
-  public static let BORDER_RIGHT_VALUE: Swift.Int
   public static let BORDER_TOP_TYPE: Swift.Int
-  public static let BORDER_TOP_VALUE: Swift.Int
   public static let BORDER_BOTTOM_TYPE: Swift.Int
+  public static let BORDER_LEFT_VALUE: Swift.Int
+  public static let BORDER_RIGHT_VALUE: Swift.Int
+  public static let BORDER_TOP_VALUE: Swift.Int
   public static let BORDER_BOTTOM_VALUE: Swift.Int
   public static let FLEX_GROW: Swift.Int
   public static let FLEX_SHRINK: Swift.Int
   public static let FLEX_BASIS_TYPE: Swift.Int
   public static let FLEX_BASIS_VALUE: Swift.Int
   public static let WIDTH_TYPE: Swift.Int
-  public static let WIDTH_VALUE: Swift.Int
   public static let HEIGHT_TYPE: Swift.Int
+  public static let WIDTH_VALUE: Swift.Int
   public static let HEIGHT_VALUE: Swift.Int
   public static let MIN_WIDTH_TYPE: Swift.Int
-  public static let MIN_WIDTH_VALUE: Swift.Int
   public static let MIN_HEIGHT_TYPE: Swift.Int
+  public static let MIN_WIDTH_VALUE: Swift.Int
   public static let MIN_HEIGHT_VALUE: Swift.Int
   public static let MAX_WIDTH_TYPE: Swift.Int
-  public static let MAX_WIDTH_VALUE: Swift.Int
   public static let MAX_HEIGHT_TYPE: Swift.Int
+  public static let MAX_WIDTH_VALUE: Swift.Int
   public static let MAX_HEIGHT_VALUE: Swift.Int
   public static let GAP_ROW_TYPE: Swift.Int
-  public static let GAP_ROW_VALUE: Swift.Int
   public static let GAP_COLUMN_TYPE: Swift.Int
+  public static let GAP_ROW_VALUE: Swift.Int
   public static let GAP_COLUMN_VALUE: Swift.Int
   public static let ASPECT_RATIO: Swift.Int
   public static let GRID_AUTO_FLOW: Swift.Int
   public static let GRID_COLUMN_START_TYPE: Swift.Int
-  public static let GRID_COLUMN_START_VALUE: Swift.Int
   public static let GRID_COLUMN_END_TYPE: Swift.Int
-  public static let GRID_COLUMN_END_VALUE: Swift.Int
   public static let GRID_ROW_START_TYPE: Swift.Int
-  public static let GRID_ROW_START_VALUE: Swift.Int
   public static let GRID_ROW_END_TYPE: Swift.Int
+  public static let GRID_COLUMN_START_VALUE: Swift.Int
+  public static let GRID_COLUMN_END_VALUE: Swift.Int
+  public static let GRID_ROW_START_VALUE: Swift.Int
   public static let GRID_ROW_END_VALUE: Swift.Int
   public static let SCROLLBAR_WIDTH: Swift.Int
   public static let ALIGN: Swift.Int
@@ -1603,24 +1231,24 @@ public struct StyleKeys {
   public static let BORDER_TOP_COLOR: Swift.Int
   public static let BORDER_BOTTOM_COLOR: Swift.Int
   public static let BORDER_RADIUS_TOP_LEFT_X_TYPE: Swift.Int
-  public static let BORDER_RADIUS_TOP_LEFT_X_VALUE: Swift.Int
   public static let BORDER_RADIUS_TOP_LEFT_Y_TYPE: Swift.Int
-  public static let BORDER_RADIUS_TOP_LEFT_Y_VALUE: Swift.Int
-  public static let BORDER_RADIUS_TOP_LEFT_EXPONENT: Swift.Int
   public static let BORDER_RADIUS_TOP_RIGHT_X_TYPE: Swift.Int
-  public static let BORDER_RADIUS_TOP_RIGHT_X_VALUE: Swift.Int
   public static let BORDER_RADIUS_TOP_RIGHT_Y_TYPE: Swift.Int
-  public static let BORDER_RADIUS_TOP_RIGHT_Y_VALUE: Swift.Int
-  public static let BORDER_RADIUS_TOP_RIGHT_EXPONENT: Swift.Int
   public static let BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE: Swift.Int
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE: Swift.Int
   public static let BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE: Swift.Int
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE: Swift.Int
-  public static let BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT: Swift.Int
   public static let BORDER_RADIUS_BOTTOM_LEFT_X_TYPE: Swift.Int
-  public static let BORDER_RADIUS_BOTTOM_LEFT_X_VALUE: Swift.Int
   public static let BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE: Swift.Int
+  public static let BORDER_RADIUS_TOP_LEFT_X_VALUE: Swift.Int
+  public static let BORDER_RADIUS_TOP_LEFT_Y_VALUE: Swift.Int
+  public static let BORDER_RADIUS_TOP_RIGHT_X_VALUE: Swift.Int
+  public static let BORDER_RADIUS_TOP_RIGHT_Y_VALUE: Swift.Int
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE: Swift.Int
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE: Swift.Int
+  public static let BORDER_RADIUS_BOTTOM_LEFT_X_VALUE: Swift.Int
   public static let BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE: Swift.Int
+  public static let BORDER_RADIUS_TOP_LEFT_EXPONENT: Swift.Int
+  public static let BORDER_RADIUS_TOP_RIGHT_EXPONENT: Swift.Int
+  public static let BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT: Swift.Int
   public static let BORDER_RADIUS_BOTTOM_LEFT_EXPONENT: Swift.Int
   public static let FLOAT: Swift.Int
   public static let CLEAR: Swift.Int
@@ -1692,6 +1320,54 @@ public struct StyleKeys {
   public static let FILTER_BRIGHTNESS_STATE: Swift.Int
   public static let FONT_VARIANT_NUMERIC: Swift.Int
   public static let FONT_VARIANT_NUMERIC_STATE: Swift.Int
+  public static let TRANSFORM_COUNT: Swift.Int
+  public static let TRANSFORM_FLAGS: Swift.Int
+  public static let TRANSFORM_OP_0: Swift.Int
+  public static let TRANSFORM_OP_1: Swift.Int
+  public static let TRANSFORM_OP_2: Swift.Int
+  public static let TRANSFORM_OP_3: Swift.Int
+  public static let TRANSFORM_OP_4: Swift.Int
+  public static let TRANSFORM_OP_5: Swift.Int
+  public static let TRANSFORM_MATRIX: Swift.Int
+  public static let TRANSFORM_OP_SIZE: Swift.Int
+  public static let MAX_INLINE_TRANSFORM_OPS: Swift.Int
+  public static let TRANSFORM_FLAG_HAS_MATRIX: Swift.UInt8
+  public static let TRANSFORM_FLAG_IS_3D: Swift.UInt8
+  public static let OBJECT_POSITION_X_TYPE: Swift.Int
+  public static let OBJECT_POSITION_Y_TYPE: Swift.Int
+  public static let OBJECT_POSITION_X_VALUE: Swift.Int
+  public static let OBJECT_POSITION_Y_VALUE: Swift.Int
+  public static let OBJECT_POSITION_STATE: Swift.Int
+  public static let WRITING_MODE: Swift.Int
+  public static let WRITING_MODE_STATE: Swift.Int
+  public static let UNICODE_BIDI: Swift.Int
+  public static let UNICODE_BIDI_STATE: Swift.Int
+  public static let HYPHENS: Swift.Int
+  public static let HYPHENS_STATE: Swift.Int
+  public static let CARET_COLOR: Swift.Int
+  public static let CARET_COLOR_STATE: Swift.Int
+  public static let WORD_SPACING: Swift.Int
+  public static let WORD_SPACING_TYPE: Swift.Int
+  public static let WORD_SPACING_STATE: Swift.Int
+  public static let FONT_STRETCH: Swift.Int
+  public static let FONT_STRETCH_STATE: Swift.Int
+}
+@objc public enum TransformOpType : Swift.UInt8 {
+  case none = 0
+  case translate = 1
+  case translateX = 2
+  case translateY = 3
+  case scale = 4
+  case scaleX = 5
+  case scaleY = 6
+  case rotate = 7
+  case skewX = 8
+  case skewY = 9
+  public init?(rawValue: Swift.UInt8)
+  public typealias RawValue = Swift.UInt8
+  public var rawValue: Swift.UInt8 {
+    get
+  }
 }
 public struct StateKeys : Swift.Equatable {
   public let low: Swift.UInt64
@@ -1773,11 +1449,18 @@ public struct StateKeys : Swift.Equatable {
   public static let fontFamily: Mason.StateKeys
   public static let letterSpacing: Mason.StateKeys
   public static let fontVariantNumeric: Mason.StateKeys
+  public static let objectPosition: Mason.StateKeys
+  public static let writingMode: Mason.StateKeys
+  public static let unicodeBidi: Mason.StateKeys
+  public static let hyphens: Mason.StateKeys
+  public static let caretColor: Mason.StateKeys
+  public static let wordSpacing: Mason.StateKeys
+  public static let fontStretch: Mason.StateKeys
   public static let pseudoText: Mason.StateKeys
   public static func == (a: Mason.StateKeys, b: Mason.StateKeys) -> Swift.Bool
 }
 @objc(MasonStyle) @objcMembers public class MasonStyle : ObjectiveC.NSObject {
-  @objc public var font: Mason.NSCFontFace! {
+  @objc public var font: FontManager.NSCFontFace! {
     get
   }
   @objc public func prepareMut()
@@ -1881,6 +1564,10 @@ public struct StateKeys : Swift.Equatable {
     @objc get
     @objc set
   }
+  @objc public func setTextDecoration(_ css: Swift.String)
+  @objc public func setBorderColor(_ css: Swift.String)
+  @objc public func applyListStyleType(_ css: Swift.String)
+  @objc public func applyListStylePosition(_ css: Swift.String)
   @objc public var fontSize: Swift.Int32 {
     @objc get
     @objc set
@@ -2106,6 +1793,34 @@ public struct StateKeys : Swift.Equatable {
     @objc get
     @objc set
   }
+  @objc public var paddingCss: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var marginCss: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var insetCss: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var borderLeft: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var borderTop: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var borderRight: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var borderBottom: Swift.String {
+    @objc get
+    @objc set
+  }
   public var borderWidth: Mason.MasonRect<Mason.MasonLengthPercentage> {
     get
     set
@@ -2189,6 +1904,7 @@ public struct StateKeys : Swift.Equatable {
   public func setSizeWidth(_ width: Mason.MasonDimension)
   public func setSizeHeight(_ height: Mason.MasonDimension)
   @objc public func setSizeWidthHeight(_ value: Swift.Float, _ type: Swift.Int)
+  @objc public func setSizePoints(_ width: Swift.Float, _ height: Swift.Float)
   public var width: Mason.MasonDimension {
     get
     set
@@ -2228,17 +1944,19 @@ public struct StateKeys : Swift.Equatable {
   @objc public func setGapColumn(_ value: Swift.Float, _ type: Swift.Int)
   @objc public func setRowGap(_ value: Swift.Float, _ type: Swift.Int)
   @objc public func setColumnGap(_ value: Swift.Float, _ type: Swift.Int)
-  #if compiler(>=5.3) && $NonescapableTypes
   public var aspectRatio: Swift.Float? {
     get
     set
   }
-  #endif
   @objc public var gridArea: Swift.String {
     @objc get
     @objc set
   }
   @objc public var gridTemplateAreas: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var transform: Swift.String {
     @objc get
     @objc set
   }
@@ -2283,6 +2001,18 @@ public struct StateKeys : Swift.Equatable {
     @objc set
   }
   @objc public var gridTemplateColumns: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var borderImage: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var backdropFilter: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public var fontFeatureSettings: Swift.String {
     @objc get
     @objc set
   }
@@ -2375,7 +2105,7 @@ extension UIKit.UIColor {
   public func toUInt32() -> Swift.UInt32
 }
 extension UIKit.UIImage {
-  public static func triangle(direction: UIKit.UIImage.Direction, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 8, height: 5), scale: CoreFoundation.CGFloat = UIScreen.main.scale) -> UIKit.UIImage
+  public static func triangle(direction: UIKit.UIImage.Direction, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 8, height: 5), scale: CoreFoundation.CGFloat = CGFloat(NSCMason.scale)) -> UIKit.UIImage
   public enum Direction {
     case up, down
     public static func == (a: UIKit.UIImage.Direction, b: UIKit.UIImage.Direction) -> Swift.Bool
@@ -2392,10 +2122,8 @@ extension UIKit.UIImage {
       get
     }
   }
-  public static func chevron(direction: UIKit.UIImage.ChevronDirection, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 16, height: 6), lineWidth: CoreFoundation.CGFloat = 1.5, scale: CoreFoundation.CGFloat = UIScreen.main.scale) -> UIKit.UIImage
-  #if compiler(>=5.3) && $NonescapableTypes
+  public static func chevron(direction: UIKit.UIImage.ChevronDirection, color: UIKit.UIColor, size: CoreFoundation.CGSize = CGSize(width: 16, height: 6), lineWidth: CoreFoundation.CGFloat = 1.5, scale: CoreFoundation.CGFloat = CGFloat(NSCMason.scale)) -> UIKit.UIImage
   public func mason_resize(to size: CoreFoundation.CGSize) -> UIKit.UIImage?
-  #endif
 }
 @objc extension ObjectiveC.NSObject {
   @objc dynamic public var mason_innerHTML: Swift.String {
@@ -2447,6 +2175,237 @@ extension UIKit.UIImage {
   @objc dynamic public func mason_replaceChildAt(text: Swift.String, _ index: Swift.Int)
   @objc dynamic public func mason_replaceChildAt(element: any Mason.MasonElementObjc, _ index: Swift.Int)
   @objc dynamic public func mason_replaceChildAt(node: Mason.MasonNode, _ index: Swift.Int)
+  @objc dynamic public func mason_removeChildAt(_ index: Swift.Int)
+  @objc dynamic public func mason_removeChildNode(_ node: Mason.MasonNode)
+}
+@objc(MasonTextType) public enum MasonTextType : Swift.Int, Swift.RawRepresentable, Swift.CustomStringConvertible {
+  case None
+  case P
+  case Span
+  case Code
+  case H1
+  case H2
+  case H3
+  case H4
+  case H5
+  case H6
+  case Li
+  case Blockquote
+  case B
+  case Pre
+  case Strong
+  case Em
+  case I
+  case A
+  public typealias RawValue = Swift.Int32
+  public var rawValue: Mason.MasonTextType.RawValue {
+    get
+  }
+  public init?(rawValue: Mason.MasonTextType.RawValue)
+  public var description: Swift.String {
+    get
+  }
+}
+public enum InlineSegmentPayload {
+  case text(width: Swift.Float, ascent: Swift.Float, descent: Swift.Float)
+  case inline(id: Swift.OpaquePointer, width: Swift.Float, height: Swift.Float, baseline: Swift.Float)
+}
+@objc @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class MasonTextLayer : QuartzCore.CALayer {
+  @objc override dynamic public init()
+  @objc override dynamic public init(layer: Any)
+  @objc override dynamic public func draw(in context: CoreGraphics.CGContext)
+  @objc deinit
+}
+@_hasMissingDesignatedInitializers @objc(MasonText) @objcMembers @_Concurrency.MainActor @preconcurrency public class MasonText : UIKit.UIView, Mason.MasonEventTarget, Mason.MasonElement, Mason.MasonElementObjc, Mason.TextContainer {
+  @_Concurrency.MainActor @preconcurrency @objc final public let node: Mason.MasonNode
+  @objc @_Concurrency.MainActor @preconcurrency final public let type: Mason.MasonTextType
+  @_Concurrency.MainActor @preconcurrency @objc public var engine: Mason.TextEngine {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public class var layerClass: Swift.AnyClass {
+    @objc get
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var textValues: Foundation.NSMutableData {
+    @objc get
+  }
+  @_Concurrency.MainActor @preconcurrency @objc public func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
+  @_Concurrency.MainActor @preconcurrency @objc public var uiView: UIKit.UIView {
+    @objc get
+  }
+  @_Concurrency.MainActor @preconcurrency @objc public var style: Mason.MasonStyle {
+    @objc get
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public init(mason: Mason.NSCMason, type textType: Mason.MasonTextType)
+  @objc @_Concurrency.MainActor @preconcurrency public init(mason: Mason.NSCMason)
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func setNeedsDisplay()
+  @objc @_Concurrency.MainActor @preconcurrency public func requestLayout()
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
+  @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView)
+  @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView, at: Swift.Int)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(_ view: UIKit.UIView)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(at index: Swift.Int)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeAllViews()
+  @_Concurrency.MainActor @preconcurrency public var textOverflow: Mason.TextOverflow {
+    get
+    set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var textOverflowCompat: Mason.TextOverflowCompat {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var color: Swift.UInt32 {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public func setColor(ui color: UIKit.UIColor)
+  @objc @_Concurrency.MainActor @preconcurrency public var backgroundColorValue: Swift.UInt32 {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public func setBackgroundColor(ui color: UIKit.UIColor)
+  @objc @_Concurrency.MainActor @preconcurrency public var decorationColor: Swift.UInt32 {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public func setDecorationColor(ui color: UIKit.UIColor)
+  @objc @_Concurrency.MainActor @preconcurrency public var decorationLine: Mason.DecorationLine {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var fontSize: Swift.Int32 {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var fontStyle: Mason.FontStyle {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public func setFontStyle(_ style: Mason.FontStyle, slant: Swift.Int32)
+  @objc @_Concurrency.MainActor @preconcurrency public var fontWeight: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var textTransform: Mason.TextTransform {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var whiteSpace: Mason.WhiteSpace {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var textWrap: Mason.TextWrap {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var lineHeight: Swift.Float {
+    @objc get
+    @objc set
+  }
+  @objc @_Concurrency.MainActor @preconcurrency public var textContent: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc deinit
+}
+extension Mason.MasonText {
+  @objc @discardableResult
+  @_Concurrency.MainActor @preconcurrency dynamic public func removeChild(_ child: Mason.MasonNode) -> Mason.MasonNode?
+}
+extension Mason.MasonText {
+  @objc @_Concurrency.MainActor @preconcurrency dynamic public func addChild(_ child: Mason.MasonNode)
+}
+@objc public protocol MasonCharacterData {
+  @objc var data: Swift.String { get set }
+  @objc var length: Swift.Int { get }
+  @objc @discardableResult
+  func appendData(_ s: Swift.String) -> Self
+  @objc @discardableResult
+  func insertData(_ s: Swift.String, at offset: Swift.Int) -> Self
+  @objc @discardableResult
+  func deleteData(offset: Swift.Int, count: Swift.Int) -> Self
+  @objc @discardableResult
+  func replaceData(offset: Swift.Int, count: Swift.Int, with s: Swift.String) -> Self
+  @objc func substringData(offset: Swift.Int, count: Swift.Int) -> Swift.String
+  @objc @discardableResult
+  func deleteData(range: Foundation.NSRange) -> Self
+  @objc @discardableResult
+  func replaceData(range: Foundation.NSRange, with s: Swift.String) -> Self
+}
+@_hasMissingDesignatedInitializers @objc(MasonTextNode) @objcMembers public class MasonTextNode : Mason.MasonNode, Mason.MasonCharacterData {
+  @objc public var data: Swift.String {
+    @objc get
+    @objc set
+  }
+  @objc public init(mason doc: Mason.NSCMason, data text: Swift.String, attributes attrs: [Foundation.NSAttributedString.Key : Any]? = nil)
+  @objc override dynamic public func appendChild(_ child: Mason.MasonNode)
+  @objc public var length: Swift.Int {
+    @objc get
+  }
+  @objc public func substringData(offset: Swift.Int, count: Swift.Int) -> Swift.String
+  @discardableResult
+  @objc public func appendData(_ s: Swift.String) -> Self
+  @discardableResult
+  @objc public func insertData(_ s: Swift.String, at offset: Swift.Int) -> Self
+  @discardableResult
+  @objc public func deleteData(offset: Swift.Int, count: Swift.Int) -> Self
+  @discardableResult
+  @objc public func replaceData(offset: Swift.Int, count: Swift.Int, with s: Swift.String) -> Self
+  @discardableResult
+  @objc public func deleteData(range: Foundation.NSRange) -> Self
+  @discardableResult
+  @objc public func replaceData(range: Foundation.NSRange, with s: Swift.String) -> Self
+  @objc deinit
+}
+extension Mason.MasonTextNode {
+  @objc dynamic public func attributed() -> Foundation.NSAttributedString
+}
+@objc(MasonTextContainer) public protocol TextContainer : ObjectiveC.NSObjectProtocol {
+  @objc var engine: Mason.TextEngine { get }
+  @objc var node: Mason.MasonNode { get }
+  @objc func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
+}
+extension Mason.TextContainer {
+  public func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
+}
+@_hasMissingDesignatedInitializers @objc(MasonTextEngine) public class TextEngine : ObjectiveC.NSObject {
+  public var textContent: Swift.String {
+    get
+    set
+  }
+  public func onStyleChange(_ low: Swift.UInt64, _ high: Swift.UInt64)
+  @objc deinit
+}
+@_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers @objcMembers @objc(MasonTextInput) @_Concurrency.MainActor @preconcurrency public class MasonTextInput : UIKit.UITextView, UIKit.UITextViewDelegate {
+  @objc @_Concurrency.MainActor @preconcurrency public var placeholder: Swift.String? {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public var text: Swift.String! {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public var attributedText: Foundation.NSAttributedString! {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public var font: UIKit.UIFont? {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public var textAlignment: UIKit.NSTextAlignment {
+    @objc get
+    @objc set
+  }
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
+  @objc deinit
+  @_Concurrency.MainActor @preconcurrency @objc public func textViewDidChange(_ textView: UIKit.UITextView)
+  @_Concurrency.MainActor @preconcurrency @objc public func textViewDidBeginEditing(_ textView: UIKit.UITextView)
+  @_Concurrency.MainActor @preconcurrency @objc public func textViewDidEndEditing(_ textView: UIKit.UITextView)
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func paste(_ sender: Any?)
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func cut(_ sender: Any?)
+  @_Concurrency.MainActor @preconcurrency @objc public func textView(_ textView: UIKit.UITextView, shouldChangeTextIn range: Foundation.NSRange, replacementText text: Swift.String) -> Swift.Bool
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func caretRect(for position: UIKit.UITextPosition) -> CoreFoundation.CGRect
 }
 @objc @_inheritsConvenienceInitializers public class BackgroundCALayer : QuartzCore.CALayer {
   @objc override dynamic public func draw(in ctx: CoreGraphics.CGContext)
@@ -2454,9 +2413,7 @@ extension UIKit.UIImage {
   @objc override dynamic public func layoutSublayers()
   @objc override dynamic public init()
   @objc override dynamic public init(layer: Any)
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc required dynamic public init?(coder: Foundation.NSCoder)
-  #endif
   @objc deinit
 }
 @objc(MasonLoadingState) public enum LoadingState : Swift.Int, Swift.RawRepresentable {
@@ -2467,9 +2424,7 @@ extension UIKit.UIImage {
   public var rawValue: Mason.LoadingState.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.LoadingState.RawValue)
-  #endif
 }
 @objc @_inheritsConvenienceInitializers @_hasMissingDesignatedInitializers public class MasonImageLayer : QuartzCore.CALayer {
   @objc override dynamic public init()
@@ -2502,9 +2457,7 @@ extension UIKit.UIImage {
     @objc get
     @objc set
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc @_Concurrency.MainActor @preconcurrency public func updateImage(_ image: UIKit.UIImage?)
-  #endif
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
   @objc deinit
 }
@@ -2516,9 +2469,7 @@ extension UIKit.UIImage {
   public var rawValue: Mason.MasonDimensionCompatType.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.MasonDimensionCompatType.RawValue)
-  #endif
 }
 @objc(MasonLengthPercentageAutoCompatType) public enum MasonLengthPercentageAutoCompatType : Swift.Int, Swift.RawRepresentable, Swift.Codable {
   case Auto
@@ -2528,9 +2479,7 @@ extension UIKit.UIImage {
   public var rawValue: Mason.MasonLengthPercentageAutoCompatType.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.MasonLengthPercentageAutoCompatType.RawValue)
-  #endif
 }
 @objc(MasonLengthPercentageCompatType) public enum MasonLengthPercentageCompatType : Swift.Int, Swift.RawRepresentable, Swift.Codable {
   case Points
@@ -2539,9 +2488,7 @@ extension UIKit.UIImage {
   public var rawValue: Mason.MasonLengthPercentageCompatType.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.MasonLengthPercentageCompatType.RawValue)
-  #endif
 }
 @objc(MasonBoxSizing) public enum BoxSizing : Swift.Int, Swift.RawRepresentable {
   case BorderBox
@@ -2550,9 +2497,7 @@ extension UIKit.UIImage {
   public var rawValue: Mason.BoxSizing.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.BoxSizing.RawValue)
-  #endif
 }
 @objc(MasonAlign) public enum Align : Swift.Int, Swift.RawRepresentable {
   case Auto
@@ -2563,9 +2508,7 @@ extension UIKit.UIImage {
   public var rawValue: Mason.Align.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.Align.RawValue)
-  #endif
 }
 @objc(MasonTextAlign) public enum TextAlign : Swift.Int, Swift.RawRepresentable {
   case Auto
@@ -2579,9 +2522,7 @@ extension UIKit.UIImage {
   public var rawValue: Mason.TextAlign.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.TextAlign.RawValue)
-  #endif
 }
 public func MasonDimensionFromPoints(value: Swift.Float) -> Mason.MasonDimension
 public func MasonDimensionFromPercent(value: Swift.Float) -> Mason.MasonDimension
@@ -2590,14 +2531,22 @@ public enum MasonDimension : Swift.Codable, Swift.Equatable {
   case Auto
   case Points(Swift.Float)
   case Percent(Swift.Float)
+  public enum Kind : Swift.RawRepresentable {
+    case Auto
+    case Points
+    case Percent
+    public typealias RawValue = Swift.Int8
+    public init?(rawValue: Swift.Int8)
+    public var rawValue: Swift.Int8 {
+      get
+    }
+  }
   public var cssValue: Swift.String {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public var jsonValue: Swift.String? {
     get
   }
-  #endif
   public init(from decoder: any Swift.Decoder) throws
   public func encode(to encoder: any Swift.Encoder) throws
   public static func == (a: Mason.MasonDimension, b: Mason.MasonDimension) -> Swift.Bool
@@ -2612,11 +2561,9 @@ public enum MasonLengthPercentage : Swift.Codable, Swift.Equatable {
   public var cssValue: Swift.String {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public var jsonValue: Swift.String? {
     get
   }
-  #endif
   public init(from decoder: any Swift.Decoder) throws
   public func encode(to encoder: any Swift.Encoder) throws
   public static func == (a: Mason.MasonLengthPercentage, b: Mason.MasonLengthPercentage) -> Swift.Bool
@@ -2633,11 +2580,9 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var cssValue: Swift.String {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public var jsonValue: Swift.String? {
     get
   }
-  #endif
   public init(from decoder: any Swift.Decoder) throws
   public func encode(to encoder: any Swift.Encoder) throws
   public static func == (a: Mason.MasonLengthPercentageAuto, b: Mason.MasonLengthPercentageAuto) -> Swift.Bool
@@ -2655,9 +2600,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.AlignItems.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.AlignItems.RawValue)
-  #endif
 }
 @objc(MasonAlignSelf) public enum AlignSelf : Swift.Int, Swift.RawRepresentable {
   case Normal = -1
@@ -2672,9 +2615,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.AlignSelf.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.AlignSelf.RawValue)
-  #endif
 }
 @objc(MasonAlignContent) public enum AlignContent : Swift.Int, Swift.RawRepresentable {
   case Normal = -1
@@ -2691,9 +2632,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.AlignContent.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.AlignContent.RawValue)
-  #endif
 }
 @objc(MasonDirection) public enum Direction : Swift.Int, Swift.RawRepresentable {
   case Inherit
@@ -2703,9 +2642,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.Direction.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.Direction.RawValue)
-  #endif
 }
 @objc(MasonDisplay) public enum Display : Swift.Int, Swift.RawRepresentable, Swift.CustomStringConvertible {
   case None
@@ -2720,9 +2657,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.Display.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.Display.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -2736,9 +2671,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.FlexDirection.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.FlexDirection.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -2756,9 +2689,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.JustifyItems.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.JustifyItems.RawValue)
-  #endif
 }
 @objc(MasonJustifySelf) public enum JustifySelf : Swift.Int, Swift.RawRepresentable {
   case Normal = -1
@@ -2773,9 +2704,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.JustifySelf.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.JustifySelf.RawValue)
-  #endif
 }
 @objc(MasonJustifyContent) public enum JustifyContent : Swift.Int, Swift.RawRepresentable {
   case Normal = -1
@@ -2792,9 +2721,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.JustifyContent.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.JustifyContent.RawValue)
-  #endif
 }
 @objc(MasonOverflow) public enum Overflow : Swift.Int, Swift.RawRepresentable, Swift.Codable {
   case Visible
@@ -2806,9 +2733,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.Overflow.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.Overflow.RawValue)
-  #endif
 }
 @objc(MasonPosition) public enum Position : Swift.Int, Swift.RawRepresentable {
   case Relative
@@ -2817,9 +2742,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.Position.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.Position.RawValue)
-  #endif
 }
 @objc(MasonFlexWrap) public enum FlexWrap : Swift.Int, Swift.RawRepresentable {
   case NoWrap
@@ -2829,9 +2752,7 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.FlexWrap.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.FlexWrap.RawValue)
-  #endif
 }
 @objc(MasonGridAutoFlowWrap) public enum GridAutoFlow : Swift.Int, Swift.RawRepresentable {
   case Row
@@ -2842,19 +2763,15 @@ public enum MasonLengthPercentageAuto : Swift.Codable, Swift.Equatable {
   public var rawValue: Mason.GridAutoFlow.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.GridAutoFlow.RawValue)
-  #endif
 }
 public enum GridPlacement : Swift.Codable {
   case Auto
   case Line(Swift.Int16)
   case Span(Swift.Int16)
-  #if compiler(>=5.3) && $NonescapableTypes
   public var jsonValue: Swift.String? {
     get
   }
-  #endif
   public init(from decoder: any Swift.Decoder) throws
   public func encode(to encoder: any Swift.Encoder) throws
 }
@@ -2866,9 +2783,7 @@ public enum GridPlacement : Swift.Codable {
   public var rawValue: Mason.GridPlacementCompatType.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.GridPlacementCompatType.RawValue)
-  #endif
 }
 @_hasMissingDesignatedInitializers @objcMembers @objc(MasonGridTrackRepetition) public class GridTrackRepetition : ObjectiveC.NSObject {
   @objc public var cssValue: Swift.String {
@@ -2894,9 +2809,7 @@ public enum GridPlacement : Swift.Codable {
   public var rawValue: Mason.DecorationLine.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.DecorationLine.RawValue)
-  #endif
 }
 @objc(MasonTextTransform) public enum TextTransform : Swift.Int, Swift.RawRepresentable {
   case None
@@ -2910,9 +2823,7 @@ public enum GridPlacement : Swift.Codable {
   public var rawValue: Mason.TextTransform.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.TextTransform.RawValue)
-  #endif
 }
 @objc(MasonFontStyle) public enum FontStyle : Swift.Int, Swift.RawRepresentable, Swift.CustomStringConvertible {
   case Normal
@@ -2922,9 +2833,7 @@ public enum GridPlacement : Swift.Codable {
   public var rawValue: Mason.FontStyle.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.FontStyle.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -2938,9 +2847,7 @@ public enum GridPlacement : Swift.Codable {
   public var rawValue: Mason.TextWrap.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.TextWrap.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -2956,9 +2863,7 @@ public enum GridPlacement : Swift.Codable {
   public var rawValue: Mason.WhiteSpace.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.WhiteSpace.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -2972,9 +2877,7 @@ public enum GridPlacement : Swift.Codable {
   public var rawValue: Mason.LineHeight.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.LineHeight.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -2990,9 +2893,7 @@ public enum TextOverflow : Swift.CustomStringConvertible {
 }
 @_hasMissingDesignatedInitializers @objcMembers @objc(MasonTextOverflowCompat) public class TextOverflowCompat : ObjectiveC.NSObject {
   @objc public static let Clip: Mason.TextOverflowCompat
-  #if compiler(>=5.3) && $NonescapableTypes
   @objc public static func Ellipse(_ value: Swift.String? = nil) -> Mason.TextOverflowCompat
-  #endif
   @objc public static func Custom(_ value: Swift.String) -> Mason.TextOverflowCompat
   @objc override dynamic public var description: Swift.String {
     @objc get
@@ -3009,9 +2910,7 @@ public enum TextOverflow : Swift.CustomStringConvertible {
   public var rawValue: Mason.TextJustify.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.TextJustify.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -3026,9 +2925,7 @@ public enum TextOverflow : Swift.CustomStringConvertible {
   public var rawValue: Mason.DecorationStyle.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.DecorationStyle.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -3041,9 +2938,7 @@ public enum TextOverflow : Swift.CustomStringConvertible {
   public var rawValue: Mason.MasonFloat.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.MasonFloat.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -3057,9 +2952,7 @@ public enum TextOverflow : Swift.CustomStringConvertible {
   public var rawValue: Mason.Clear.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.Clear.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -3074,9 +2967,7 @@ public enum TextOverflow : Swift.CustomStringConvertible {
   public var rawValue: Mason.ObjectFit.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.ObjectFit.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -3134,15 +3025,11 @@ public enum VerticalAlign {
   public var description: Swift.String {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Swift.Int32)
-  #endif
   public var rawValue: Swift.Int32 {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Swift.Int8)
-  #endif
   public var rawValue: Swift.Int8 {
     get
   }
@@ -3154,9 +3041,7 @@ public enum VerticalAlign {
   public var rawValue: Mason.ListStylePosition.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.ListStylePosition.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -3172,9 +3057,7 @@ public enum VerticalAlign {
   public var rawValue: Mason.ListStyleType.RawValue {
     get
   }
-  #if compiler(>=5.3) && $NonescapableTypes
   public init?(rawValue: Mason.ListStyleType.RawValue)
-  #endif
   public var description: Swift.String {
     get
   }
@@ -3212,17 +3095,27 @@ public struct FontVariantNumeric : Swift.OptionSet, Swift.CustomStringConvertibl
   @_Concurrency.MainActor @preconcurrency @objc public var uiView: UIKit.UIView {
     @objc get
   }
+  @objc @_Concurrency.MainActor @preconcurrency public var contentSize: CoreFoundation.CGSize
+  @objc @_Concurrency.MainActor @preconcurrency public var isScrollContainer: Swift.Bool
+  @objc @_Concurrency.MainActor @preconcurrency public var contentOffset: CoreFoundation.CGPoint {
+    @objc get
+    @objc set
+  }
   @_Concurrency.MainActor @preconcurrency @objc public var style: Mason.MasonStyle {
     @objc get
   }
   @objc @_Concurrency.MainActor @preconcurrency public func markNodeDirty()
   @objc @_Concurrency.MainActor @preconcurrency public func isNodeDirty() -> Swift.Bool
   @_Concurrency.MainActor @preconcurrency @objc override dynamic public func layoutSubviews()
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func willMove(toWindow newWindow: UIKit.UIWindow?)
+  @_Concurrency.MainActor @preconcurrency @objc override dynamic public func willMove(toSuperview newSuperview: UIKit.UIView?)
   @objc @_Concurrency.MainActor @preconcurrency public static func createGridView(_ mason: Mason.NSCMason) -> Mason.MasonUIView
   @objc @_Concurrency.MainActor @preconcurrency public static func createFlexView(_ mason: Mason.NSCMason) -> Mason.MasonUIView
   @objc @_Concurrency.MainActor @preconcurrency public static func createBlockView(_ mason: Mason.NSCMason) -> Mason.MasonUIView
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView)
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView, at: Swift.Int)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(_ view: UIKit.UIView)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(at index: Swift.Int)
   @objc @_Concurrency.MainActor @preconcurrency public func addSubviews(_ views: [UIKit.UIView])
   @objc @_Concurrency.MainActor @preconcurrency public func addSubviews(_ views: [UIKit.UIView], at index: Swift.Int)
   @objc @_Concurrency.MainActor @preconcurrency public var inBatch: Swift.Bool {
@@ -3447,6 +3340,8 @@ public struct FontVariantNumeric : Swift.OptionSet, Swift.CustomStringConvertibl
   @_Concurrency.MainActor @preconcurrency @objc public func scrollViewDidScroll(_ scrollView: UIKit.UIScrollView)
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView)
   @objc @_Concurrency.MainActor @preconcurrency public func addView(_ view: UIKit.UIView, at: Swift.Int)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(_ view: UIKit.UIView)
+  @objc @_Concurrency.MainActor @preconcurrency public func removeView(at index: Swift.Int)
   @objc @_Concurrency.MainActor @preconcurrency public func setSize(_ width: Swift.Float, _ height: Swift.Float)
   @objc deinit
 }
@@ -3488,12 +3383,6 @@ public struct FontVariantNumeric : Swift.OptionSet, Swift.CustomStringConvertibl
   @objc @_Concurrency.MainActor @preconcurrency public func bind(position: Swift.Int, isOrdered: Swift.Bool)
   @objc deinit
 }
-extension Mason.NSCFontDisplay : Swift.Equatable {}
-extension Mason.NSCFontDisplay : Swift.Hashable {}
-extension Mason.NSCFontWeight : Swift.Equatable {}
-extension Mason.NSCFontWeight : Swift.Hashable {}
-extension Mason.NSCFontFaceStatus : Swift.Equatable {}
-extension Mason.NSCFontFaceStatus : Swift.Hashable {}
 extension Mason.CSSBorderRenderer.Side : Swift.Equatable {}
 extension Mason.CSSBorderRenderer.Side : Swift.Hashable {}
 extension Mason.MasonNodeType : Swift.Equatable {}
@@ -3501,14 +3390,15 @@ extension Mason.MasonNodeType : Swift.Hashable {}
 extension Mason.PseudoState : Swift.Equatable {}
 extension Mason.PseudoState : Swift.Hashable {}
 extension Mason.PseudoState : Swift.RawRepresentable {}
-extension Mason.MasonTextType : Swift.Equatable {}
-extension Mason.MasonTextType : Swift.Hashable {}
-extension Mason.NSCFontFaceSetStatus : Swift.Equatable {}
-extension Mason.NSCFontFaceSetStatus : Swift.Hashable {}
+extension Mason.TransformOpType : Swift.Equatable {}
+extension Mason.TransformOpType : Swift.Hashable {}
+extension Mason.TransformOpType : Swift.RawRepresentable {}
 extension UIKit.UIImage.Direction : Swift.Equatable {}
 extension UIKit.UIImage.Direction : Swift.Hashable {}
 extension UIKit.UIImage.ChevronDirection : Swift.Equatable {}
 extension UIKit.UIImage.ChevronDirection : Swift.Hashable {}
+extension Mason.MasonTextType : Swift.Equatable {}
+extension Mason.MasonTextType : Swift.Hashable {}
 extension Mason.LoadingState : Swift.Equatable {}
 extension Mason.LoadingState : Swift.Hashable {}
 extension Mason.MasonDimensionCompatType : Swift.Equatable {}
@@ -3523,6 +3413,8 @@ extension Mason.Align : Swift.Equatable {}
 extension Mason.Align : Swift.Hashable {}
 extension Mason.TextAlign : Swift.Equatable {}
 extension Mason.TextAlign : Swift.Hashable {}
+extension Mason.MasonDimension.Kind : Swift.Equatable {}
+extension Mason.MasonDimension.Kind : Swift.Hashable {}
 extension Mason.AlignItems : Swift.Equatable {}
 extension Mason.AlignItems : Swift.Hashable {}
 extension Mason.AlignSelf : Swift.Equatable {}

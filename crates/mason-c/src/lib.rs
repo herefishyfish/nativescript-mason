@@ -73,6 +73,23 @@ pub extern "C" fn mason_set_device_scale(mason: *mut CMason, scale: f32) {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn mason_set_preflight(mason: *mut CMason, enabled: bool) {
+    mason_core::PREFLIGHT_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    if mason.is_null() {
+        return;
+    }
+    unsafe {
+        let mason = &mut *mason;
+        mason.0.reset_arena_defaults();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn mason_get_preflight() -> bool {
+    mason_core::PREFLIGHT_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(target_vendor = "apple")]
 #[no_mangle]
 pub extern "C" fn mason_get_buffer(mason: *mut CMason, handle: c_int) -> *mut c_void {

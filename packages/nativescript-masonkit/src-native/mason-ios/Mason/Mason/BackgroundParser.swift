@@ -92,11 +92,11 @@ class Background {
       style.notifyTextStyleChanged(.backgroundColor)
     }
     get {
-      if(style.getUInt8(StyleKeys.BACKGROUND_COLOR_STATE) != StyleState.SET){
+      let resolved = style.resolvedBackgroundColor
+      if resolved == 0 {
         return nil
       }
-      
-      return UIColor.colorFromARGB(style.getUInt32(StyleKeys.BACKGROUND_COLOR))
+      return UIColor.colorFromARGB(resolved)
     }
   }
   var layers: [BackgroundLayer] = []
@@ -154,17 +154,11 @@ class Background {
   
   
   private func applyBackgroundImage(_ value: String) {
-    let chunks = splitBackgroundLayers(value)
-    
-    self.layers = chunks.map { chunk in
-      let layer = BackgroundLayer()
-      if let imageURL = parseImage(chunk) {
-        layer.image = imageURL
-      }else if let gradient = parseGradient(chunk) {
-        layer.gradient = gradient
-      }
-      return layer
-    }
+    // Reuse the higher-level parser which already filters out empty/default
+    // layers. This avoids creating color-only layers when only a color was
+    // supplied accidentally to background-image.
+    let parsed = parseBackgroundLayers(value)
+    self.layers = parsed
     
     if(!style.inBatch){
       style.node.view?.setNeedsDisplay()
@@ -369,7 +363,14 @@ func splitGradientParts(_ content: String) -> [String] {
 // MARK: - Parse Multiple Layers (deprecated wrapper)
 // kept for compatibility with older call sites
 func parseBackgroundLayers(_ css: String) -> [BackgroundLayer] {
-  return splitBackgroundLayers(css).map { parseLayer($0) }
+  // Parse layers but filter out empty/default layers. For example, when the
+  // author only specifies a simple color ("#fff"), we should not create a
+  // placeholder BackgroundLayer — the color is stored on `Background.color`.
+  let parsed = splitBackgroundLayers(css).map { parseLayer($0) }
+  let meaningful = parsed.filter { layer in
+    return layer.image != nil || layer.gradient != nil || layer.position != nil || layer.size != nil || layer.repeatType != .noRepeat || layer.clip != .borderBox
+  }
+  return meaningful
 }
 
 // MARK: - Parse Single Layer
@@ -381,13 +382,13 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     value = String(value.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
   }
   
-  // --- Entire layer is just a plain color ---
+  // Entire layer is just a plain color
   if let col = parseColor(value) {
     layer.backgroundColor = col
     return layer
   }
   
-  // --- Gradient ---
+  // Gradient
   if value.lowercased().hasPrefix("linear-gradient") || value.lowercased().hasPrefix("radial-gradient") {
     if let g = parseGradient(value) {
       layer.gradient = g
@@ -432,13 +433,13 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     }
   }
   
-  // --- Image ---
+  // Image
   if let url = parseImage(value) {
     layer.image = url
     value = removeImageURL(from: value)
   }
   
-  // --- Repeat keywords ---
+  // Repeat keywords
   ["repeat", "repeat-x", "repeat-y", "no-repeat"].forEach { key in
     if value.contains(key) {
       layer.repeatType = BackgroundRepeat(rawValue: key) ?? .noRepeat
@@ -446,7 +447,7 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     }
   }
   
-  // --- Position / Size ---
+  // Position / Size
   if value.contains("/") {
     let parts = value.components(separatedBy: "/").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     let posPart = parts[0]
@@ -457,7 +458,7 @@ func parseLayer(_ str: String) -> BackgroundLayer {
     layer.position = parsePosition(value)
   }
   
-  // --- Background color token (after parsing gradient/image) ---
+  // Background color token (after parsing gradient/image)
   // Only parse **standalone tokens** that are a color, do NOT split inside parentheses
   let tokens = value.split(separator: " ").map(String.init)
   for token in tokens {

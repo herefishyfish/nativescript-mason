@@ -3,10 +3,10 @@ package org.nativescript.mason.masondemo
 import android.graphics.Color
 import android.os.Bundle
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.toColorInt
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.nativescript.mason.masonkit.Button
@@ -17,13 +17,41 @@ import org.nativescript.mason.masonkit.PseudoState
 import org.nativescript.mason.masonkit.Rect
 import org.nativescript.mason.masonkit.StateKeys
 import org.nativescript.mason.masonkit.StyleKeys
-import org.nativescript.mason.masonkit.enums.BorderStyle as MasonBorderStyle
+import org.nativescript.mason.masonkit.enums.Overflow
 import org.nativescript.mason.masonkit.enums.TextAlign
 import java.nio.ByteBuffer
-import androidx.core.graphics.toColorInt
+import org.nativescript.mason.masonkit.enums.BorderStyle as MasonBorderStyle
 
 class PseudoDemoActivity : AppCompatActivity() {
   private lateinit var mason: Mason
+
+  private fun decodePseudoSet(low: Long?, high: Long?): String {
+    if (low == null || high == null) return "(none)"
+    val keys = listOf(
+      StateKeys.BACKGROUND_COLOR to "BACKGROUND_COLOR",
+      StateKeys.FONT_COLOR to "FONT_COLOR",
+      StateKeys.BORDER to "BORDER",
+      StateKeys.BORDER_COLOR to "BORDER_COLOR",
+      StateKeys.BORDER_RADIUS to "BORDER_RADIUS",
+      StateKeys.FONT_SIZE to "FONT_SIZE",
+      StateKeys.FONT_WEIGHT to "FONT_WEIGHT",
+      StateKeys.FONT_STYLE to "FONT_STYLE",
+      StateKeys.TEXT_WRAP to "TEXT_WRAP",
+      StateKeys.TEXT_OVERFLOW to "TEXT_OVERFLOW",
+      StateKeys.DECORATION_LINE to "DECORATION_LINE",
+      StateKeys.DECORATION_COLOR to "DECORATION_COLOR",
+      StateKeys.LETTER_SPACING to "LETTER_SPACING",
+      StateKeys.LINE_HEIGHT to "LINE_HEIGHT",
+      StateKeys.FONT_FAMILY to "FONT_FAMILY",
+      StateKeys.FONT_VARIANT_NUMERIC to "FONT_VARIANT_NUMERIC",
+    )
+
+    val found = mutableListOf<String>()
+    for ((flag, name) in keys) {
+      if (StateKeys.hasFlag(low, high, flag)) found.add(name)
+    }
+    return if (found.isEmpty()) "(none)" else found.joinToString(",")
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -31,6 +59,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     mason = Mason()
 
     val layout = mason.createScrollView(this)
+    layout.style.overflowY = Overflow.Scroll
 
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -39,9 +68,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     val density = resources.displayMetrics.density
     val scale = mason.scale
 
-    // ---------------------------------------------------------------
     // Helpers
-    // ---------------------------------------------------------------
     fun sectionHeader(text: String): TextView {
       return TextView(this).apply {
         this.text = text
@@ -85,21 +112,17 @@ class PseudoDemoActivity : AppCompatActivity() {
     }
 
     fun ByteBuffer.setBorderRadius(px: Float) {
-      for (xType in intArrayOf(
-        StyleKeys.BORDER_RADIUS_TOP_LEFT_X_TYPE,
-        StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_TYPE,
-        StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE,
-        StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_TYPE
+      for ((t, v) in listOf(
+        StyleKeys.BORDER_RADIUS_TOP_LEFT_X_TYPE to StyleKeys.BORDER_RADIUS_TOP_LEFT_X_VALUE,
+        StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_TYPE to StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_VALUE,
+        StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE to StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE,
+        StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_TYPE to StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_VALUE,
+        StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_TYPE to StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_VALUE,
+        StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_TYPE to StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_VALUE,
+        StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE to StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE,
+        StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE to StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE,
       )) {
-        put(xType, 0); putFloat(xType + 1, px)
-      }
-      for (yType in intArrayOf(
-        StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_TYPE,
-        StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_TYPE,
-        StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE,
-        StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE
-      )) {
-        put(yType, 0); putFloat(yType + 1, px)
+        put(t, 0); putFloat(v, px)
       }
       Node.markPseudoSet(this, StateKeys.BORDER_RADIUS)
     }
@@ -152,6 +175,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     )
     layout.addView(primary, matchWrap())
 
+
     primary.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
       setBg("#4338CA".toColorInt())
     }
@@ -175,6 +199,15 @@ class PseudoDemoActivity : AppCompatActivity() {
     )
     layout.addView(outline, matchWrap())
 
+
+
+    primary.addEventListener("click") {
+      outline.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
+        setFontColor(Color.YELLOW)
+      }
+    }
+
+
     outline.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
       setBg("#EEF2FF".toColorInt())
     }
@@ -196,10 +229,10 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(danger, matchWrap())
 
     danger.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#B91C1C"))
+      setBg("#B91C1C".toColorInt())
     }
     danger.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
-      setBg(Color.parseColor("#991B1B"))
+      setBg("#991B1B".toColorInt())
     }
 
     // ===============================================================
@@ -215,10 +248,10 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(success, matchWrap())
 
     success.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#047857"))
+      setBg("#047857".toColorInt())
     }
     success.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
-      setBg(Color.parseColor("#065F46"))
+      setBg("#065F46".toColorInt())
     }
 
     // ===============================================================
@@ -235,10 +268,10 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(pill, matchWrap())
 
     pill.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#6D28D9"))
+      setBg("#6D28D9".toColorInt())
     }
     pill.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
-      setBg(Color.parseColor("#5B21B6"))
+      setBg("#5B21B6".toColorInt())
       setBorderRadius(12f * density)
     }
 
@@ -255,7 +288,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     layout.addView(ghost, matchWrap())
 
     ghost.node.preparePseudoBuffer(PseudoState.HOVER.mask).apply {
-      setBg(Color.parseColor("#F3F4F6"))
+      setBg("#F3F4F6".toColorInt())
       setFontColor(Color.parseColor("#111827"))
     }
     ghost.node.preparePseudoBuffer(PseudoState.ACTIVE.mask).apply {
@@ -344,7 +377,7 @@ class PseudoDemoActivity : AppCompatActivity() {
     disabledPrimary.node.preparePseudoBuffer(PseudoState.DISABLED.mask).apply {
       setBg(Color.parseColor("#C7D2FE"))
       setFontColor(Color.parseColor("#A5B4FC"))
-      setBorderColor(Color.parseColor("#C7D2FE"))
+      // setBorderColor(Color.parseColor("#C7D2FE"))
     }
 
     val disabledOutline = styledButton(
@@ -360,6 +393,7 @@ class PseudoDemoActivity : AppCompatActivity() {
       setBorderColor(Color.parseColor("#E5E7EB"))
       setBorderStyle(MasonBorderStyle.Dashed)
     }
+
 
     // ===============================================================
     // 11. Cascade: hover + focus + active
@@ -391,19 +425,19 @@ class PseudoDemoActivity : AppCompatActivity() {
       setBorderColor(Color.parseColor("#4338CA"))
     }
 
-    // ---------------------------------------------------------------
     // Wire up
-    // ---------------------------------------------------------------
-    root.addView(layout, LinearLayout.LayoutParams(
-      LinearLayout.LayoutParams.MATCH_PARENT,
-      LinearLayout.LayoutParams.MATCH_PARENT
-    ))
+    root.addView(
+      layout, LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.MATCH_PARENT
+      )
+    )
 
     enableEdgeToEdge()
 
     ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
       val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      view.setPadding(0,systemBars.top + 24,0, systemBars.bottom + 24)
+      view.setPadding(0, systemBars.top + 24, 0, systemBars.bottom + 24)
       insets
     }
 

@@ -68,6 +68,9 @@
         android:value="" />
     </activity>
     <activity
+      android:name=".BugActivity"
+      android:exported="true" />
+    <activity
       android:name=".FlexActivity"
       android:exported="false">
       <meta-data
@@ -89,12 +92,18 @@
     </activity>
     <activity
       android:name=".PseudoDemoActivity"
-      android:exported="false" />
+      android:exported="true" />
+    <activity
+      android:name=".MinimalReproActivity"
+      android:exported="true" />
     <activity
       android:name=".NumericDemoActivity"
       android:exported="false" />
     <activity
       android:name=".SuperellipseActivity"
+      android:exported="true" />
+    <activity
+      android:name=".TransformActivity"
       android:exported="true" />
   </application>
 

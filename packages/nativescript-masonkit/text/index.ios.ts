@@ -141,12 +141,37 @@ export class Text extends TextBase {
     }
   }
 
+  _setNativeViewFrame(nativeView: any, frame: CGRect): void {
+    //  nativeView.frame = frame;
+  }
+
+  private _measureChildren(layout) {
+    const children = layout.children;
+    let i = 0;
+    if (children.count === 0) {
+      return;
+    }
+
+    for (const child of this._viewChildren) {
+      layout = children.objectAtIndex(i);
+      const w = layout.width;
+      const h = layout.height;
+
+      // Measure the child so NativeScript's layout system is satisfied
+      const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      View.measureChild(this as never, child as never, wSpec, hSpec);
+
+      i++;
+    }
+  }
+
   public onLayout(left: number, top: number, right: number, bottom: number): void {
     super.onLayout(left, top, right, bottom);
 
-    // todo
     // @ts-ignore
     let layout = this._view.node.computedLayout;
+
     const children = layout.children;
     let i = 0;
     if (children.count === 0) {
@@ -156,9 +181,17 @@ export class Text extends TextBase {
       layout = children.objectAtIndex(i);
       const x = layout.x;
       const y = layout.y;
-      const width = layout.width;
-      const height = layout.height;
-      View.layoutChild(this as never, child as never, x, y, width, height);
+      const w = layout.width;
+      const h = layout.height;
+
+      // const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      // const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      // View.measureChild(this as never, child as never, wSpec, hSpec);
+
+      // return;
+
+      // Use child.layout() directly — Mason already computed final positions
+      (child as any).layout(x, top + y, x + w, top + y + h, false);
       i++;
     }
   }
@@ -185,10 +218,12 @@ export class Text extends TextBase {
 
           // todo
           // @ts-ignore
-          const layout = this.ios.mason_layout();
+          var layout = this.ios.mason_layout();
 
           const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
           const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
+
+          this._measureChildren(layout);
 
           this.setMeasuredDimension(w, h);
           return;
@@ -232,25 +267,25 @@ export class Text extends TextBase {
           // @ts-ignore
           this.ios.mason_computeWithSize(width, height);
 
-          const layout = this.ios.node.computedLayout;
+          var layout = this.ios.node.computedLayout;
 
           const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
           const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
+
+          this._measureChildren(layout);
 
           this.setMeasuredDimension(w, h);
         }
       } else {
         // todo
         // @ts-ignore
-        const layout = nativeView.node.computedLayout;
+        var layout = nativeView.node.computedLayout;
         const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
         const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
 
-        this.eachLayoutChild((child) => {
-          View.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
-        });
-
         this.setMeasuredDimension(w, h);
+
+        this._measureChildren(layout);
       }
     }
   }
@@ -261,7 +296,11 @@ export class Text extends TextBase {
 
     if (nativeView && child.nativeViewProtected) {
       child[isTextChild_] = true;
-      const index = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      const jsIndex = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      // Map the JS index onto the native children list (views attach lazily,
+      // so the raw index can run ahead of native state).
+      const index = jsIndex <= -1 ? jsIndex : (this as any)._nativeIndexFor(jsIndex);
+      child._isMasonChild = true;
       nativeView.addViewAt(child.nativeViewProtected, index);
       return true;
     }
@@ -271,11 +310,8 @@ export class Text extends TextBase {
 
   _removeViewFromNativeVisualTree(view: ViewBase): void {
     view[isTextChild_] = false;
-    super._removeViewFromNativeVisualTree(view);
-  }
-
-  _setNativeViewFrame(nativeView: any, frame: CGRect): void {
-    nativeView.frame = frame;
+    // todo
+    //  super._removeViewFromNativeVisualTree(view);
   }
 }
 

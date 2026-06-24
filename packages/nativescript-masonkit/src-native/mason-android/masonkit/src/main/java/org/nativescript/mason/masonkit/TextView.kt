@@ -6,11 +6,13 @@ import android.graphics.Canvas
 import android.os.Build
 import android.text.StaticLayout
 import android.util.AttributeSet
-import android.util.Log
 import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import androidx.core.widget.TextViewCompat
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.Styles.TextJustify
 import org.nativescript.mason.masonkit.Styles.TextWrap
 import org.nativescript.mason.masonkit.enums.Display
@@ -94,12 +96,18 @@ class TextView @JvmOverloads constructor(
   // Cached StaticLayout and width used for drawing when we render our own layout
   internal var cachedStaticLayout: StaticLayout? = null
   internal var cachedStaticLayoutWidth: Int = -1
+
   // Float-aware StaticLayout: wraps text around floated sibling elements
   internal var floatAwareStaticLayout: StaticLayout? = null
+
   // Height applied by float-aware expansion so onSizeChanged can skip clearing the cache
   private var floatExpandedHeight: Int = -1
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    style.mBackground?.layers?.forEach { it.shader = null } // force rebuild on next draw
+    style.mBackground?.layers?.forEach {
+      it.shader = null
+      it.shaderWidth = -1
+      it.shaderHeight = -1
+    } // force rebuild on next draw
     style.mBorderRenderer.invalidate()
     // Invalidate cached StaticLayout when size changes, but skip if this
     // size change was triggered by our own float-aware height expansion.
@@ -125,9 +133,15 @@ class TextView @JvmOverloads constructor(
       // when applyLayoutFlat positions the view), so try building float-aware
       // layout unconditionally.
       if (floatAwareStaticLayout == null) {
-        try {
-          floatAwareStaticLayout = engine.buildFloatAwareStaticLayout(paint)
-        } catch (_: Throwable) {}
+        floatAwareStaticLayout = engine.buildFloatAwareStaticLayout(paint)
+      }
+
+      // After rotation Taffy reuses cached measure results, so measure() never
+      // re-runs to rebuild cachedStaticLayout (cleared by onSizeChanged). Rebuild
+      // it here at the current content width so our custom centered draw still
+      // runs instead of falling back to the platform's top-aligned TextView.
+      if (floatAwareStaticLayout == null && cachedStaticLayout == null) {
+        cachedStaticLayout = engine.rebuildCachedStaticLayout(paint, width - paddingLeft - paddingRight)
       }
 
       val layoutToDraw = floatAwareStaticLayout ?: cachedStaticLayout
@@ -153,10 +167,17 @@ class TextView @JvmOverloads constructor(
               while (anc != null && anc is Element) {
                 val ancElement = anc as Element
                 val childMarginBottom = childNode?.let {
-                  resolveMarginValue(try { it.style.margin.bottom } catch (_: Throwable) { null })
+                  resolveMarginValue(
+                    try {
+                      it.style.margin.bottom
+                    } catch (_: Throwable) {
+                      null
+                    }
+                  )
                 } ?: 0f
                 val ancBorderBottom = ancElement.node.computedBorderBottom
-                val needed = child.bottom + childMarginBottom.toInt() + anc.paddingBottom + ancBorderBottom.toInt()
+                val needed =
+                  child.bottom + childMarginBottom.toInt() + anc.paddingBottom + ancBorderBottom.toInt()
                 val available = anc.height
                 if (needed <= available) break
                 anc.layout(anc.left, anc.top, anc.right, anc.top + needed)
@@ -172,7 +193,25 @@ class TextView @JvmOverloads constructor(
             }
           }
         }
-        layoutToDraw.draw(c)
+        val fm = paint.fontMetricsInt
+        val contentH = height - paddingTop - paddingBottom
+        val dy = if (layoutToDraw.lineCount == 1 && contentH > 0) {
+          val baseline0 = layoutToDraw.getLineBaseline(0)
+          val glyphCenter = baseline0 + (fm.ascent + fm.descent) / 2f
+          contentH / 2f - glyphCenter
+        } else 0f
+        // We bypass super.onDraw, which normally insets the layout by the view's
+        // padding — so apply paddingLeft/paddingTop here.
+        val tx = paddingLeft.toFloat()
+        val ty = paddingTop.toFloat() + dy
+        if (tx != 0f || ty != 0f) {
+          val save = c.save()
+          c.translate(tx, ty)
+          layoutToDraw.draw(c)
+          c.restoreToCount(save)
+        } else {
+          layoutToDraw.draw(c)
+        }
       } else {
         // Fall back to platform drawing if building a StaticLayout fails.
         super.onDraw(c)
@@ -205,11 +244,15 @@ class TextView @JvmOverloads constructor(
       view = this@TextView
       this.isAnonymous = isAnonymous
     }
+    // Web user-agent default margins are authored in CSS px; mason stores
+    // layout in device pixels, so scale by display density (mirrors how CSS px
+    // values are scaled). Must stay in sync with iOS MasonText.swift.
+    val density = resources.displayMetrics.density
     val margin = { top: Float, bottom: Float ->
       Rect<LengthPercentageAuto>(
-        top = LengthPercentageAuto.Points(top),
+        top = LengthPercentageAuto.Points(top * density),
         right = LengthPercentageAuto.Points(0f),
-        bottom = LengthPercentageAuto.Points(bottom),
+        bottom = LengthPercentageAuto.Points(bottom * density),
         left = LengthPercentageAuto.Points(0f),
       )
     }
@@ -234,44 +277,44 @@ class TextView @JvmOverloads constructor(
 
         TextType.H1 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
-          fontSize = 32
-          node.style.margin = margin(16f, 16f)
+          style.fontWeight = FontWeight.Bold
+          fontSize = 32 // 2em
+          node.style.margin = margin(21.44f, 21.44f) // 0.67em
         }
 
         TextType.H2 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
-          fontSize = 24
-          node.style.margin = margin(14f, 14f)
+          style.fontWeight = FontWeight.Bold
+          fontSize = 24 // 1.5em
+          node.style.margin = margin(19.92f, 19.92f) // 0.83em
         }
 
         TextType.H3 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
-          fontSize = 20
-          node.style.margin = margin(12f, 8f)
+          style.fontWeight = FontWeight.Bold
+          fontSize = 19 // 1.17em ≈ 18.72
+          node.style.margin = margin(18.72f, 18.72f) // 1em
         }
 
         TextType.H4 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
-          fontSize = Constants.DEFAULT_FONT_SIZE
-          node.style.margin = margin(10f, 10f)
+          style.fontWeight = FontWeight.Bold
+          fontSize = Constants.DEFAULT_FONT_SIZE // 1em (16)
+          node.style.margin = margin(21.28f, 21.28f) // 1.33em
         }
 
         TextType.H5 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
-          fontSize = 13
-          node.style.margin = margin(8f, 8f)
+          style.fontWeight = FontWeight.Bold
+          fontSize = 13 // 0.83em ≈ 13.28
+          node.style.margin = margin(22.18f, 22.18f) // 1.67em
         }
 
         TextType.H6 -> {
           node.style.display = Display.Block
-          style.fontWeight = FontFace.NSCFontWeight.Bold
-          fontSize = 10
-          node.style.margin = margin(6f, 6f)
+          style.fontWeight = FontWeight.Bold
+          fontSize = 11 // 0.67em ≈ 10.72
+          node.style.margin = margin(24.98f, 24.98f) // 2.33em
         }
 
         TextType.Li -> {
@@ -280,15 +323,15 @@ class TextView @JvmOverloads constructor(
         TextType.Blockquote -> {
           node.style.display = Display.Block
           node.style.margin = Rect(
-            top = LengthPercentageAuto.Points(16f),
-            right = LengthPercentageAuto.Points(40f),
-            bottom = LengthPercentageAuto.Points(16f),
-            left = LengthPercentageAuto.Points(40f),
+            top = LengthPercentageAuto.Points(16f * density),
+            right = LengthPercentageAuto.Points(40f * density),
+            bottom = LengthPercentageAuto.Points(16f * density),
+            left = LengthPercentageAuto.Points(40f * density),
           )
         }
 
         TextType.B, TextType.Strong -> {
-          style.fontWeight = FontFace.NSCFontWeight.Bold
+          style.fontWeight = FontWeight.Bold
           style.display = Display.Inline
         }
 
@@ -301,7 +344,7 @@ class TextView @JvmOverloads constructor(
         }
 
         TextType.I, TextType.Em -> {
-          style.fontStyle = FontFace.NSCFontStyle.Italic
+          style.fontStyle = FontStyle.Italic
           style.display = Display.Inline
         }
 
@@ -312,13 +355,13 @@ class TextView @JvmOverloads constructor(
 
         TextType.A -> {
           node.style.display = Display.Inline
-          node.style.decorationLine = Styles.DecorationLine.Underline
-
+          // No forced underline — match web (CSS resets links); honor text-decoration.
 
           isClickable = true
           isFocusable = true
           isFocusableInTouchMode = true
 
+          node.hasNativeClickDispatch = true
           setOnClickListener {
             node.mason.dispatch(
               Event(
@@ -458,7 +501,7 @@ class TextView @JvmOverloads constructor(
       style.fontSize = value
     }
 
-  var fontWeight: FontFace.NSCFontWeight
+  var fontWeight: FontWeight
     get() {
       return style.fontWeight
     }
@@ -466,7 +509,7 @@ class TextView @JvmOverloads constructor(
       style.fontWeight = value
     }
 
-  var fontStyle: FontFace.NSCFontStyle
+  var fontStyle: FontStyle
     set(value) {
       style.fontStyle = value
     }
@@ -587,8 +630,11 @@ class TextView @JvmOverloads constructor(
     }
   }
 
-  override fun measure(knownDimensions: Size<Float?>, availableSpace: Size<Float?>): Size<Float> {
-    return engine.measure(paint, knownDimensions, availableSpace)
+  override fun measure(
+    knownWidth: Float, knownHeight: Float,
+    availableWidth: Float, availableHeight: Float
+  ): Long {
+    return engine.measure(paint, knownWidth, knownHeight, availableWidth, availableHeight)
   }
 
   internal fun attachTextNode(node: TextNode, index: Int = -1) {
@@ -666,5 +712,20 @@ class TextView @JvmOverloads constructor(
 
   fun addView(view: Element, index: Int) {
     addChildAt(view, index)
+  }
+
+  fun removeView(view: Element) {
+    node.removeChild(view.node)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeView(index: Int) {
+    node.removeChildAt(index)
+    engine.invalidateInlineSegments()
+  }
+
+  fun removeAllViews() {
+    node.removeChildren()
+    engine.invalidateInlineSegments()
   }
 }

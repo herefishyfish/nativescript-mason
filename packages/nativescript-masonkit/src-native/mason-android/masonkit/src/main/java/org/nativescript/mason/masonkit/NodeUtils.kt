@@ -35,32 +35,41 @@ internal object NodeUtils {
   }
 
   fun syncNode(node: Node, children: List<Node>) {
-    val nativeChildren = children.mapNotNull {
-      if (it.nativePtr == 0L) {
-        null
-      } else {
-        it.nativePtr
+    // Pre-size array to avoid intermediate list allocation
+    var count = 0
+    for (child in children) {
+      if (child.nativePtr != 0L) count++
+    }
+    val nativeChildren = LongArray(count)
+    var i = 0
+    for (child in children) {
+      if (child.nativePtr != 0L) {
+        nativeChildren[i++] = child.nativePtr
       }
     }
     NativeHelpers.nativeNodeSetChildren(
       node.mason.nativePtr,
       node.nativePtr,
-      nativeChildren.toLongArray()
+      nativeChildren
     )
   }
 
   fun syncNode(node: Node, children: Array<Node>) {
-    val nativeChildren = children.mapNotNull {
-      if (it.nativePtr == 0L) {
-        null
-      } else {
-        it.nativePtr
+    var count = 0
+    for (child in children) {
+      if (child.nativePtr != 0L) count++
+    }
+    val nativeChildren = LongArray(count)
+    var i = 0
+    for (child in children) {
+      if (child.nativePtr != 0L) {
+        nativeChildren[i++] = child.nativePtr
       }
     }
     NativeHelpers.nativeNodeSetChildren(
       node.mason.nativePtr,
       node.nativePtr,
-      nativeChildren.toLongArray()
+      nativeChildren
     )
   }
 

@@ -182,7 +182,7 @@ public class MasonLi: UIView, MasonEventTarget, MasonElement, MasonElementObjc, 
 
     let font = style.font
     if font?.font == nil {
-      font?.loadSync { _ in }
+      font?.loadSync(nil)
     }
 
     let fontSize = font?.uiFont?.pointSize ?? CGFloat(Constants.DEFAULT_FONT_SIZE)
@@ -199,7 +199,7 @@ public class MasonLi: UIView, MasonEventTarget, MasonElement, MasonElementObjc, 
       width = 0
 
     case .Custom:
-      if !marker.isEmpty, let ctFont = font?.ctFont {
+      if !marker.isEmpty, let ctFont = font?.font {
         let attributes: [NSAttributedString.Key: Any] = [.font: ctFont]
         let attributed = NSAttributedString(string: marker, attributes: attributes)
         let line = CTLineCreateWithAttributedString(attributed)
@@ -210,13 +210,13 @@ public class MasonLi: UIView, MasonEventTarget, MasonElement, MasonElementObjc, 
       width = CGFloat(markerSize)
 
     case .Decimal:
-      if position > -1, let ctFont = font?.ctFont {
+      if position > -1, let ctFont = font?.font {
         let text = "\(position + 1)."
         let attributes: [NSAttributedString.Key: Any] = [.font: ctFont]
         let attributed = NSAttributedString(string: text, attributes: attributes)
         let line = CTLineCreateWithAttributedString(attributed)
         width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-      } else if let ctFont = font?.ctFont {
+      } else if let ctFont = font?.font {
         let attributes: [NSAttributedString.Key: Any] = [.font: ctFont]
         let attributed = NSAttributedString(string: "0.", attributes: attributes)
         let line = CTLineCreateWithAttributedString(attributed)

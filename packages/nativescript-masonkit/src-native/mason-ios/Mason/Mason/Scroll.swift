@@ -10,13 +10,13 @@ import UIKit
 @objcMembers
 public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonElement, MasonElementObjc, StyleChangeListener {
   func onStyleChange(_ low: UInt64, _ high: UInt64) {
-    if isHandlingStyleChange { return }
-    isHandlingStyleChange = true
-    defer { isHandlingStyleChange = false }
+    if isScrollHandlingStyleChange { return }
+    isScrollHandlingStyleChange = true
+    defer { isScrollHandlingStyleChange = false }
 
     MasonNode.invalidateDescendantTextViews(node, low, high)
   }
-  
+
   public override func draw(_ rect: CGRect) {
 
     let hasBackground = style.mBackground.color != nil || !style.mBackground.layers.isEmpty
@@ -76,7 +76,11 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
     }
 
     isApplyingLayout = true
-    defer { isApplyingLayout = false }
+    isInLayout = true  // MasonElement associated-object — seen by autoComputeIfRoot
+    defer {
+      isApplyingLayout = false
+      isInLayout = false
+    }
 
     super.layoutSubviews()
 
@@ -94,36 +98,41 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
   public var uiView: UIView {
     return self
   }
-  
+
   public var style: MasonStyle {
     return node.style
   }
 
   private var isApplyingLayout: Bool = false
-  private var isHandlingStyleChange: Bool = false
-  private var lastBounds: CGRect = .zero
-  
+  private var isScrollHandlingStyleChange: Bool = false
+  private var lastBounds: CGRect = .null
+
   internal var canScroll: (Bool, Bool) {
     let flow = node.style.overflow
+    let viewBounds = bounds.size
+
     var canScrollHorizontally: Bool = false
     var canScrollVertically: Bool = false
-    switch(flow.x, flow.y){
-    case (let x, let y):
-      switch(x){
-      case .Hidden, .Scroll, .Auto:
-        canScrollHorizontally = true
-      case .Visible, .Clip:
-        canScrollHorizontally = false
-      }
-      
-      switch(y){
-      case .Hidden, .Scroll, .Auto:
-        canScrollVertically = true
-      case .Visible, .Clip:
-        canScrollVertically = false
-      }
+
+    switch flow.x {
+    case .Scroll:
+      canScrollHorizontally = true
+    case .Auto:
+      // Only scroll when content actually overflows
+      canScrollHorizontally = contentSize.width > viewBounds.width
+    case .Visible, .Hidden, .Clip:
+      canScrollHorizontally = false
     }
-    
+
+    switch flow.y {
+    case .Scroll:
+      canScrollVertically = true
+    case .Auto:
+      canScrollVertically = contentSize.height > viewBounds.height
+    case .Visible, .Hidden, .Clip:
+      canScrollVertically = false
+    }
+
     return (canScrollHorizontally, canScrollVertically)
   }
 
@@ -135,18 +144,22 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
     self.delegate = self
     style.setStyleChangeListener(listener: self)
     isOpaque = false
+    // Must always be true — changing this during touch processing corrupts
+    // UIKit's gesture graph and causes UIGestureGraphEdge assertion failures.
+    // Border-radius is painted manually in draw() so this doesn't affect visuals.
+    clipsToBounds = true
   }
-  
+
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
   }
-  
+
   private var lastContentOffset: CGPoint = .zero
   public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
     lastContentOffset = scrollView.contentOffset
   }
-  
-  
+
+
   public func scrollViewDidScroll(_ scrollView: UIScrollView) {
     let (canScrollHorizontally, canScrollVertically) = canScroll
 
@@ -165,8 +178,8 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
 
     lastContentOffset = targetOffset
   }
-  
-  
+
+
   public func addView(_ view: UIView){
     if(view.superview == self){
       return
@@ -177,7 +190,7 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
       append(node: mason.nodeForView(view))
     }
   }
-  
+
   public func addView(_ view: UIView, at: Int){
     if(view.superview == self){
       return
@@ -189,14 +202,24 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
       node.addChildAt(mason.nodeForView(view), at)
     }
   }
-  
-  
+
+  // Inverse of addView — unlink the mason node so removals don't orphan it.
+  public func removeView(_ view: UIView) {
+    let childNode = (view as? MasonElement)?.node ?? mason.nodeForView(view)
+    _ = node.removeChild(childNode)
+  }
+
+  public func removeView(at index: Int) {
+    _ = node.removeChildAt(index: index)
+  }
+
+
   func checkAndUpdateStyle() {
       if (!node.inBatch) {
         node.style.updateNativeStyle()
       }
   }
-  
+
   @objc public func setSize(_ width: Float,_  height: Float) {
       node.style.size = MasonSize(
           MasonDimension.Points(width),
@@ -204,5 +227,5 @@ public class Scroll: UIScrollView, UIScrollViewDelegate,MasonEventTarget, MasonE
       )
       checkAndUpdateStyle()
   }
-  
+
 }

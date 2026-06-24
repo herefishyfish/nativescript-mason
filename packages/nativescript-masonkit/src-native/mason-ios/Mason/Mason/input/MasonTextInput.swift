@@ -25,7 +25,9 @@ internal func mapTextInputType(
   return "insertText"
 }
 
-class MasonTextInput: UITextView, UITextViewDelegate {
+@objcMembers
+@objc(MasonTextInput)
+public class MasonTextInput: UITextView, UITextViewDelegate {
   internal var owner: MasonElement? = nil
   
   override init(frame: CGRect, textContainer: NSTextContainer?) {
@@ -38,39 +40,40 @@ class MasonTextInput: UITextView, UITextViewDelegate {
     commonInit()
   }
   
-  private let placeholderLabel = UILabel()
+  internal let placeholderLabel = UILabel()
   
-  var placeholder: String? {
+  public var placeholder: String? {
     didSet { placeholderLabel.text = placeholder }
   }
   
-  override var text: String! {
+  public override var text: String! {
     didSet { updatePlaceholder() }
   }
   
-  override var attributedText: NSAttributedString! {
+  public override var attributedText: NSAttributedString! {
     didSet { updatePlaceholder() }
   }
   
-  override var font: UIFont? {
+  public override var font: UIFont? {
     didSet { placeholderLabel.font = font ?? UIFont.systemFont(ofSize: UIFont.systemFontSize) }
   }
   
-  override var textAlignment: NSTextAlignment {
+  public override var textAlignment: NSTextAlignment {
     didSet { placeholderLabel.textAlignment = textAlignment }
   }
   
-  private var defaultTextContainerInset: UIEdgeInsets = .zero
+  internal var defaultTextContainerInset: UIEdgeInsets = .zero
+  
+  internal var singleLineBehavior: Bool = true {
+    didSet {
+      applyEditorBehavior()
+      setNeedsLayout()
+    }
+  }
   
   private func commonInit() {
     delegate = self
-    isScrollEnabled = false
-    textContainer.maximumNumberOfLines = 1
-    textContainer.lineBreakMode = .byTruncatingTail
-    
     placeholderLabel.textColor = .placeholderText
-    placeholderLabel.numberOfLines = 1
-    placeholderLabel.lineBreakMode = .byTruncatingTail
     placeholderLabel.backgroundColor = .clear
     
     placeholderLabel.translatesAutoresizingMaskIntoConstraints = true
@@ -88,32 +91,57 @@ class MasonTextInput: UITextView, UITextViewDelegate {
       name: UITextView.textDidChangeNotification,
       object: self
     )
+    applyEditorBehavior()
     updatePlaceholder()
   }
   
-  override func layoutSubviews() {
+  internal func applyEditorBehavior() {
+    isScrollEnabled = !singleLineBehavior
+    textContainer.maximumNumberOfLines = singleLineBehavior ? 1 : 0
+    textContainer.lineBreakMode = singleLineBehavior ? .byTruncatingTail : .byWordWrapping
+    placeholderLabel.numberOfLines = singleLineBehavior ? 1 : 0
+    placeholderLabel.lineBreakMode = singleLineBehavior ? .byTruncatingTail : .byWordWrapping
+  }
+  
+  internal func setBaseTextContainerInset(_ inset: UIEdgeInsets) {
+    defaultTextContainerInset = inset
+    if !singleLineBehavior {
+      textContainerInset = inset
+    }
+    setNeedsLayout()
+  }
+  
+  public override func layoutSubviews() {
     super.layoutSubviews()
     
-    // For single-line behavior, vertically center text by adjusting top/bottom inset
     let f = font ?? placeholderLabel.font ?? UIFont.systemFont(ofSize: UIFont.systemFontSize)
-    let verticalInset = max(0, (bounds.height - f.lineHeight) / 2)
-    // preserve original left/right insets
-    textContainerInset = UIEdgeInsets(
-      top: verticalInset,
-      left: defaultTextContainerInset.left,
-      bottom: verticalInset,
-      right: defaultTextContainerInset.right
-    )
+    if singleLineBehavior {
+      let verticalInset = max(0, (bounds.height - f.lineHeight) / 2)
+      textContainerInset = UIEdgeInsets(
+        top: verticalInset,
+        left: defaultTextContainerInset.left,
+        bottom: verticalInset,
+        right: defaultTextContainerInset.right
+      )
+    } else {
+      textContainerInset = defaultTextContainerInset
+    }
     
-    // position placeholder using insets and lineFragmentPadding; limit placeholder to single-line height
     let left = textContainerInset.left + textContainer.lineFragmentPadding
     let right = textContainerInset.right + textContainer.lineFragmentPadding
     let maxWidth = max(0, bounds.width - left - right)
-    let phHeight = f.lineHeight
-    placeholderLabel.frame = CGRect(x: left, y: verticalInset, width: maxWidth, height: phHeight)
+    let placeholderY = textContainerInset.top
+    let phHeight = singleLineBehavior
+      ? f.lineHeight
+      : max(
+        f.lineHeight,
+        placeholderLabel.sizeThatFits(
+          CGSize(width: maxWidth, height: CGFloat.greatestFiniteMagnitude)
+        ).height
+      )
+    placeholderLabel.frame = CGRect(x: left, y: placeholderY, width: maxWidth, height: phHeight)
     
-    // ensure no unexpected content offset so caret aligns predictably
-    if contentOffset != .zero {
+    if singleLineBehavior && contentOffset != .zero {
       contentOffset = .zero
     }
   }
@@ -135,7 +163,7 @@ class MasonTextInput: UITextView, UITextViewDelegate {
   private var lastInputType: String? = nil
   
   
-  func textViewDidChange(_ textView: UITextView) {
+  public func textViewDidChange(_ textView: UITextView) {
     guard let owner = owner else { return }
     
     let event = MasonInputEvent(
@@ -155,7 +183,17 @@ class MasonTextInput: UITextView, UITextViewDelegate {
     lastInputType = nil
   }
   
-  func textViewDidEndEditing(_ textView: UITextView) {
+  public func textViewDidBeginEditing(_ textView: UITextView) {
+    guard let owner = owner else { return }
+    let event = MasonEvent(type: "focus").apply { event in
+      event.bubbles = true
+      event.cancelable = false
+    }
+    event.target = owner
+    owner.node.mason.dispatch(event, owner.node)
+  }
+  
+  public func textViewDidEndEditing(_ textView: UITextView) {
     guard let owner = owner else { return }
     
     let event = MasonEvent(
@@ -169,10 +207,17 @@ class MasonTextInput: UITextView, UITextViewDelegate {
     }
     event.target = owner
     owner.node.mason.dispatch(event, owner.node)
+    
+    let blur = MasonEvent(type: "blur").apply { event in
+      event.bubbles = true
+      event.cancelable = false
+    }
+    blur.target = owner
+    owner.node.mason.dispatch(blur, owner.node)
   }
   
   private var didPaste = false
-  override func paste(_ sender: Any?) {
+  public override func paste(_ sender: Any?) {
     didPaste = true
     
     guard let owner = owner else {
@@ -202,7 +247,7 @@ class MasonTextInput: UITextView, UITextViewDelegate {
   }
   
   private var didCut = false
-  override func cut(_ sender: Any?) {
+  public override func cut(_ sender: Any?) {
     didCut = true
     guard let owner = owner else {
       super.cut(sender)
@@ -231,7 +276,7 @@ class MasonTextInput: UITextView, UITextViewDelegate {
   }
   
   
-  func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+  public func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
     let isRedoingOrUndoing = textView.undoManager?.isRedoing ?? false || textView.undoManager?.isUndoing ?? false
     
     if (didCut) {
@@ -290,10 +335,13 @@ class MasonTextInput: UITextView, UITextViewDelegate {
   /// Optional explicit caret height. If nil, the caret height is derived from the font's capHeight.
   var caretHeight: CGFloat? = nil
   
-  override func caretRect(for position: UITextPosition) -> CGRect {
+  public override func caretRect(for position: UITextPosition) -> CGRect {
     var rect = super.caretRect(for: position)
     // shrink width
     rect.size.width = max(0.5, caretWidth)
+    if !singleLineBehavior {
+      return rect
+    }
     
     // derive a sensible caret height from font metrics (prefer capHeight)
     let lineHeight = font?.lineHeight ?? placeholderLabel.font.lineHeight

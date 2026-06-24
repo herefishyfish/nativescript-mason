@@ -1,6 +1,6 @@
 import { layout } from '@nativescript/core/utils';
 import type { GridAutoFlow, Length, LengthAuto, VerticalAlign, View } from '.';
-import { CoreTypes, Length as CoreLength, PercentLength as CorePercentLength } from '@nativescript/core';
+import { Color, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength } from '@nativescript/core';
 import { AlignContent, AlignSelf, AlignItems, JustifyContent, JustifySelf, _parseGridAutoRowsColumns, _setGridAutoRows, _setGridAutoColumns, _parseGridLine, JustifyItems, GridTemplates, _parseGridTemplates, _setGridTemplateColumns, _setGridTemplateRows, _getGridTemplateRows, _getGridTemplateColumns, Float, Clear } from './utils';
 
 enum StyleKeys {
@@ -20,78 +20,79 @@ enum StyleKeys {
   JUSTIFY_SELF = 11,
   JUSTIFY_CONTENT = 12,
 
+  // Contiguous types, then contiguous values per group
   INSET_LEFT_TYPE = 13,
-  INSET_LEFT_VALUE = 14, // float (4 bytes: 14-17)
-  INSET_RIGHT_TYPE = 18,
-  INSET_RIGHT_VALUE = 19, // float (4 bytes: 19-22)
-  INSET_TOP_TYPE = 23,
-  INSET_TOP_VALUE = 24, // float (4 bytes: 24-27)
-  INSET_BOTTOM_TYPE = 28,
-  INSET_BOTTOM_VALUE = 29, // float (4 bytes: 29-32)
+  INSET_RIGHT_TYPE = 14,
+  INSET_TOP_TYPE = 15,
+  INSET_BOTTOM_TYPE = 16,
+  INSET_LEFT_VALUE = 17, // f32 (4 bytes: 17-20)
+  INSET_RIGHT_VALUE = 21, // f32 (4 bytes: 21-24)
+  INSET_TOP_VALUE = 25, // f32 (4 bytes: 25-28)
+  INSET_BOTTOM_VALUE = 29, // f32 (4 bytes: 29-32)
 
   MARGIN_LEFT_TYPE = 33,
-  MARGIN_LEFT_VALUE = 34, // float (4 bytes: 34-37)
-  MARGIN_RIGHT_TYPE = 38,
-  MARGIN_RIGHT_VALUE = 39, // float (4 bytes: 39-42)
-  MARGIN_TOP_TYPE = 43,
-  MARGIN_TOP_VALUE = 44, // float (4 bytes: 44-47)
-  MARGIN_BOTTOM_TYPE = 48,
-  MARGIN_BOTTOM_VALUE = 49, // float (4 bytes: 49-52)
+  MARGIN_RIGHT_TYPE = 34,
+  MARGIN_TOP_TYPE = 35,
+  MARGIN_BOTTOM_TYPE = 36,
+  MARGIN_LEFT_VALUE = 37, // f32 (4 bytes: 37-40)
+  MARGIN_RIGHT_VALUE = 41, // f32 (4 bytes: 41-44)
+  MARGIN_TOP_VALUE = 45, // f32 (4 bytes: 45-48)
+  MARGIN_BOTTOM_VALUE = 49, // f32 (4 bytes: 49-52)
 
   PADDING_LEFT_TYPE = 53,
-  PADDING_LEFT_VALUE = 54, // float (4 bytes: 54-57)
-  PADDING_RIGHT_TYPE = 58,
-  PADDING_RIGHT_VALUE = 59, // float (4 bytes: 59-62)
-  PADDING_TOP_TYPE = 63,
-  PADDING_TOP_VALUE = 64, // float (4 bytes: 64-67)
-  PADDING_BOTTOM_TYPE = 68,
-  PADDING_BOTTOM_VALUE = 69, // float (4 bytes: 69-72)
+  PADDING_RIGHT_TYPE = 54,
+  PADDING_TOP_TYPE = 55,
+  PADDING_BOTTOM_TYPE = 56,
+  PADDING_LEFT_VALUE = 57, // f32 (4 bytes: 57-60)
+  PADDING_RIGHT_VALUE = 61, // f32 (4 bytes: 61-64)
+  PADDING_TOP_VALUE = 65, // f32 (4 bytes: 65-68)
+  PADDING_BOTTOM_VALUE = 69, // f32 (4 bytes: 69-72)
 
   BORDER_LEFT_TYPE = 73,
-  BORDER_LEFT_VALUE = 74, // float (4 bytes: 74-77)
-  BORDER_RIGHT_TYPE = 78,
-  BORDER_RIGHT_VALUE = 79, // float (4 bytes: 79-82)
-  BORDER_TOP_TYPE = 83,
-  BORDER_TOP_VALUE = 84, // float (4 bytes: 84-87)
-  BORDER_BOTTOM_TYPE = 88,
-  BORDER_BOTTOM_VALUE = 89, // float (4 bytes: 89-92)
+  BORDER_RIGHT_TYPE = 74,
+  BORDER_TOP_TYPE = 75,
+  BORDER_BOTTOM_TYPE = 76,
+  BORDER_LEFT_VALUE = 77, // f32 (4 bytes: 77-80)
+  BORDER_RIGHT_VALUE = 81, // f32 (4 bytes: 81-84)
+  BORDER_TOP_VALUE = 85, // f32 (4 bytes: 85-88)
+  BORDER_BOTTOM_VALUE = 89, // f32 (4 bytes: 89-92)
 
-  FLEX_GROW = 93, // float (4 bytes: 93-96)
-  FLEX_SHRINK = 97, // float (4 bytes: 97-100)
+  FLEX_GROW = 93, // f32 (4 bytes: 93-96)
+  FLEX_SHRINK = 97, // f32 (4 bytes: 97-100)
 
   FLEX_BASIS_TYPE = 101,
-  FLEX_BASIS_VALUE = 102, // float (4 bytes: 102-105)
+  FLEX_BASIS_VALUE = 102, // f32 (4 bytes: 102-105)
 
   WIDTH_TYPE = 106,
-  WIDTH_VALUE = 107, // float (4 bytes: 107-110)
-  HEIGHT_TYPE = 111,
-  HEIGHT_VALUE = 112, // float (4 bytes: 112-115)
+  HEIGHT_TYPE = 107,
+  WIDTH_VALUE = 108, // f32 (4 bytes: 108-111)
+  HEIGHT_VALUE = 112, // f32 (4 bytes: 112-115)
 
   MIN_WIDTH_TYPE = 116,
-  MIN_WIDTH_VALUE = 117, // float (4 bytes: 117-120)
-  MIN_HEIGHT_TYPE = 121,
-  MIN_HEIGHT_VALUE = 122, // float (4 bytes: 122-125)
+  MIN_HEIGHT_TYPE = 117,
+  MIN_WIDTH_VALUE = 118, // f32 (4 bytes: 118-121)
+  MIN_HEIGHT_VALUE = 122, // f32 (4 bytes: 122-125)
 
   MAX_WIDTH_TYPE = 126,
-  MAX_WIDTH_VALUE = 127, // float (4 bytes: 127-130)
-  MAX_HEIGHT_TYPE = 131,
-  MAX_HEIGHT_VALUE = 132, // float (4 bytes: 132-135)
+  MAX_HEIGHT_TYPE = 127,
+  MAX_WIDTH_VALUE = 128, // f32 (4 bytes: 128-131)
+  MAX_HEIGHT_VALUE = 132, // f32 (4 bytes: 132-135)
 
   GAP_ROW_TYPE = 136,
-  GAP_ROW_VALUE = 137, // float (4 bytes: 137-140)
-  GAP_COLUMN_TYPE = 141,
-  GAP_COLUMN_VALUE = 142, // float (4 bytes: 142-145)
+  GAP_COLUMN_TYPE = 137,
+  GAP_ROW_VALUE = 138, // f32 (4 bytes: 138-141)
+  GAP_COLUMN_VALUE = 142, // f32 (4 bytes: 142-145)
 
-  ASPECT_RATIO = 146, // float (4 bytes: 146-149)
+  ASPECT_RATIO = 146, // f32 (4 bytes: 146-149)
   GRID_AUTO_FLOW = 150,
   GRID_COLUMN_START_TYPE = 151,
-  GRID_COLUMN_START_VALUE = 152, // float (4 bytes: 152-155)
-  GRID_COLUMN_END_TYPE = 156,
-  GRID_COLUMN_END_VALUE = 157, // float (4 bytes: 157-160)
-  GRID_ROW_START_TYPE = 161,
-  GRID_ROW_START_VALUE = 162, // float (4 bytes: 162-165)
-  GRID_ROW_END_TYPE = 166,
-  GRID_ROW_END_VALUE = 167, // float (4 bytes: 167-170)
+  GRID_COLUMN_END_TYPE = 152,
+  GRID_ROW_START_TYPE = 153,
+  GRID_ROW_END_TYPE = 154,
+  GRID_COLUMN_START_VALUE = 155, // f32 (4 bytes: 155-158)
+  GRID_COLUMN_END_VALUE = 159, // f32 (4 bytes: 159-162)
+  GRID_ROW_START_VALUE = 163, // f32 (4 bytes: 163-166)
+  GRID_ROW_END_VALUE = 167, // f32 (4 bytes: 167-170)
   SCROLLBAR_WIDTH = 171, // float (4 bytes: 171-174)
   ALIGN = 175,
   BOX_SIZING = 176,
@@ -105,67 +106,42 @@ enum StyleKeys {
   MAX_CONTENT_WIDTH = 190, // float (4 bytes: 190-193)
   MAX_CONTENT_HEIGHT = 194, // float (4 bytes: 194-197)
 
-  // ----------------------------
   // Border Style (per side)
-  // ----------------------------
   BORDER_LEFT_STYLE = 198,
   BORDER_RIGHT_STYLE = 199,
   BORDER_TOP_STYLE = 200,
   BORDER_BOTTOM_STYLE = 201,
 
-  // ----------------------------
   // Border Color (per side)
-  // ----------------------------
   BORDER_LEFT_COLOR = 202, // u32 (4 bytes: 202-205)
   BORDER_RIGHT_COLOR = 206, // u32 (4 bytes: 206-209)
   BORDER_TOP_COLOR = 210, // u32 (4 bytes: 210-213)
   BORDER_BOTTOM_COLOR = 214, // u32 (4 bytes: 214-217)
 
-  // ============================================================
-  // Border Radius (elliptical + squircle exponent)
-  // Each corner = 5 fields (12 bytes total):
-  //   x_type (1), x_value (4), y_type (1), y_value (4), exponent (4)
-  // ============================================================
-
-  // ----------------------------
-  // Top-left corner (12 bytes)
-  // ----------------------------
   BORDER_RADIUS_TOP_LEFT_X_TYPE = 218,
-  BORDER_RADIUS_TOP_LEFT_X_VALUE = 219, // float (4 bytes: 219-222)
-  BORDER_RADIUS_TOP_LEFT_Y_TYPE = 223,
-  BORDER_RADIUS_TOP_LEFT_Y_VALUE = 224, // float (4 bytes: 224-227)
-  BORDER_RADIUS_TOP_LEFT_EXPONENT = 228, // float (4 bytes: 228-231)
+  BORDER_RADIUS_TOP_LEFT_Y_TYPE = 219,
+  BORDER_RADIUS_TOP_RIGHT_X_TYPE = 220,
+  BORDER_RADIUS_TOP_RIGHT_Y_TYPE = 221,
+  BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE = 222,
+  BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE = 223,
+  BORDER_RADIUS_BOTTOM_LEFT_X_TYPE = 224,
+  BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE = 225,
 
-  // ----------------------------
-  // Top-right corner
-  // ----------------------------
-  BORDER_RADIUS_TOP_RIGHT_X_TYPE = 232,
-  BORDER_RADIUS_TOP_RIGHT_X_VALUE = 233, // float (4 bytes: 233-236)
-  BORDER_RADIUS_TOP_RIGHT_Y_TYPE = 237,
-  BORDER_RADIUS_TOP_RIGHT_Y_VALUE = 238, // float (4 bytes: 238-241)
-  BORDER_RADIUS_TOP_RIGHT_EXPONENT = 242, // float (4 bytes: 242-245)
+  BORDER_RADIUS_TOP_LEFT_X_VALUE = 226, // f32 (4 bytes: 226-229)
+  BORDER_RADIUS_TOP_LEFT_Y_VALUE = 230, // f32 (4 bytes: 230-233)
+  BORDER_RADIUS_TOP_RIGHT_X_VALUE = 234, // f32 (4 bytes: 234-237)
+  BORDER_RADIUS_TOP_RIGHT_Y_VALUE = 238, // f32 (4 bytes: 238-241)
+  BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE = 242, // f32 (4 bytes: 242-245)
+  BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE = 246, // f32 (4 bytes: 246-249)
+  BORDER_RADIUS_BOTTOM_LEFT_X_VALUE = 250, // f32 (4 bytes: 250-253)
+  BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE = 254, // f32 (4 bytes: 254-257)
 
-  // ----------------------------
-  // Bottom-right corner
-  // ----------------------------
-  BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE = 246,
-  BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE = 247, // float (4 bytes: 247-250)
-  BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE = 251,
-  BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE = 252, // float (4 bytes: 252-255)
-  BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 256, // float (4 bytes: 256-259)
+  BORDER_RADIUS_TOP_LEFT_EXPONENT = 258, // f32 (4 bytes: 258-261)
+  BORDER_RADIUS_TOP_RIGHT_EXPONENT = 262, // f32 (4 bytes: 262-265)
+  BORDER_RADIUS_BOTTOM_RIGHT_EXPONENT = 266, // f32 (4 bytes: 266-269)
+  BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270, // f32 (4 bytes: 270-273)
 
-  // ----------------------------
-  // Bottom-left corner
-  // ----------------------------
-  BORDER_RADIUS_BOTTOM_LEFT_X_TYPE = 260,
-  BORDER_RADIUS_BOTTOM_LEFT_X_VALUE = 261, // float (4 bytes: 261-264)
-  BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE = 265,
-  BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE = 266, // float (4 bytes: 266-269)
-  BORDER_RADIUS_BOTTOM_LEFT_EXPONENT = 270, // float (4 bytes: 270-273)
-
-  // ----------------------------
   // Float
-  // ----------------------------
   FLOAT = 274,
   CLEAR = 275,
 
@@ -244,6 +220,25 @@ enum StyleKeys {
   // font-variant-numeric bitmask (byte) + state
   FONT_VARIANT_NUMERIC = 419, // byte (bitmask)
   FONT_VARIANT_NUMERIC_STATE = 420, // byte
+
+  OBJECT_POSITION_X_TYPE = 560, // byte (0=px, 1=%, 2=keyword)
+  OBJECT_POSITION_Y_TYPE = 561, // byte
+  OBJECT_POSITION_X_VALUE = 562, // f32 (4 bytes: 562-565)
+  OBJECT_POSITION_Y_VALUE = 566, // f32 (4 bytes: 566-569)
+  OBJECT_POSITION_STATE = 570, // byte
+  WRITING_MODE = 571, // byte
+  WRITING_MODE_STATE = 572, // byte
+  UNICODE_BIDI = 573, // byte
+  UNICODE_BIDI_STATE = 574, // byte
+  HYPHENS = 575, // byte
+  HYPHENS_STATE = 576, // byte
+  CARET_COLOR = 577, // u32 (4 bytes: 577-580)
+  CARET_COLOR_STATE = 581, // byte
+  WORD_SPACING = 582, // f32 (4 bytes: 582-585)
+  WORD_SPACING_TYPE = 586, // byte (0=px, 1=%, 2=normal)
+  WORD_SPACING_STATE = 587, // byte
+  FONT_STRETCH = 588, // i32 (4 bytes: 588-591) percentage * 100
+  FONT_STRETCH_STATE = 592, // byte
 }
 
 export type OverFlow = 'visible' | 'hidden' | 'scroll' | 'clip' | 'auto';
@@ -354,6 +349,13 @@ class StateKeys {
   static readonly FONT_FAMILY = StateKeys.flag(69);
   static readonly LETTER_SPACING = StateKeys.flag(70);
   static readonly FONT_VARIANT_NUMERIC = StateKeys.flag(71);
+  static readonly OBJECT_POSITION = StateKeys.flag(72);
+  static readonly WRITING_MODE = StateKeys.flag(73);
+  static readonly UNICODE_BIDI = StateKeys.flag(74);
+  static readonly HYPHENS = StateKeys.flag(75);
+  static readonly CARET_COLOR = StateKeys.flag(76);
+  static readonly WORD_SPACING = StateKeys.flag(77);
+  static readonly FONT_STRETCH = StateKeys.flag(78);
 
   // compatibility: return low bits when code expects single 64-bit value
   get bitsLow(): bigint {
@@ -441,12 +443,121 @@ const setFloat32 = (view: DataView, offset: number, value: number) => {
   view.setFloat32(offset, value, true);
 };
 
+const i8Buffer = new Int8Array(4);
+
+const f32Buffer = new Uint8Array(Float32Array.BYTES_PER_ELEMENT * 4);
+const f32View = new Float32Array(f32Buffer.buffer);
+
+const i32Buffer = new Uint8Array(Int32Array.BYTES_PER_ELEMENT * 4);
+const i32View = new Int32Array(i32Buffer.buffer);
+
+function normalizeColorValue(value: number | string | { argb?: number }): number | null {
+  switch (typeof value) {
+    case 'number':
+      return value;
+    case 'string':
+      try {
+        return new Color(value).argb;
+      } catch (_) {
+        return null;
+      }
+    case 'object':
+      if (value instanceof Color) {
+        return value.argb;
+      }
+      if (value && typeof value.argb === 'number') {
+        return value.argb;
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+const BORDER_STYLE_VALUES = ['none', 'hidden', 'dotted', 'dashed', 'solid', 'double', 'groove', 'ridge', 'inset', 'outset'] as const;
+
+function borderStyleToEnum(value: string): number {
+  const idx = BORDER_STYLE_VALUES.indexOf(value as any);
+  return idx === -1 ? -1 : idx;
+}
+
+function borderStyleFromEnum(value: number): string {
+  return BORDER_STYLE_VALUES[value] ?? 'none';
+}
+
+function parseObjectPosition(value: string): { xType: number; xVal: number; yType: number; yVal: number } | null {
+  const keywords: Record<string, { type: number; val: number }> = {
+    left: { type: 1, val: 0 },
+    center: { type: 1, val: 50 },
+    right: { type: 1, val: 100 },
+    top: { type: 1, val: 0 },
+    bottom: { type: 1, val: 100 },
+  };
+
+  const parts = value.trim().split(/\s+/);
+  if (parts.length === 0) return null;
+
+  function parseComponent(s: string): { type: number; val: number } | null {
+    const kw = keywords[s];
+    if (kw) return kw;
+    if (s.endsWith('%')) return { type: 1, val: parseFloat(s) };
+    return { type: 0, val: parseFloat(s) };
+  }
+
+  if (parts.length === 1) {
+    const c = parseComponent(parts[0]);
+    if (!c) return null;
+    return { xType: c.type, xVal: c.val, yType: 1, yVal: 50 };
+  }
+
+  const x = parseComponent(parts[0]);
+  const y = parseComponent(parts[1]);
+  if (!x || !y) return null;
+  return { xType: x.type, xVal: x.val, yType: y.type, yVal: y.val };
+}
+
+const FONT_STRETCH_KEYWORDS: Record<string, number> = {
+  'ultra-condensed': 5000,
+  'extra-condensed': 6250,
+  condensed: 7500,
+  'semi-condensed': 8750,
+  normal: 10000,
+  'semi-expanded': 11250,
+  expanded: 12500,
+  'extra-expanded': 15000,
+  'ultra-expanded': 20000,
+};
+
+function fontStretchToValue(value: string): number {
+  const trimmed = value.trim();
+  const kw = FONT_STRETCH_KEYWORDS[trimmed];
+  if (kw !== undefined) return kw;
+  if (trimmed.endsWith('%')) {
+    const pct = parseFloat(trimmed);
+    if (isNaN(pct) || pct < 0) return -1;
+    return Math.round(pct * 100);
+  }
+  return -1;
+}
+
+function fontStretchFromValue(v: number): string {
+  for (const [kw, val] of Object.entries(FONT_STRETCH_KEYWORDS)) {
+    if (val === v) return kw;
+  }
+  return `${v / 100}%`;
+}
+
 export class Style {
   private view_: View;
   private style_view: DataView;
+  private i8View: Int8Array;
+  private u8View: Uint8Array;
   private isDirty = -1n;
   private inBatch = false;
+  private _syncScheduled = false;
   private nativeView: any;
+  private nativeNode: any;
+  private _pseudo: number;
   static fromView(view: View, nativeView): Style {
     //console.time('fromView');
     const ret = new Style();
@@ -461,6 +572,8 @@ export class Style {
       const styleBuffer = style.getValues();
       const buffer = (<any>ArrayBuffer).from(styleBuffer);
       ret.style_view = new DataView(buffer);
+      ret.i8View = new Int8Array(buffer);
+      ret.u8View = new Uint8Array(buffer);
     } else if (__APPLE__) {
       let style: MasonStyle = nativeView?.style as never;
       if (!style) {
@@ -470,10 +583,135 @@ export class Style {
 
       const buffer = interop.bufferFromData(styleBuffer);
       ret.style_view = new DataView(buffer);
+      ret.i8View = new Int8Array(buffer);
+      ret.u8View = new Uint8Array(buffer);
     }
     //console.timeEnd('fromView');
 
     return ret;
+  }
+  static fromPseudo(pseudo: string, view: View, nativeView) {
+    var mask = -1;
+    switch (pseudo) {
+      case 'normal':
+        return Style.fromView(view, nativeView);
+      case 'hover':
+        mask = 1;
+        break;
+      case 'focus':
+        mask = 4;
+        break;
+      case 'highlighted':
+      case 'pressed':
+      case 'active':
+        mask = 2;
+        break;
+      case 'disabled':
+        mask = 64;
+        break;
+      default:
+        break;
+    }
+    if (mask === -1) {
+      return null;
+    }
+    const ret = new Style();
+    ret._pseudo = mask;
+    ret.view_ = view;
+
+    if (__ANDROID__) {
+      let node = (nativeView as org.nativescript.mason.masonkit.Element)?.getNode?.();
+      if (!node) {
+        // if a non mason view is passed
+        node = org.nativescript.mason.masonkit.Mason.getShared().nodeForView(nativeView);
+      }
+
+      ret.nativeNode = node;
+      const pseudoBuffer = node.preparePseudoBuffer(mask);
+
+      const buffer = (<any>ArrayBuffer).from(pseudoBuffer);
+      ret.style_view = new DataView(buffer);
+      ret.i8View = new Int8Array(buffer);
+      ret.u8View = new Uint8Array(buffer);
+      ret.clearPseudoSetMask();
+    } else if (__APPLE__) {
+      let node: MasonNode = nativeView?.node as never;
+      if (!node) {
+        node = NSCMason.shared.nodeForView(nativeView, false) as never;
+      }
+
+      ret.nativeNode = node;
+
+      //@ts-ignore
+      const pseudoBuffer = node.preparePseudoBuffer(mask);
+
+      const buffer = interop.bufferFromData(pseudoBuffer);
+      ret.style_view = new DataView(buffer);
+      ret.i8View = new Int8Array(buffer);
+      ret.u8View = new Uint8Array(buffer);
+      ret.clearPseudoSetMask();
+    }
+
+    return ret;
+  }
+
+  private clearPseudoSetMask() {
+    const LOW_OFFSET = StyleKeys.PSEUDO_SET_MASK_LOW;
+    const HIGH_OFFSET = StyleKeys.PSEUDO_SET_MASK_HIGH;
+
+    if (this.style_view.byteLength < HIGH_OFFSET + 8) {
+      return;
+    }
+
+    this.style_view.setBigUint64(LOW_OFFSET, 0n, true);
+    this.style_view.setBigUint64(HIGH_OFFSET, 0n, true);
+  }
+
+  markPseudoSet(key: StateKeys) {
+    const LOW_OFFSET = StyleKeys.PSEUDO_SET_MASK_LOW;
+    const HIGH_OFFSET = StyleKeys.PSEUDO_SET_MASK_HIGH;
+
+    if (this.style_view.byteLength < HIGH_OFFSET + 8) return;
+
+    const low = this.style_view.getBigUint64(LOW_OFFSET, true);
+    const high = this.style_view.getBigUint64(HIGH_OFFSET, true);
+
+    const MASK64 = (1n << 64n) - 1n;
+    const keyLow = key.bits & MASK64;
+    const keyHigh = (key.bits >> 64n) & MASK64;
+
+    this.style_view.setBigUint64(LOW_OFFSET, low | keyLow, true);
+    this.style_view.setBigUint64(HIGH_OFFSET, high | keyHigh, true);
+  }
+
+  private commitState(value: StateKeys) {
+    if (this._pseudo) {
+      this.markPseudoSet(value);
+    } else {
+      this.setOrAppendState(value);
+    }
+  }
+
+  private setPseudoCssStringValue(name: string, value: string, applyAndroid: () => void, applyApple: () => void) {
+    if (!this.nativeView) {
+      return;
+    }
+
+    if (__ANDROID__) {
+      if (this._pseudo) {
+        this.nativeNode.setPseudoString(this._pseudo, name, value);
+      } else {
+        applyAndroid();
+      }
+    }
+
+    if (__APPLE__) {
+      if (this._pseudo) {
+        (this.nativeNode as MasonNode).setPseudoString(this._pseudo, name, value);
+      } else {
+        applyApple();
+      }
+    }
   }
 
   resetState() {
@@ -483,10 +721,12 @@ export class Style {
   private syncStyle() {
     const [low, high] = splitBigIntToInt64Parts(this.isDirty);
     if (__ANDROID__) {
-      const view = this.view.android as never as org.nativescript.mason.masonkit.Element;
+      //@ts-ignore
+      const view = this.view?.android ?? (this.view._view as never as org.nativescript.mason.masonkit.Element);
       view.syncStyle(low, high);
     } else if (__APPLE__) {
-      const view = this.view.ios as never as MasonText;
+      //@ts-ignore
+      const view = this.view?.ios ?? (this.view._view as never as MasonText);
       // @ts-ignore
       view.mason_syncStyle(low, high);
     }
@@ -500,7 +740,19 @@ export class Style {
       this.isDirty = this.isDirty | value.bits;
     }
     if (!this.inBatch) {
-      this.syncStyle();
+      // Coalesce rapid-fire property changes (e.g. CSS batch apply) into a
+      // single syncStyle() call on the next microtask. This avoids N
+      // separate JNI/FFI round-trips when N properties change in the same
+      // JS turn.
+      if (!this._syncScheduled) {
+        this._syncScheduled = true;
+        queueMicrotask(() => {
+          this._syncScheduled = false;
+          if (this.isDirty !== -1n) {
+            this.syncStyle();
+          }
+        });
+      }
     }
   }
 
@@ -516,6 +768,10 @@ export class Style {
   }
 
   private prepareMut() {
+    // always mut
+    if (this._pseudo) {
+      return;
+    }
     const ref = getUint32(this.style_view, StyleKeys.REF_COUNT);
     if (ref !== 1) {
       if (__APPLE__) {
@@ -530,6 +786,8 @@ export class Style {
 
         const buffer = interop.bufferFromData(styleBuffer);
         this.style_view = new DataView(buffer);
+        this.i8View = new Int8Array(buffer);
+        this.u8View = new Uint8Array(buffer);
       }
 
       if (__ANDROID__) {
@@ -542,6 +800,8 @@ export class Style {
         const styleBuffer = style.getValues();
         const buffer = (<any>ArrayBuffer).from(styleBuffer);
         this.style_view = new DataView(buffer);
+        this.i8View = new Int8Array(buffer);
+        this.u8View = new Uint8Array(buffer);
       }
     }
   }
@@ -569,7 +829,7 @@ export class Style {
     if (boxSizing !== -1) {
       this.prepareMut();
       setUint8(this.style_view, StyleKeys.BOX_SIZING, boxSizing);
-      this.setOrAppendState(StateKeys.BOX_SIZING);
+      this.commitState(StateKeys.BOX_SIZING);
     }
   }
 
@@ -595,37 +855,37 @@ export class Style {
 
     switch (typeof value) {
       case 'number':
+        this.prepareMut();
         setInt32(this.style_view, StyleKeys.FONT_SIZE, value);
         setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
         setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 0);
-        this.setOrAppendState(StateKeys.SIZE);
+        this.commitState(StateKeys.FONT_SIZE);
         break;
       case 'object':
         switch (value.unit) {
           case 'dip':
+            this.prepareMut();
             setInt32(this.style_view, StyleKeys.FONT_SIZE, layout.toDeviceIndependentPixels(value.value));
             setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 0);
-            this.setOrAppendState(StateKeys.FONT_SIZE);
+            this.commitState(StateKeys.FONT_SIZE);
             break;
           case 'px':
+            this.prepareMut();
             setInt32(this.style_view, StyleKeys.FONT_SIZE, value.value);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 0);
-            this.setOrAppendState(StateKeys.FONT_SIZE);
+            this.commitState(StateKeys.FONT_SIZE);
             break;
           case '%':
+            this.prepareMut();
             setInt32(this.style_view, StyleKeys.FONT_SIZE, value.value * 100);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_STATE, 1);
             setInt8(this.style_view, StyleKeys.FONT_SIZE_TYPE, 1);
-            this.setOrAppendState(StateKeys.FONT_SIZE);
+            this.commitState(StateKeys.FONT_SIZE);
             break;
         }
         break;
-    }
-
-    if (value && typeof value === 'object') {
-    } else {
     }
   }
 
@@ -664,9 +924,10 @@ export class Style {
         break;
     }
     if (style !== -1) {
+      this.prepareMut();
       setInt32(this.style_view, StyleKeys.FONT_STYLE_TYPE, style);
       setInt8(this.style_view, StyleKeys.FONT_STYLE_STATE, 1);
-      this.setOrAppendState(StateKeys.FONT_STYLE);
+      this.commitState(StateKeys.FONT_STYLE);
     }
   }
 
@@ -721,9 +982,10 @@ export class Style {
         break;
     }
     if (weight !== -1) {
+      this.prepareMut();
       setInt32(this.style_view, StyleKeys.FONT_WEIGHT, weight);
       setInt8(this.style_view, StyleKeys.FONT_WEIGHT_STATE, 1);
-      this.setOrAppendState(StateKeys.FONT_WEIGHT);
+      this.commitState(StateKeys.FONT_WEIGHT);
     }
   }
 
@@ -736,13 +998,27 @@ export class Style {
     return getUint32(this.style_view, StyleKeys.FONT_COLOR);
   }
 
-  set color(value: number) {
+  set color(value: number | string | { argb?: number }) {
     if (!this.style_view) {
       return;
     }
-    setUint32(this.style_view, StyleKeys.FONT_COLOR, value);
+    const normalized = normalizeColorValue(value);
+    if (normalized == null) {
+      return;
+    }
+    this.prepareMut();
+    setUint32(this.style_view, StyleKeys.FONT_COLOR, normalized);
     setInt8(this.style_view, StyleKeys.FONT_COLOR_STATE, 1);
-    this.setOrAppendState(StateKeys.FONT_COLOR);
+
+    this.commitState(StateKeys.FONT_COLOR);
+  }
+
+  set 'background-color'(value: number | string | { argb?: number }) {
+    this.backgroundColor = value;
+  }
+
+  get 'background-color'() {
+    return this.backgroundColor;
   }
 
   get backgroundColor() {
@@ -753,15 +1029,19 @@ export class Style {
     return getUint32(this.style_view, StyleKeys.BACKGROUND_COLOR);
   }
 
-  set backgroundColor(value: number) {
+  set backgroundColor(value: number | string | { argb?: number }) {
     if (!this.style_view) {
       return;
     }
-    setUint32(this.style_view, StyleKeys.BACKGROUND_COLOR, value);
+    const normalized = normalizeColorValue(value);
+    if (normalized == null) {
+      return;
+    }
+    this.prepareMut();
+    setUint32(this.style_view, StyleKeys.BACKGROUND_COLOR, normalized);
     setInt8(this.style_view, StyleKeys.BACKGROUND_COLOR_STATE, 1);
     setInt8(this.style_view, StyleKeys.BACKGROUND_COLOR_TYPE, 0);
-
-    this.setOrAppendState(StateKeys.BACKGROUND_COLOR);
+    this.commitState(StateKeys.BACKGROUND_COLOR);
   }
 
   get textWrap() {
@@ -796,9 +1076,10 @@ export class Style {
     }
 
     if (wrap !== -1) {
+      this.prepareMut();
       setInt32(this.style_view, StyleKeys.TEXT_WRAP, wrap);
       setInt8(this.style_view, StyleKeys.TEXT_WRAP_STATE, 1);
-      this.setOrAppendState(StateKeys.TEXT_WRAP);
+      this.commitState(StateKeys.TEXT_WRAP);
     }
   }
 
@@ -879,7 +1160,7 @@ export class Style {
       } else {
         this.isDirty = this.isDirty | StateKeys.DISPLAY_MODE.bits;
       }
-      this.setOrAppendState(StateKeys.DISPLAY);
+      this.commitState(StateKeys.DISPLAY.and(StateKeys.DISPLAY_MODE));
     }
   }
 
@@ -905,16 +1186,16 @@ export class Style {
     if (position != -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.POSITION, position);
-      this.setOrAppendState(StateKeys.POSITION);
+      this.commitState(StateKeys.POSITION);
     }
   }
 
   get flexDirection() {
     switch (getInt8(this.style_view, StyleKeys.FLEX_DIRECTION)) {
       case 0:
-        return 'column';
-      case 1:
         return 'row';
+      case 1:
+        return 'column';
       case 2:
         return 'row-reverse';
       case 3:
@@ -925,10 +1206,10 @@ export class Style {
   set flexDirection(value: 'column' | 'row' | 'column-reverse' | 'row-reverse') {
     let flex = -1;
     switch (value) {
-      case 'column':
+      case 'row':
         flex = 0;
         break;
-      case 'row':
+      case 'column':
         flex = 1;
         break;
       case 'row-reverse':
@@ -941,7 +1222,7 @@ export class Style {
     if (flex != -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.FLEX_DIRECTION, flex);
-      this.setOrAppendState(StateKeys.FLEX_DIRECTION);
+      this.commitState(StateKeys.FLEX_DIRECTION);
     }
   }
 
@@ -972,7 +1253,7 @@ export class Style {
     if (wrap != -1) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.FLEX_WRAP, wrap);
-      this.setOrAppendState(StateKeys.FLEX_WRAP);
+      this.commitState(StateKeys.FLEX_WRAP);
     }
   }
   // get flex(): string | 'auto' | 'none' | number | 'initial' {
@@ -1017,7 +1298,7 @@ export class Style {
         break;
     }
 
-    this.setOrAppendState(StateKeys.MIN_SIZE);
+    this.commitState(StateKeys.MIN_SIZE);
   }
 
   get minHeight() {
@@ -1057,7 +1338,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MIN_SIZE);
+    this.commitState(StateKeys.MIN_SIZE);
   }
 
   get width() {
@@ -1096,7 +1377,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.SIZE);
+    this.commitState(StateKeys.SIZE);
   }
 
   get height() {
@@ -1136,7 +1417,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.SIZE);
+    this.commitState(StateKeys.SIZE);
   }
 
   get maxWidth() {
@@ -1175,7 +1456,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MAX_SIZE);
+    this.commitState(StateKeys.MAX_SIZE);
   }
 
   get maxHeight() {
@@ -1214,7 +1495,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MAX_SIZE);
+    this.commitState(StateKeys.MAX_SIZE);
   }
 
   get borderLeftWidth(): Length {
@@ -1250,7 +1531,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
   }
 
   get borderRightWidth(): Length {
@@ -1286,7 +1567,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
   }
 
   get borderTopWidth(): Length {
@@ -1322,7 +1603,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
   }
 
   get borderBottomWidth(): Length {
@@ -1358,7 +1639,52 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.BORDER);
+    this.commitState(StateKeys.BORDER);
+  }
+
+  set inset(value: LengthAuto) {
+    var type;
+    var insetValue;
+
+    switch (typeof value) {
+      case 'string':
+        type = 0;
+        insetValue = 0;
+        break;
+      case 'number':
+        type = 1;
+        insetValue = layout.toDevicePixels(value);
+        break;
+      case 'object':
+        switch (value.unit) {
+          case 'dip':
+            type = 1;
+            insetValue = layout.toDevicePixels(value.value);
+            break;
+          case 'px':
+            type = 1;
+            insetValue = value.value;
+            break;
+          case '%':
+            type = 2;
+            insetValue = value.value;
+            break;
+        }
+        break;
+    }
+
+    if (type !== undefined && insetValue !== undefined) {
+      this.prepareMut();
+      i8Buffer.fill(type);
+
+      this.u8View.set(i8Buffer, StyleKeys.INSET_LEFT_TYPE);
+
+      f32View.fill(insetValue);
+
+      this.u8View.set(f32Buffer, StyleKeys.INSET_LEFT_VALUE);
+
+      this.commitState(StateKeys.INSET);
+    }
   }
 
   get left(): LengthAuto {
@@ -1400,7 +1726,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   get right(): LengthAuto {
@@ -1442,7 +1768,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   get top(): LengthAuto {
@@ -1484,7 +1810,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   get bottom(): LengthAuto {
@@ -1526,14 +1852,52 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.INSET);
+    this.commitState(StateKeys.INSET);
   }
 
   set margin(value: LengthAuto) {
-    this.inBatch = true;
-    this.marginBottom = this.marginLeft = this.marginRight = this.marginTop = value;
-    this.inBatch = false;
-    this.setOrAppendState(StateKeys.MARGIN);
+    var type;
+    var marginValue;
+
+    switch (typeof value) {
+      case 'string':
+        type = 0;
+        marginValue = 0;
+        break;
+      case 'number':
+        type = 1;
+        marginValue = layout.toDevicePixels(value);
+        break;
+      case 'object':
+        switch (value.unit) {
+          case 'dip':
+            type = 1;
+            marginValue = layout.toDevicePixels(value.value);
+            break;
+          case 'px':
+            type = 1;
+            marginValue = value.value;
+            break;
+          case '%':
+            type = 2;
+            marginValue = value.value;
+            break;
+        }
+        break;
+    }
+
+    if (type !== undefined && marginValue !== undefined) {
+      this.prepareMut();
+      i8Buffer.fill(type);
+
+      this.u8View.set(i8Buffer, StyleKeys.MARGIN_LEFT_TYPE);
+
+      f32View.fill(marginValue);
+
+      this.u8View.set(f32Buffer, StyleKeys.MARGIN_LEFT_VALUE);
+
+      this.commitState(StateKeys.MARGIN);
+    }
   }
 
   get marginLeft() {
@@ -1573,7 +1937,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   get marginRight() {
@@ -1613,7 +1977,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   get marginTop() {
@@ -1653,7 +2017,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   get marginBottom() {
@@ -1692,14 +2056,14 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.MARGIN);
+    this.commitState(StateKeys.MARGIN);
   }
 
   set padding(value: Length) {
     this.inBatch = true;
     this.paddingBottom = this.paddingLeft = this.paddingRight = this.paddingTop = value;
     this.inBatch = false;
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingLeft() {
@@ -1735,7 +2099,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingRight() {
@@ -1770,7 +2134,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingTop() {
@@ -1806,7 +2170,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get paddingBottom() {
@@ -1841,7 +2205,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.PADDING);
+    this.commitState(StateKeys.PADDING);
   }
 
   get gridGap() {
@@ -1917,7 +2281,7 @@ export class Style {
         break;
     }
 
-    this.setOrAppendState(StateKeys.GAP);
+    this.commitState(StateKeys.GAP);
   }
 
   get columnGap(): Length {
@@ -1953,7 +2317,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.GAP);
+    this.commitState(StateKeys.GAP);
   }
 
   get aspectRatio(): number {
@@ -1961,8 +2325,9 @@ export class Style {
   }
 
   set aspectRatio(value: number) {
+    this.prepareMut();
     setFloat32(this.style_view, StyleKeys.ASPECT_RATIO, value);
-    this.setOrAppendState(StateKeys.ASPECT_RATIO);
+    this.commitState(StateKeys.ASPECT_RATIO);
   }
 
   get flexBasis(): LengthAuto {
@@ -2002,7 +2367,7 @@ export class Style {
         }
         break;
     }
-    this.setOrAppendState(StateKeys.FLEX_BASIS);
+    this.commitState(StateKeys.FLEX_BASIS);
   }
   get alignItems() {
     switch (getInt8(this.style_view, StyleKeys.ALIGN_ITEMS)) {
@@ -2026,41 +2391,38 @@ export class Style {
   }
 
   set alignItems(value: 'normal' | 'start' | 'end' | 'flex-start' | 'flex-end' | 'center' | 'baseline' | 'stretch') {
+    let align = -1;
     switch (value) {
       case 'normal':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.Normal);
+        align = AlignItems.Normal;
         break;
       case 'start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.Start);
+        align = AlignItems.Start;
         break;
       case 'end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.End);
+        align = AlignItems.End;
         break;
       case 'flex-start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.FlexStart);
+        align = AlignItems.FlexStart;
         break;
       case 'flex-end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.FlexEnd);
+        align = AlignItems.FlexEnd;
         break;
       case 'center':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.Center);
+        align = AlignItems.Center;
         break;
       case 'baseline':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.Baseline);
+        align = AlignItems.Baseline;
         break;
       case 'stretch':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, AlignItems.Stretch);
+        align = AlignItems.Stretch;
         break;
     }
-    this.setOrAppendState(StateKeys.ALIGN_ITEMS);
+    if (align !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.ALIGN_ITEMS, align);
+      this.commitState(StateKeys.ALIGN_ITEMS);
+    }
   }
 
   get alignSelf() {
@@ -2112,10 +2474,10 @@ export class Style {
         align = AlignSelf.FlexEnd;
         break;
     }
-    if (align === -2) {
+    if (align !== -2) {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.ALIGN_SELF, align);
-      this.setOrAppendState(StateKeys.ALIGN_SELF);
+      this.commitState(StateKeys.ALIGN_SELF);
     }
   }
 
@@ -2141,41 +2503,38 @@ export class Style {
   }
 
   set alignContent(value: 'normal' | 'space-around' | 'space-between' | 'space-evenly' | 'center' | 'end' | 'start' | 'stretch') {
+    let align = -1;
     switch (value) {
       case 'normal':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.Normal);
+        align = AlignContent.Normal;
         break;
       case 'space-around':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.SpaceAround);
+        align = AlignContent.SpaceAround;
         break;
       case 'space-between':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.SpaceBetween);
+        align = AlignContent.SpaceBetween;
         break;
       case 'space-evenly':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.SpaceEvenly);
+        align = AlignContent.SpaceEvenly;
         break;
       case 'center':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.Center);
+        align = AlignContent.Center;
         break;
       case 'end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.End);
+        align = AlignContent.End;
         break;
       case 'start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.Start);
+        align = AlignContent.Start;
         break;
       case 'stretch':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, AlignContent.Stretch);
+        align = AlignContent.Stretch;
         break;
     }
-    this.setOrAppendState(StateKeys.ALIGN_CONTENT);
+    if (align !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.ALIGN_CONTENT, align);
+      this.commitState(StateKeys.ALIGN_CONTENT);
+    }
   }
 
   get justifyItems() {
@@ -2199,41 +2558,38 @@ export class Style {
     }
   }
   set justifyItems(value: 'normal' | 'start' | 'end' | 'center' | 'baseline' | 'stretch' | 'flex-start' | 'flex-end') {
+    let v = -1;
     switch (value) {
       case 'normal':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.Normal);
+        v = JustifyItems.Normal;
         break;
       case 'start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.Start);
+        v = JustifyItems.Start;
         break;
       case 'end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.End);
+        v = JustifyItems.End;
         break;
       case 'center':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.Center);
+        v = JustifyItems.Center;
         break;
       case 'baseline':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.Baseline);
+        v = JustifyItems.Baseline;
         break;
       case 'stretch':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.Stretch);
+        v = JustifyItems.Stretch;
         break;
       case 'flex-start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.FlexStart);
+        v = JustifyItems.FlexStart;
         break;
       case 'flex-end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, JustifyItems.FlexEnd);
+        v = JustifyItems.FlexEnd;
         break;
     }
-    this.setOrAppendState(StateKeys.JUSTIFY_ITEMS);
+    if (v !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.JUSTIFY_ITEMS, v);
+      this.commitState(StateKeys.JUSTIFY_ITEMS);
+    }
   }
 
   get justifySelf() {
@@ -2258,41 +2614,38 @@ export class Style {
   }
 
   set justifySelf(value: 'normal' | 'start' | 'end' | 'center' | 'baseline' | 'stretch' | 'flex-start' | 'flex-end') {
+    let v = -1;
     switch (value) {
       case 'normal':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.Normal);
+        v = JustifySelf.Normal;
         break;
       case 'start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.Start);
+        v = JustifySelf.Start;
         break;
       case 'end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.End);
+        v = JustifySelf.End;
         break;
       case 'center':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.Center);
+        v = JustifySelf.Center;
         break;
       case 'baseline':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.Baseline);
+        v = JustifySelf.Baseline;
         break;
       case 'stretch':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.Stretch);
+        v = JustifySelf.Stretch;
         break;
       case 'flex-start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.FlexStart);
+        v = JustifySelf.FlexStart;
         break;
       case 'flex-end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, JustifySelf.FlexEnd);
+        v = JustifySelf.FlexEnd;
         break;
     }
-    this.setOrAppendState(StateKeys.JUSTIFY_SELF);
+    if (v !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.JUSTIFY_SELF, v);
+      this.commitState(StateKeys.JUSTIFY_SELF);
+    }
   }
 
   get justifyContent() {
@@ -2321,41 +2674,38 @@ export class Style {
   }
 
   set justifyContent(value: 'normal' | 'start' | 'end' | 'center' | 'stretch' | 'space-between' | 'space-around' | 'space-evenly' | 'flex-start' | 'flex-end') {
+    let v = -1;
     switch (value) {
       case 'normal':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.Normal);
+        v = JustifyContent.Normal;
         break;
       case 'space-around':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.SpaceAround);
+        v = JustifyContent.SpaceAround;
         break;
       case 'space-between':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.SpaceBetween);
+        v = JustifyContent.SpaceBetween;
         break;
       case 'space-evenly':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.SpaceEvenly);
+        v = JustifyContent.SpaceEvenly;
         break;
       case 'center':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.Center);
+        v = JustifyContent.Center;
         break;
       case 'end':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.End);
+        v = JustifyContent.End;
         break;
       case 'start':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.Start);
+        v = JustifyContent.Start;
         break;
       case 'stretch':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, JustifyContent.Stretch);
+        v = JustifyContent.Stretch;
         break;
     }
-    this.setOrAppendState(StateKeys.JUSTIFY_CONTENT);
+    if (v !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.JUSTIFY_CONTENT, v);
+      this.commitState(StateKeys.JUSTIFY_CONTENT);
+    }
   }
   get gridAutoRows() {
     if (!this.nativeView) {
@@ -2428,26 +2778,12 @@ export class Style {
   }
 
   set gridAutoFlow(value: GridAutoFlow) {
-    switch (value) {
-      case 'row':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.GRID_AUTO_FLOW, 0);
-        break;
-      case 'column':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.GRID_AUTO_FLOW, 1);
-        break;
-      case 'row dense':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.GRID_AUTO_FLOW, 2);
-        break;
-      case 'column dense':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.GRID_AUTO_FLOW, 3);
-        break;
+    const v = ({ row: 0, column: 1, 'row dense': 2, 'column dense': 3 } as Record<string, number>)[value];
+    if (v !== undefined) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.GRID_AUTO_FLOW, v);
+      this.commitState(StateKeys.GRID_AUTO_FLOW);
     }
-
-    this.setOrAppendState(StateKeys.GRID_AUTO_FLOW);
   }
 
   get gridRowGap() {
@@ -2666,6 +3002,9 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset (e.g. a media query toggling grid-rows off) passes null; the native
+    // setters are non-null, so coerce to '' which clears the template.
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateRows(this.nativeView, value);
     }
@@ -2709,6 +3048,9 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset (e.g. a media query toggling grid-cols off) passes null; the native
+    // setters are non-null, so coerce to '' which clears the template.
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateColumns(this.nativeView, value);
     }
@@ -2737,6 +3079,8 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset passes null; the native setters are non-null, coerce to '' (clears it).
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateAreas(this.nativeView, value);
     }
@@ -2756,77 +3100,29 @@ export class Style {
   }
 
   set overflow(value: OverFlow | `${OverFlow} ${OverFlow}`) {
+    const overflowMap: Record<string, number> = { visible: 0, hidden: 1, scroll: 2, clip: 3, auto: 4 };
+    this.prepareMut();
     switch (value) {
       case 'visible':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 0);
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 0);
-        break;
       case 'hidden':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 1);
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 1);
-        break;
       case 'scroll':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 2);
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 2);
+      case 'clip':
+      case 'auto': {
+        const v = overflowMap[value];
+        setInt8(this.style_view, StyleKeys.OVERFLOW_X, v);
+        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, v);
         break;
-      default:
-        {
-          const values = value.split(' ');
-          switch (values[0]) {
-            case 'visible':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_X, 0);
-              break;
-            case 'hidden':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_X, 1);
-              break;
-            case 'scroll':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_X, 2);
-              break;
-            case 'clip':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_X, 3);
-              break;
-            case 'auto':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_X, 4);
-              break;
-          }
-          switch (values[1]) {
-            case 'visible':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 0);
-              break;
-            case 'hidden':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 1);
-              break;
-            case 'scroll':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 2);
-              break;
-            case 'clip':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 3);
-              break;
-            case 'auto':
-              this.prepareMut();
-              setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 4);
-              break;
-          }
-        }
+      }
+      default: {
+        const values = value.split(' ');
+        const x = overflowMap[values[0]];
+        const y = overflowMap[values[1]];
+        if (x !== undefined) setInt8(this.style_view, StyleKeys.OVERFLOW_X, x);
+        if (y !== undefined) setInt8(this.style_view, StyleKeys.OVERFLOW_Y, y);
         break;
+      }
     }
-
-    this.setOrAppendState(StateKeys.OVERFLOW);
+    this.commitState(StateKeys.OVERFLOW);
   }
   get overflowX() {
     switch (getInt8(this.style_view, StyleKeys.OVERFLOW_X)) {
@@ -2840,36 +3136,11 @@ export class Style {
   }
 
   set overflowX(value: OverFlow) {
-    let dirty = false;
-    switch (value) {
-      case 'visible':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 0);
-        dirty = true;
-        break;
-      case 'hidden':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 1);
-        dirty = true;
-        break;
-      case 'scroll':
-        dirty = true;
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 2);
-        break;
-      case 'clip':
-        dirty = true;
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 3);
-        break;
-      case 'auto':
-        dirty = true;
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_X, 4);
-        break;
-    }
-    if (dirty) {
-      this.setOrAppendState(StateKeys.OVERFLOW_X);
+    const v = ({ visible: 0, hidden: 1, scroll: 2, clip: 3, auto: 4 } as Record<string, number>)[value];
+    if (v !== undefined) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.OVERFLOW_X, v);
+      this.commitState(StateKeys.OVERFLOW_X);
     }
   }
 
@@ -2889,36 +3160,11 @@ export class Style {
   }
 
   set overflowY(value: OverFlow) {
-    let dirty = false;
-    switch (value) {
-      case 'visible':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 0);
-        dirty = true;
-        break;
-      case 'hidden':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 1);
-        dirty = true;
-        break;
-      case 'scroll':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 2);
-        dirty = true;
-        break;
-      case 'clip':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 3);
-        dirty = true;
-        break;
-      case 'auto':
-        this.prepareMut();
-        setInt8(this.style_view, StyleKeys.OVERFLOW_Y, 4);
-        dirty = true;
-        break;
-    }
-    if (dirty) {
-      this.setOrAppendState(StateKeys.OVERFLOW_Y);
+    const v = ({ visible: 0, hidden: 1, scroll: 2, clip: 3, auto: 4 } as Record<string, number>)[value];
+    if (v !== undefined) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.OVERFLOW_Y, v);
+      this.commitState(StateKeys.OVERFLOW_Y);
     }
   }
 
@@ -2927,8 +3173,9 @@ export class Style {
   }
 
   set flexGrow(value: number) {
+    this.prepareMut();
     setFloat32(this.style_view, StyleKeys.FLEX_GROW, value);
-    this.setOrAppendState(StateKeys.FLEX_GROW);
+    this.commitState(StateKeys.FLEX_GROW);
   }
 
   get flexShrink(): number {
@@ -2936,8 +3183,9 @@ export class Style {
   }
 
   set flexShrink(value: number) {
+    this.prepareMut();
     setFloat32(this.style_view, StyleKeys.FLEX_SHRINK, value);
-    this.setOrAppendState(StateKeys.FLEX_SHRINK);
+    this.commitState(StateKeys.FLEX_SHRINK);
   }
 
   get scrollBarWidth(): number | CoreTypes.LengthType {
@@ -2946,17 +3194,20 @@ export class Style {
 
   set scrollBarWidth(value: number | CoreTypes.LengthType) {
     if (typeof value === 'number') {
+      this.prepareMut();
       setFloat32(this.style_view, StyleKeys.SCROLLBAR_WIDTH, value);
-      this.setOrAppendState(StateKeys.SCROLLBAR_WIDTH);
+      this.commitState(StateKeys.SCROLLBAR_WIDTH);
     } else if (typeof value === 'object') {
       switch (value.unit) {
         case 'dip':
+          this.prepareMut();
           setFloat32(this.style_view, StyleKeys.SCROLLBAR_WIDTH, layout.toDevicePixels(value.value));
-          this.setOrAppendState(StateKeys.SCROLLBAR_WIDTH);
+          this.commitState(StateKeys.SCROLLBAR_WIDTH);
           break;
         case 'px':
+          this.prepareMut();
           setFloat32(this.style_view, StyleKeys.SCROLLBAR_WIDTH, value.value);
-          this.setOrAppendState(StateKeys.SCROLLBAR_WIDTH);
+          this.commitState(StateKeys.SCROLLBAR_WIDTH);
           break;
       }
     }
@@ -2968,20 +3219,23 @@ export class Style {
 
   set letterSpacing(value: number | CoreTypes.LengthType) {
     if (typeof value === 'number') {
+      this.prepareMut();
       setFloat32(this.style_view, StyleKeys.LETTER_SPACING, value);
       setUint8(this.style_view, StyleKeys.LETTER_SPACING_STATE, 1);
-      this.setOrAppendState(StateKeys.LETTER_SPACING);
+      this.commitState(StateKeys.LETTER_SPACING);
     } else if (typeof value === 'object') {
       switch (value.unit) {
         case 'dip':
+          this.prepareMut();
           setFloat32(this.style_view, StyleKeys.LETTER_SPACING, layout.toDevicePixels(value.value));
           setUint8(this.style_view, StyleKeys.LETTER_SPACING_STATE, 1);
-          this.setOrAppendState(StateKeys.LETTER_SPACING);
+          this.commitState(StateKeys.LETTER_SPACING);
           break;
         case 'px':
+          this.prepareMut();
           setFloat32(this.style_view, StyleKeys.LETTER_SPACING, value.value);
           setUint8(this.style_view, StyleKeys.LETTER_SPACING_STATE, 1);
-          this.setOrAppendState(StateKeys.LETTER_SPACING);
+          this.commitState(StateKeys.LETTER_SPACING);
           break;
       }
     }
@@ -2993,23 +3247,28 @@ export class Style {
 
   set lineHeight(value: number | CoreTypes.LengthType) {
     if (typeof value === 'number') {
+      this.prepareMut();
       setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, value);
       setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
-      setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 0);
-      this.setOrAppendState(StateKeys.LINE_HEIGHT);
+      // Values ≥ 4 are rem-derived px values (smallest Tailwind rem = leading-3: 0.75rem→12).
+      // Values < 4 are genuine CSS unitless multipliers (leading-loose=2, leading-normal=1.5).
+      setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, value >= 4 ? 1 : 0);
+      this.commitState(StateKeys.LINE_HEIGHT);
     } else if (typeof value === 'object') {
       switch (value.unit) {
         case 'dip':
-          setFloat32(this.style_view, StyleKeys.LETTER_SPACING, layout.toDevicePixels(value.value));
+          this.prepareMut();
+          setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, layout.toDevicePixels(value.value));
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 1);
-          this.setOrAppendState(StateKeys.LETTER_SPACING);
+          this.commitState(StateKeys.LINE_HEIGHT);
           break;
         case 'px':
-          setFloat32(this.style_view, StyleKeys.LETTER_SPACING, value.value);
+          this.prepareMut();
+          setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, value.value);
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
           setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 1);
-          this.setOrAppendState(StateKeys.LETTER_SPACING);
+          this.commitState(StateKeys.LINE_HEIGHT);
           break;
       }
     }
@@ -3027,16 +3286,6 @@ export class Style {
       case 1:
         return 'ellipsis';
       default:
-    }
-
-    if (__ANDROID__) {
-      // @ts-ignore
-      const overflow = this.view_._view.getTextOverflow();
-    }
-
-    if (__APPLE__) {
-      // @ts-ignore
-      const overflow = this.view_._view.textOverflow;
     }
 
     return 'clip';
@@ -3057,24 +3306,15 @@ export class Style {
         flow = 1;
         break;
       default:
-        {
-          if (__ANDROID__) {
-            // @ts-ignore
-            const overflow = this.view_._view.getTextOverflow();
-          }
-
-          if (__APPLE__) {
-            // @ts-ignore
-            const overflow = this.view_._view.textOverflow;
-          }
-        }
+        // noop
         break;
     }
 
     if (flow !== -1) {
+      this.prepareMut();
       setInt32(this.style_view, StyleKeys.TEXT_OVERFLOW, flow);
       setInt8(this.style_view, StyleKeys.TEXT_OVERFLOW_STATE, 1);
-      this.setOrAppendState(StateKeys.TEXT_OVERFLOW);
+      this.commitState(StateKeys.TEXT_OVERFLOW);
     }
   }
 
@@ -3136,9 +3376,59 @@ export class Style {
     }
 
     if (align !== -1) {
+      this.prepareMut();
       setInt32(this.style_view, StyleKeys.TEXT_ALIGN, align);
       setInt8(this.style_view, StyleKeys.TEXT_ALIGN_STATE, 1);
-      this.setOrAppendState(StateKeys.TEXT_ALIGN);
+      this.commitState(StateKeys.TEXT_ALIGN);
+    }
+  }
+
+  get textTransform() {
+    if (!this.style_view) {
+      return 'none';
+    }
+    const type = getInt8(this.style_view, StyleKeys.TEXT_TRANSFORM);
+    switch (type) {
+      case 1:
+        return 'capitalize';
+      case 2:
+        return 'uppercase';
+      case 3:
+        return 'lowercase';
+      default:
+        return 'none';
+    }
+  }
+
+  set textTransform(value: 'none' | 'capitalize' | 'uppercase' | 'lowercase') {
+    if (!this.style_view) {
+      return;
+    }
+
+    let transform = -1;
+
+    switch (value) {
+      case 'none':
+        transform = 0;
+        break;
+      case 'capitalize':
+        transform = 1;
+        break;
+      case 'uppercase':
+        transform = 2;
+        break;
+      case 'lowercase':
+        transform = 3;
+        break;
+      default:
+        break;
+    }
+
+    if (transform !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.TEXT_TRANSFORM, transform);
+      setInt8(this.style_view, StyleKeys.TEXT_TRANSFORM_STATE, 1);
+      this.commitState(StateKeys.TEXT_TRANSFORM);
     }
   }
 
@@ -3158,16 +3448,12 @@ export class Style {
   }
 
   set background(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackground(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.background = value;
-    }
+    this.setPseudoCssStringValue(
+      'background',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackground(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.background = value),
+    );
   }
 
   get backgroundImage() {
@@ -3186,16 +3472,12 @@ export class Style {
   }
 
   set backgroundImage(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundImage(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundImage = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-image',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundImage(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundImage = value),
+    );
   }
 
   get backgroundRepeat() {
@@ -3214,16 +3496,12 @@ export class Style {
   }
 
   set backgroundRepeat(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundRepeat(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundRepeat = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-repeat',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundRepeat(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundRepeat = value),
+    );
   }
 
   get backgroundPosition() {
@@ -3242,16 +3520,12 @@ export class Style {
   }
 
   set backgroundPosition(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundPosition(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundPosition = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-position',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundPosition(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundPosition = value),
+    );
   }
 
   get backgroundSize() {
@@ -3270,16 +3544,12 @@ export class Style {
   }
 
   set backgroundSize(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundSize(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundSize = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-size',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundSize(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundSize = value),
+    );
   }
 
   get backgroundClip() {
@@ -3298,16 +3568,12 @@ export class Style {
   }
 
   set backgroundClip(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundClip(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.backgroundClip = value;
-    }
+    this.setPseudoCssStringValue(
+      'background-clip',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackgroundClip(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backgroundClip = value),
+    );
   }
 
   get borderRadius() {
@@ -3326,34 +3592,21 @@ export class Style {
   }
 
   set borderRadius(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      switch (typeof value) {
-        case 'number':
-          org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, `${value}`);
-          break;
-        case 'string':
-          org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, value);
-          break;
-        default:
-          return;
-      }
-    }
+    this.setPseudoCssStringValue(
+      'border-radius',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderRadius = value),
+    );
+  }
 
-    if (__APPLE__) {
-      switch (typeof value) {
-        case 'number':
-          (this.nativeView as MasonElementObjc).style.borderRadius = `${value}`;
-          break;
-        case 'string':
-          (this.nativeView as MasonElementObjc).style.borderRadius = value;
-          break;
-        default:
-          return;
-      }
-    }
+  set textDecoration(value: string) {
+    this.setPseudoCssStringValue(
+      'text-decoration',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setTextDecoration(this.nativeView, value),
+      () => (this.nativeView as MasonElementObjc).style.setTextDecoration(value),
+    );
   }
 
   get border() {
@@ -3371,16 +3624,127 @@ export class Style {
   }
 
   set border(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorder(this.nativeView, value);
-    }
+    this.setPseudoCssStringValue(
+      'border',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorder(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.border = value),
+    );
+  }
 
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.border = value;
+  get paddingCss() {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getPaddingCssValue(this.nativeView);
     }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.paddingCss;
+    }
+    return '';
+  }
+
+  set paddingCss(value: string | number) {
+    const strValue = typeof value === 'number' ? `${value}px` : value;
+    this.setPseudoCssStringValue(
+      'padding',
+      strValue,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setPaddingCss(this.nativeView, strValue),
+      () => ((this.nativeView as MasonElementObjc).style.paddingCss = strValue),
+    );
+  }
+
+  get marginCss() {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getMarginCssValue(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.marginCss;
+    }
+    return '';
+  }
+
+  set marginCss(value: string | number) {
+    const strValue = typeof value === 'number' ? `${value}px` : value;
+    this.setPseudoCssStringValue(
+      'margin',
+      strValue,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setMarginCss(this.nativeView, strValue),
+      () => ((this.nativeView as MasonElementObjc).style.marginCss = strValue),
+    );
+  }
+
+  get insetCss() {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getInsetCssValue(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.insetCss;
+    }
+    return '';
+  }
+
+  set insetCss(value: string | number) {
+    const strValue = typeof value === 'number' ? `${value}px` : value;
+    this.setPseudoCssStringValue(
+      'inset',
+      strValue,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setInsetCss(this.nativeView, strValue),
+      () => ((this.nativeView as MasonElementObjc).style.insetCss = strValue),
+    );
+  }
+
+  get borderLeft() {
+    return '';
+  }
+
+  set borderLeft(value: string) {
+    this.setPseudoCssStringValue(
+      'border-left',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderLeft(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderLeft = value),
+    );
+  }
+
+  get borderTop() {
+    return '';
+  }
+
+  set borderTop(value: string) {
+    this.setPseudoCssStringValue(
+      'border-top',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderTop(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderTop = value),
+    );
+  }
+
+  get borderRight() {
+    return '';
+  }
+
+  set borderRight(value: string) {
+    this.setPseudoCssStringValue(
+      'border-right',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRight(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderRight = value),
+    );
+  }
+
+  get borderBottom() {
+    return '';
+  }
+
+  set borderBottom(value: string) {
+    this.setPseudoCssStringValue(
+      'border-bottom',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderBottom(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderBottom = value),
+    );
   }
 
   get filter() {
@@ -3399,16 +3763,68 @@ export class Style {
   }
 
   set filter(value: string) {
+    this.setPseudoCssStringValue(
+      'filter',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setFilter(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.filter = value),
+    );
+  }
+
+  get boxShadow() {
     if (!this.nativeView) {
-      return;
+      return '';
     }
     if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setFilter(this.nativeView, value);
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getBoxShadow(this.nativeView);
     }
 
     if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.filter = value;
+      return (this.nativeView as MasonElementObjc).style.boxShadow;
     }
+
+    return '';
+  }
+
+  set 'box-shadow'(value: string) {
+    this.boxShadow = value;
+  }
+
+  get 'box-shadow'() {
+    return this.boxShadow;
+  }
+
+  set boxShadow(value: string) {
+    this.setPseudoCssStringValue(
+      'box-shadow',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBoxShadow(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.boxShadow = value),
+    );
+  }
+
+  get transform() {
+    if (!this.nativeView) {
+      return '';
+    }
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getTransform(this.nativeView);
+    }
+
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.transform;
+    }
+
+    return '';
+  }
+
+  set transform(value: string) {
+    this.setPseudoCssStringValue(
+      'transform',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setTransform(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.transform = value),
+    );
   }
 
   get verticalAlign() {
@@ -3446,41 +3862,49 @@ export class Style {
   set verticalAlign(value: VerticalAlign) {
     switch (value) {
       case 'baseline':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
         break;
       case 'top':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 1);
         break;
       case 'text-top':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 2);
         break;
       case 'middle':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 3);
         break;
       case 'bottom':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 4);
         break;
       case 'text-bottom':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 5);
         break;
       case 'sub':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 6);
         break;
       case 'super':
+        this.prepareMut();
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
         setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, 0);
         setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 7);
@@ -3488,6 +3912,7 @@ export class Style {
       default: {
         switch (typeof value) {
           case 'number':
+            this.prepareMut();
             setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
             setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, value * layout.getDisplayDensity());
             setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
@@ -3499,16 +3924,19 @@ export class Style {
                 if (typeof parsed === 'object' && parsed !== null && 'unit' in parsed) {
                   switch (parsed.unit) {
                     case '%':
+                      this.prepareMut();
                       setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 1);
                       setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, parsed.value);
                       setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
                       break;
                     case 'px':
+                      this.prepareMut();
                       setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
                       setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, parsed.value);
                       setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
                       break;
                     case 'dip':
+                      this.prepareMut();
                       setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
                       setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, parsed.value * layout.getDisplayDensity());
                       setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
@@ -3522,16 +3950,19 @@ export class Style {
             if (value !== null && 'unit' in value) {
               switch (value.unit) {
                 case '%':
+                  this.prepareMut();
                   setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 1);
                   setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, value.value);
                   setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
                   break;
                 case 'px':
+                  this.prepareMut();
                   setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
                   setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, value.value);
                   setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
                   break;
                 case 'dip':
+                  this.prepareMut();
                   setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_IS_PERCENT_OFFSET, 0);
                   setFloat32(this.style_view, StyleKeys.VERTICAL_ALIGN_OFFSET_OFFSET, value.value * layout.getDisplayDensity());
                   setUint8(this.style_view, StyleKeys.VERTICAL_ALIGN_ENUM_OFFSET, 0);
@@ -3542,7 +3973,7 @@ export class Style {
         }
       }
     }
-    this.setOrAppendState(StateKeys.VERTICAL_ALIGN);
+    this.commitState(StateKeys.VERTICAL_ALIGN);
   }
 
   get textShadow() {
@@ -3561,16 +3992,12 @@ export class Style {
   }
 
   set textShadow(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setTextShadow(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.textShadow = value;
-    }
+    this.setPseudoCssStringValue(
+      'text-shadow',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setTextShadow(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.textShadow = value),
+    );
   }
 
   get zIndex(): number {
@@ -3578,8 +4005,9 @@ export class Style {
   }
 
   set zIndex(value: number) {
+    this.prepareMut();
     setInt32(this.style_view, StyleKeys.Z_INDEX, value);
-    this.setOrAppendState(StateKeys.Z_INDEX);
+    this.commitState(StateKeys.Z_INDEX);
   }
 
   get float() {
@@ -3617,7 +4045,7 @@ export class Style {
 
     this.prepareMut();
     setInt8(this.style_view, StyleKeys.FLOAT, enumVal);
-    this.setOrAppendState(StateKeys.FLOAT);
+    this.commitState(StateKeys.FLOAT);
   }
 
   get clear() {
@@ -3648,25 +4076,21 @@ export class Style {
         this.prepareMut();
         setInt8(this.style_view, StyleKeys.CLEAR, Clear.Right);
         break;
-      case 'none':
+      case 'both':
         this.prepareMut();
-        setInt8(this.style_view, StyleKeys.CLEAR, Clear.None);
+        setInt8(this.style_view, StyleKeys.CLEAR, Clear.Both);
         break;
     }
-    this.setOrAppendState(StateKeys.CLEAR);
+    this.commitState(StateKeys.CLEAR);
   }
 
   set cornerShape(value: string) {
-    if (!this.nativeView) {
-      return;
-    }
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShape(this.nativeView, value);
-    }
-
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShape = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShape(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShape = value),
+    );
   }
 
   get cornerShape(): string {
@@ -3696,13 +4120,12 @@ export class Style {
   }
 
   set cornerShapeTopLeft(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopLeft(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeTopLeft = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape-top-left',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopLeft(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeTopLeft = value),
+    );
   }
 
   get cornerShapeTopRight() {
@@ -3717,13 +4140,12 @@ export class Style {
   }
 
   set cornerShapeTopRight(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopRight(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeTopRight = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape-top-right',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeTopRight(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeTopRight = value),
+    );
   }
 
   get cornerShapeBottomRight() {
@@ -3738,13 +4160,12 @@ export class Style {
   }
 
   set cornerShapeBottomRight(value: string) {
-    if (!this.nativeView) return;
-    if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomRight(this.nativeView, value);
-    }
-    if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeBottomRight = value;
-    }
+    this.setPseudoCssStringValue(
+      'corner-shape-bottom-right',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomRight(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeBottomRight = value),
+    );
   }
 
   get cornerShapeBottomLeft() {
@@ -3759,13 +4180,479 @@ export class Style {
   }
 
   set cornerShapeBottomLeft(value: string) {
-    if (!this.nativeView) return;
+    this.setPseudoCssStringValue(
+      'corner-shape-bottom-left',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomLeft(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.cornerShapeBottomLeft = value),
+    );
+  }
+
+  get objectPosition(): string {
+    if (!this.style_view) return '50% 50%';
+    const state = getUint8(this.style_view, StyleKeys.OBJECT_POSITION_STATE);
+    if (!state) return '50% 50%';
+    const xType = getUint8(this.style_view, StyleKeys.OBJECT_POSITION_X_TYPE);
+    const yType = getUint8(this.style_view, StyleKeys.OBJECT_POSITION_Y_TYPE);
+    const xVal = getFloat32(this.style_view, StyleKeys.OBJECT_POSITION_X_VALUE);
+    const yVal = getFloat32(this.style_view, StyleKeys.OBJECT_POSITION_Y_VALUE);
+    const x = xType === 1 ? `${xVal}%` : `${xVal}px`;
+    const y = yType === 1 ? `${yVal}%` : `${yVal}px`;
+    return `${x} ${y}`;
+  }
+
+  set objectPosition(value: string) {
+    if (!this.style_view) return;
+    const parsed = parseObjectPosition(value);
+    if (!parsed) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.OBJECT_POSITION_X_TYPE, parsed.xType);
+    setUint8(this.style_view, StyleKeys.OBJECT_POSITION_Y_TYPE, parsed.yType);
+    setFloat32(this.style_view, StyleKeys.OBJECT_POSITION_X_VALUE, parsed.xVal);
+    setFloat32(this.style_view, StyleKeys.OBJECT_POSITION_Y_VALUE, parsed.yVal);
+    setUint8(this.style_view, StyleKeys.OBJECT_POSITION_STATE, 1);
+    this.commitState(StateKeys.OBJECT_POSITION);
+  }
+
+  set 'object-position'(value: string) {
+    this.objectPosition = value;
+  }
+
+  get 'object-position'() {
+    return this.objectPosition;
+  }
+
+  get borderLeftStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_LEFT_STYLE));
+  }
+
+  set borderLeftStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_LEFT_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderRightStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_RIGHT_STYLE));
+  }
+
+  set borderRightStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_RIGHT_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderTopStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_TOP_STYLE));
+  }
+
+  set borderTopStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_TOP_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderBottomStyle(): string {
+    return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_BOTTOM_STYLE));
+  }
+
+  set borderBottomStyle(value: string) {
+    const v = borderStyleToEnum(value);
+    if (v === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_BOTTOM_STYLE, v);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  get borderStyle(): string {
+    const l = this.borderLeftStyle;
+    const r = this.borderRightStyle;
+    const t = this.borderTopStyle;
+    const b = this.borderBottomStyle;
+    if (l === r && r === t && t === b) return l;
+    if (t === b && l === r) return `${t} ${l}`;
+    return `${t} ${r} ${b} ${l}`;
+  }
+
+  set borderStyle(value: string) {
+    const parts = value.trim().split(/\s+/);
+    let t: string, r: string, b: string, l: string;
+    switch (parts.length) {
+      case 1:
+        t = r = b = l = parts[0];
+        break;
+      case 2:
+        t = b = parts[0];
+        r = l = parts[1];
+        break;
+      case 3:
+        t = parts[0];
+        r = l = parts[1];
+        b = parts[2];
+        break;
+      case 4:
+        t = parts[0];
+        r = parts[1];
+        b = parts[2];
+        l = parts[3];
+        break;
+      default:
+        return;
+    }
+    const te = borderStyleToEnum(t);
+    const re = borderStyleToEnum(r);
+    const be = borderStyleToEnum(b);
+    const le = borderStyleToEnum(l);
+    if (te === -1 || re === -1 || be === -1 || le === -1) return;
+    this.prepareMut();
+    setInt8(this.style_view, StyleKeys.BORDER_TOP_STYLE, te);
+    setInt8(this.style_view, StyleKeys.BORDER_RIGHT_STYLE, re);
+    setInt8(this.style_view, StyleKeys.BORDER_BOTTOM_STYLE, be);
+    setInt8(this.style_view, StyleKeys.BORDER_LEFT_STYLE, le);
+    this.commitState(StateKeys.BORDER_STYLE);
+  }
+
+  set 'border-style'(value: string) {
+    this.borderStyle = value;
+  }
+
+  get 'border-style'() {
+    return this.borderStyle;
+  }
+
+  get borderImage(): string {
+    if (!this.nativeView) return '';
     if (__ANDROID__) {
-      org.nativescript.mason.masonkit.NodeHelper.getShared().setCornerShapeBottomLeft(this.nativeView, value);
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getBorderImage(this.nativeView);
     }
     if (__APPLE__) {
-      (this.nativeView as MasonElementObjc).style.cornerShapeBottomLeft = value;
+      return (this.nativeView as MasonElementObjc).style.borderImage;
     }
+    return '';
+  }
+
+  set borderImage(value: string) {
+    this.setPseudoCssStringValue(
+      'border-image',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderImage(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.borderImage = value),
+    );
+  }
+
+  set 'border-image'(value: string) {
+    this.borderImage = value;
+  }
+
+  get 'border-image'() {
+    return this.borderImage;
+  }
+
+  get fontStretch(): string {
+    if (!this.style_view) return 'normal';
+    const state = getUint8(this.style_view, StyleKeys.FONT_STRETCH_STATE);
+    if (!state) return 'normal';
+    const pct = getInt32(this.style_view, StyleKeys.FONT_STRETCH);
+    return fontStretchFromValue(pct);
+  }
+
+  set fontStretch(value: string) {
+    if (!this.style_view) return;
+    const pct = fontStretchToValue(value);
+    if (pct === -1) return;
+    this.prepareMut();
+    setInt32(this.style_view, StyleKeys.FONT_STRETCH, pct);
+    setUint8(this.style_view, StyleKeys.FONT_STRETCH_STATE, 1);
+    this.commitState(StateKeys.FONT_STRETCH);
+  }
+
+  set 'font-stretch'(value: string) {
+    this.fontStretch = value;
+  }
+
+  get 'font-stretch'() {
+    return this.fontStretch;
+  }
+
+  get fontFeatureSettings(): string {
+    if (!this.nativeView) return 'normal';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getFontFeatureSettings(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.fontFeatureSettings;
+    }
+    return 'normal';
+  }
+
+  set fontFeatureSettings(value: string) {
+    this.setPseudoCssStringValue(
+      'font-feature-settings',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setFontFeatureSettings(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.fontFeatureSettings = value),
+    );
+  }
+
+  set 'font-feature-settings'(value: string) {
+    this.fontFeatureSettings = value;
+  }
+
+  get 'font-feature-settings'() {
+    return this.fontFeatureSettings;
+  }
+
+  get wordSpacing(): string {
+    if (!this.style_view) return 'normal';
+    const state = getUint8(this.style_view, StyleKeys.WORD_SPACING_STATE);
+    if (!state) return 'normal';
+    const type = getUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE);
+    if (type === 2) return 'normal';
+    const value = getFloat32(this.style_view, StyleKeys.WORD_SPACING);
+    return type === 1 ? `${value}%` : `${value}px`;
+  }
+
+  set wordSpacing(value: string | number) {
+    if (!this.style_view) return;
+    this.prepareMut();
+    if (value === 'normal') {
+      setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 2);
+      setFloat32(this.style_view, StyleKeys.WORD_SPACING, 0);
+    } else if (typeof value === 'number') {
+      setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 0);
+      setFloat32(this.style_view, StyleKeys.WORD_SPACING, layout.toDevicePixels(value));
+    } else {
+      const trimmed = value.trim();
+      if (trimmed === 'normal') {
+        setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 2);
+        setFloat32(this.style_view, StyleKeys.WORD_SPACING, 0);
+      } else if (trimmed.endsWith('%')) {
+        setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 1);
+        setFloat32(this.style_view, StyleKeys.WORD_SPACING, parseFloat(trimmed));
+      } else {
+        setUint8(this.style_view, StyleKeys.WORD_SPACING_TYPE, 0);
+        setFloat32(this.style_view, StyleKeys.WORD_SPACING, layout.toDevicePixels(parseFloat(trimmed)));
+      }
+    }
+    setUint8(this.style_view, StyleKeys.WORD_SPACING_STATE, 1);
+    this.commitState(StateKeys.WORD_SPACING);
+  }
+
+  set 'word-spacing'(value: string | number) {
+    this.wordSpacing = value;
+  }
+
+  get 'word-spacing'() {
+    return this.wordSpacing;
+  }
+
+  get hyphens(): 'none' | 'manual' | 'auto' {
+    if (!this.style_view) return 'manual';
+    const state = getUint8(this.style_view, StyleKeys.HYPHENS_STATE);
+    if (!state) return 'manual';
+    switch (getUint8(this.style_view, StyleKeys.HYPHENS)) {
+      case 0:
+        return 'manual';
+      case 1:
+        return 'none';
+      case 2:
+        return 'auto';
+      default:
+        return 'manual';
+    }
+  }
+
+  set hyphens(value: 'none' | 'manual' | 'auto') {
+    let v = -1;
+    switch (value) {
+      case 'manual':
+        v = 0;
+        break;
+      case 'none':
+        v = 1;
+        break;
+      case 'auto':
+        v = 2;
+        break;
+    }
+    if (v === -1) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.HYPHENS, v);
+    setUint8(this.style_view, StyleKeys.HYPHENS_STATE, 1);
+    this.commitState(StateKeys.HYPHENS);
+  }
+
+  get backdropFilter(): string {
+    if (!this.nativeView) return '';
+    if (__ANDROID__) {
+      return org.nativescript.mason.masonkit.NodeHelper.getShared().getBackdropFilter(this.nativeView);
+    }
+    if (__APPLE__) {
+      return (this.nativeView as MasonElementObjc).style.backdropFilter;
+    }
+    return '';
+  }
+
+  set backdropFilter(value: string) {
+    this.setPseudoCssStringValue(
+      'backdrop-filter',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBackdropFilter(this.nativeView, value),
+      () => ((this.nativeView as MasonElementObjc).style.backdropFilter = value),
+    );
+  }
+
+  set 'backdrop-filter'(value: string) {
+    this.backdropFilter = value;
+  }
+
+  get 'backdrop-filter'() {
+    return this.backdropFilter;
+  }
+
+  get writingMode(): 'horizontal-tb' | 'vertical-rl' | 'vertical-lr' {
+    if (!this.style_view) return 'horizontal-tb';
+    const state = getUint8(this.style_view, StyleKeys.WRITING_MODE_STATE);
+    if (!state) return 'horizontal-tb';
+    switch (getUint8(this.style_view, StyleKeys.WRITING_MODE)) {
+      case 0:
+        return 'horizontal-tb';
+      case 1:
+        return 'vertical-rl';
+      case 2:
+        return 'vertical-lr';
+      default:
+        return 'horizontal-tb';
+    }
+  }
+
+  set writingMode(value: 'horizontal-tb' | 'vertical-rl' | 'vertical-lr') {
+    let v = -1;
+    switch (value) {
+      case 'horizontal-tb':
+        v = 0;
+        break;
+      case 'vertical-rl':
+        v = 1;
+        break;
+      case 'vertical-lr':
+        v = 2;
+        break;
+    }
+    if (v === -1) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.WRITING_MODE, v);
+    setUint8(this.style_view, StyleKeys.WRITING_MODE_STATE, 1);
+    this.commitState(StateKeys.WRITING_MODE);
+  }
+
+  set 'writing-mode'(value: 'horizontal-tb' | 'vertical-rl' | 'vertical-lr') {
+    this.writingMode = value;
+  }
+
+  get 'writing-mode'() {
+    return this.writingMode;
+  }
+
+  get unicodeBidi(): string {
+    if (!this.style_view) return 'normal';
+    const state = getUint8(this.style_view, StyleKeys.UNICODE_BIDI_STATE);
+    if (!state) return 'normal';
+    switch (getUint8(this.style_view, StyleKeys.UNICODE_BIDI)) {
+      case 0:
+        return 'normal';
+      case 1:
+        return 'embed';
+      case 2:
+        return 'bidi-override';
+      case 3:
+        return 'isolate';
+      case 4:
+        return 'isolate-override';
+      case 5:
+        return 'plaintext';
+      default:
+        return 'normal';
+    }
+  }
+
+  set unicodeBidi(value: string) {
+    let v = -1;
+    switch (value) {
+      case 'normal':
+        v = 0;
+        break;
+      case 'embed':
+        v = 1;
+        break;
+      case 'bidi-override':
+        v = 2;
+        break;
+      case 'isolate':
+        v = 3;
+        break;
+      case 'isolate-override':
+        v = 4;
+        break;
+      case 'plaintext':
+        v = 5;
+        break;
+    }
+    if (v === -1) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.UNICODE_BIDI, v);
+    setUint8(this.style_view, StyleKeys.UNICODE_BIDI_STATE, 1);
+    this.commitState(StateKeys.UNICODE_BIDI);
+  }
+
+  set 'unicode-bidi'(value: string) {
+    this.unicodeBidi = value;
+  }
+
+  get 'unicode-bidi'() {
+    return this.unicodeBidi;
+  }
+
+  get caretColor(): string {
+    if (!this.style_view) return 'auto';
+    const state = getUint8(this.style_view, StyleKeys.CARET_COLOR_STATE);
+    if (!state) return 'auto';
+    const argb = getUint32(this.style_view, StyleKeys.CARET_COLOR);
+    if (argb === 0) return 'auto';
+    const a = (argb >>> 24) & 0xff;
+    const r = (argb >>> 16) & 0xff;
+    const g = (argb >>> 8) & 0xff;
+    const b = argb & 0xff;
+    return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(2)})`;
+  }
+
+  set caretColor(value: string | number) {
+    if (!this.style_view) return;
+    this.prepareMut();
+    if (value === 'auto') {
+      setUint32(this.style_view, StyleKeys.CARET_COLOR, 0);
+      setUint8(this.style_view, StyleKeys.CARET_COLOR_STATE, 1);
+    } else {
+      const normalized = normalizeColorValue(value);
+      if (normalized == null) return;
+      setUint32(this.style_view, StyleKeys.CARET_COLOR, normalized);
+      setUint8(this.style_view, StyleKeys.CARET_COLOR_STATE, 1);
+    }
+    this.commitState(StateKeys.CARET_COLOR);
+  }
+
+  set 'caret-color'(value: string | number) {
+    this.caretColor = value;
+  }
+
+  get 'caret-color'() {
+    return this.caretColor;
   }
 
   toJSON() {
@@ -3819,6 +4706,15 @@ export class Style {
       gridTemplateColumns: this.gridTemplateColumns,
       filter: this.filter,
       zIndex: this.zIndex,
+      backgroundColor: this.backgroundColor,
+      objectPosition: this.objectPosition,
+      borderStyle: this.borderStyle,
+      writingMode: this.writingMode,
+      unicodeBidi: this.unicodeBidi,
+      hyphens: this.hyphens,
+      caretColor: this.caretColor,
+      wordSpacing: this.wordSpacing,
+      fontStretch: this.fontStretch,
     };
   }
 }

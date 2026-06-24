@@ -40,6 +40,26 @@ export class View extends ViewBase {
     return this._view;
   }
 
+  private _measureChildren(layout) {
+    const children = layout.children;
+    let i = 0;
+    if (children.count === 0) {
+      return;
+    }
+
+    for (const child of this._viewChildren) {
+      layout = children.objectAtIndex(i);
+      const w = layout.width;
+      const h = layout.height;
+
+      const wSpec = Utils.layout.makeMeasureSpec(w, Utils.layout.EXACTLY);
+      const hSpec = Utils.layout.makeMeasureSpec(h, Utils.layout.EXACTLY);
+      View.measureChild(this as never, child as never, wSpec, hSpec);
+
+      i++;
+    }
+  }
+
   public onLayout(left: number, top: number, right: number, bottom: number): void {
     super.onLayout(left, top, right, bottom);
     // @ts-ignore
@@ -55,9 +75,37 @@ export class View extends ViewBase {
       layout = children.objectAtIndex(i);
       const x = layout.x;
       const y = layout.y;
-      const width = x + layout.width;
-      const height = y + layout.height;
-      View.layoutChild(this as never, child as never, x, y, width, height);
+      const w = layout.width;
+      const h = layout.height;
+
+      const isMason = !!child[isMasonView_];
+
+      if (isMason) {
+        // Mason child: Swift's applyToView already set the native frame.
+        // If isLayoutValid is set, Mason handled this child — skip the full
+        // layout cascade and just sync NativeScript's internal bounds tracking.
+        const childNode = (child as any).ios?.node;
+        if (childNode?.isLayoutValid) {
+          // Still call layout() to keep NativeScript's bounds state in sync,
+          // but with setFrame=false so we don't redundantly set the native frame.
+          (child as any).layout(x, y, x + w, y + h, false);
+          // Clear isLayoutValid AFTER layout() completes so a re-entrant
+          // layoutSubviews during layout() can't see a stale false value
+          // and fall through to the non-Mason path.
+          childNode.isLayoutValid = false;
+          i++;
+          continue;
+        }
+        // Mason child but not yet laid out by Swift — let the cascade run
+        // with setFrame=false (Swift will set the frame during layoutSubviews).
+        (child as any).layout(x, y, x + w, y + h, false);
+      } else {
+        // Non-Mason (plain NativeScript) child inside a Mason container.
+        // Mason's applyToView already set its UIView frame; NativeScript's
+        // _setNativeViewFrame will set it again to the same value which
+        // keeps NativeScript's internal state (_isLaidOut, events) correct.
+        (child as any).layout(x, y, x + w, y + h, true);
+      }
       i++;
     }
   }
@@ -72,21 +120,6 @@ export class View extends ViewBase {
 
       const parentIsMason = this.parent && this.parent[isMasonView_];
       if (!parentIsMason) {
-        // when the parent isn't a Mason container we have to kick off a new
-        // compute pass.  The old logic always used `mason_computeWithSize`
-        // when both width/height were `auto`, but that breaks when the
-        // incoming height/width spec is UNSPECIFIED (0).  a root view often
-        // receives an unspecified height which leads to a zero result even
-        // though its children have non‑zero dimensions.  wrapping the view in
-        // another container supplied a constraint so the bug only showed up at
-        // the root.
-        //
-        // if either dimension is unconstrained we instead fall back to
-        // `mason_computeWithMaxContent()` which measures based on the content
-        // and avoids collapsing to 0.
-        // if the parent gave us an unspecified measure spec, or an AT_MOST
-        // spec with zero size, treat the dimension as truly unconstrained so
-        // we can grow to our content.  (AT_MOST/0 often appears at the root.)
         const unconstrained = widthMode === Utils.layout.UNSPECIFIED || heightMode === Utils.layout.UNSPECIFIED || (widthMode === Utils.layout.AT_MOST && specWidth === 0) || (heightMode === Utils.layout.AT_MOST && specHeight === 0);
 
         if (this.width === 'auto' && this.height === 'auto' && !unconstrained) {
@@ -100,11 +133,8 @@ export class View extends ViewBase {
           const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
           const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
 
-          this.eachLayoutChild((child) => {
-            ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);
-          });
-
           this.setMeasuredDimension(w, h);
+          this._measureChildren(layout);
           return;
         } else {
           // either we had a non-auto dimension or an unconstrained spec,
@@ -147,8 +177,11 @@ export class View extends ViewBase {
     const nativeView = this._view;
     if (nativeView && (child.nativeViewProtected || child.ios)) {
       child._hasNativeView = true;
+      const jsIndex = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      // Map the JS index onto the native children list (views attach lazily,
+      // so the raw index can run ahead of native state).
+      const index = jsIndex <= -1 ? jsIndex : (this as any)._nativeIndexFor(jsIndex);
       child._isMasonChild = true;
-      const index = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
       if (child[isPlaceholder_]) {
         // @ts-ignore
         nativeView.mason_addChildAtElement(child.ios, index);
@@ -164,6 +197,14 @@ export class View extends ViewBase {
   // @ts-ignore
   public _removeViewFromNativeVisualTree(view: MasonChild): void {
     view[isMasonView_] = false;
+    // Clear the attach flag; `_nativeIndexFor` counts it, so a stale `true` misindexes inserts.
+    view._isMasonChild = false;
+    // Inverse of `_addViewToNativeVisualTree` — unlink the mason node so removal detaches
+    // the Rust node + native view instead of orphaning it (super only does removeFromSuperview).
+    const nativeView = this._view as any;
+    if (nativeView && view.nativeViewProtected && typeof nativeView.removeView === 'function') {
+      nativeView.removeView(view.nativeViewProtected);
+    }
     // @ts-ignore
     super._removeViewFromNativeVisualTree(view);
   }

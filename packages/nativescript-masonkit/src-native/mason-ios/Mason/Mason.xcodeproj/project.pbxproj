@@ -12,19 +12,19 @@
 		AA904E4C2DAF0EE300F22BE4 /* Mason.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F184838C293534D800EC35F4 /* Mason.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F1047C672EDE8E3B00599B56 /* Button.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1047C662EDE8E0E00599B56 /* Button.swift */; };
 		F10A1B122F02684500888DDD /* Br.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10A1B112F02684200888DDD /* Br.swift */; };
+		F11B22282FE5F757009B961E /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = F11B22272FE5F757009B961E /* SDWebImage */; };
 		F12BE0232F5425D0008C6B6B /* BoxShadowRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12BE0222F5425D0008C6B6B /* BoxShadowRenderer.swift */; };
 		F12BE0252F544160008C6B6B /* MasonShadowLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12BE0242F544160008C6B6B /* MasonShadowLayer.swift */; };
-		F13289762F2AD6DE0026A7E2 /* SDWebImage in Frameworks */ = {isa = PBXBuildFile; productRef = F13289752F2AD6DE0026A7E2 /* SDWebImage */; };
 		F134016D2ECE04CE00D6CFD9 /* Background.swift in Sources */ = {isa = PBXBuildFile; fileRef = F134016C2ECE04CB00D6CFD9 /* Background.swift */; };
 		F134016F2ECE04DD00D6CFD9 /* Border.swift in Sources */ = {isa = PBXBuildFile; fileRef = F134016E2ECE04DC00D6CFD9 /* Border.swift */; };
-		F13B6C7B2DC81AC800624D17 /* NSCFontFaceSet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13B6C7A2DC81AC400624D17 /* NSCFontFaceSet.swift */; };
-		F13B6C7D2DC81AE100624D17 /* NSCFontFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13B6C7C2DC81AE000624D17 /* NSCFontFace.swift */; };
 		F13D4E8D2E8EEA0100456A68 /* MasonElement.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13D4E8C2E8EE9ED00456A68 /* MasonElement.swift */; };
 		F13D4E932E96EDF300456A68 /* MasonDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13D4E922E96EDEF00456A68 /* MasonDocument.swift */; };
 		F155B4D52F0E75C9004419BF /* MasonEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F155B4D42F0E74A7004419BF /* MasonEvent.swift */; };
 		F155B4D82F0F34D7004419BF /* MasonTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F155B4D72F0F34D1004419BF /* MasonTextInput.swift */; };
 		F16270A12F14901800ABE5FF /* MasonGestureRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16270A02F14901300ABE5FF /* MasonGestureRecognizer.swift */; };
 		F16270A32F14996B00ABE5FF /* MasonEventTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16270A22F14996800ABE5FF /* MasonEventTarget.swift */; };
+		F175AB1B2F683EFD00465812 /* BugViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F175AB1A2F683EFD00465812 /* BugViewController.swift */; };
+		F17A6C7F2F6DBF0F0009E643 /* MasonTextArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A6C7E2F6DBF0A0009E643 /* MasonTextArea.swift */; };
 		F17DD8942F67D6DC004ECEF6 /* HTMLParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17DD8932F67D6DC004ECEF6 /* HTMLParser.swift */; };
 		F1848391293534D800EC35F4 /* Mason.docc in Sources */ = {isa = PBXBuildFile; fileRef = F1848390293534D800EC35F4 /* Mason.docc */; };
 		F1848397293534D800EC35F4 /* Mason.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F184838C293534D800EC35F4 /* Mason.framework */; };
@@ -57,6 +57,7 @@
 		F1BEB7482F0F933600FDFE3F /* MasonRangeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BEB7472F0F933100FDFE3F /* MasonRangeInput.swift */; };
 		F1BEB74A2F0F93F400FDFE3F /* MasonDateInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BEB7492F0F93E800FDFE3F /* MasonDateInput.swift */; };
 		F1BEB74C2F0F9A0600FDFE3F /* MasonFileInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BEB74B2F0F99FF00FDFE3F /* MasonFileInput.swift */; };
+		F1C3CDBB2FDEB7BB006B9F6C /* FontManager in Frameworks */ = {isa = PBXBuildFile; productRef = F1C3CDBA2FDEB7BB006B9F6C /* FontManager */; };
 		F1DE08992EBC1199002870F6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DE08982EBC1195002870F6 /* Constants.swift */; };
 		F1E4F95229622AD60091913B /* MasonRect.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E4F95129622AD60091913B /* MasonRect.swift */; };
 		F1E4F95429622ADF0091913B /* MasonSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E4F95329622ADF0091913B /* MasonSize.swift */; };
@@ -66,6 +67,7 @@
 		F1E4F95C296242700091913B /* MaxSizing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E4F95B296242700091913B /* MaxSizing.swift */; };
 		F1E4F95E296266A60091913B /* MasonLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E4F95D296266A60091913B /* MasonLine.swift */; };
 		F1E4F960296271FB0091913B /* TrackSizingFunction.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E4F95F296271FB0091913B /* TrackSizingFunction.swift */; };
+		F1ECDA172F6A88D200C60E04 /* TransformViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1ECDA162F6A88D200C60E04 /* TransformViewController.swift */; };
 		F1EE402B2ECF791800EAF4CC /* BackgroundParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1EE402A2ECF791600EAF4CC /* BackgroundParser.swift */; };
 		F1EE402D2ECFA98F00EAF4CC /* CSSFilters.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1EE402C2ECFA98E00EAF4CC /* CSSFilters.swift */; };
 		F1EE40332ED666E500EAF4CC /* BorderParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1EE40322ED666DA00EAF4CC /* BorderParser.swift */; };
@@ -139,14 +141,14 @@
 		F12BE0242F544160008C6B6B /* MasonShadowLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonShadowLayer.swift; sourceTree = "<group>"; };
 		F134016C2ECE04CB00D6CFD9 /* Background.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Background.swift; sourceTree = "<group>"; };
 		F134016E2ECE04DC00D6CFD9 /* Border.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Border.swift; sourceTree = "<group>"; };
-		F13B6C7A2DC81AC400624D17 /* NSCFontFaceSet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSCFontFaceSet.swift; sourceTree = "<group>"; };
-		F13B6C7C2DC81AE000624D17 /* NSCFontFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NSCFontFace.swift; sourceTree = "<group>"; };
 		F13D4E8C2E8EE9ED00456A68 /* MasonElement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonElement.swift; sourceTree = "<group>"; };
 		F13D4E922E96EDEF00456A68 /* MasonDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonDocument.swift; sourceTree = "<group>"; };
 		F155B4D42F0E74A7004419BF /* MasonEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonEvent.swift; sourceTree = "<group>"; };
 		F155B4D72F0F34D1004419BF /* MasonTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonTextInput.swift; sourceTree = "<group>"; };
 		F16270A02F14901300ABE5FF /* MasonGestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonGestureRecognizer.swift; sourceTree = "<group>"; };
 		F16270A22F14996800ABE5FF /* MasonEventTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonEventTarget.swift; sourceTree = "<group>"; };
+		F175AB1A2F683EFD00465812 /* BugViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BugViewController.swift; sourceTree = "<group>"; };
+		F17A6C7E2F6DBF0A0009E643 /* MasonTextArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonTextArea.swift; sourceTree = "<group>"; };
 		F17DD8932F67D6DC004ECEF6 /* HTMLParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLParser.swift; sourceTree = "<group>"; };
 		F184838C293534D800EC35F4 /* Mason.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Mason.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F184838F293534D800EC35F4 /* Mason.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Mason.h; sourceTree = "<group>"; };
@@ -194,6 +196,7 @@
 		F1E4F95B296242700091913B /* MaxSizing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaxSizing.swift; sourceTree = "<group>"; };
 		F1E4F95D296266A60091913B /* MasonLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasonLine.swift; sourceTree = "<group>"; };
 		F1E4F95F296271FB0091913B /* TrackSizingFunction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSizingFunction.swift; sourceTree = "<group>"; };
+		F1ECDA162F6A88D200C60E04 /* TransformViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransformViewController.swift; sourceTree = "<group>"; };
 		F1EE402A2ECF791600EAF4CC /* BackgroundParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundParser.swift; sourceTree = "<group>"; };
 		F1EE402C2ECFA98E00EAF4CC /* CSSFilters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSSFilters.swift; sourceTree = "<group>"; };
 		F1EE40322ED666DA00EAF4CC /* BorderParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BorderParser.swift; sourceTree = "<group>"; };
@@ -216,7 +219,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F13289762F2AD6DE0026A7E2 /* SDWebImage in Frameworks */,
+				F11B22282FE5F757009B961E /* SDWebImage in Frameworks */,
+				F1C3CDBB2FDEB7BB006B9F6C /* FontManager in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -313,6 +317,7 @@
 		F184838E293534D800EC35F4 /* Mason */ = {
 			isa = PBXGroup;
 			children = (
+				F17A6C7E2F6DBF0A0009E643 /* MasonTextArea.swift */,
 				F17DD8932F67D6DC004ECEF6 /* HTMLParser.swift */,
 				F12BE0242F544160008C6B6B /* MasonShadowLayer.swift */,
 				F12BE0222F5425D0008C6B6B /* BoxShadowRenderer.swift */,
@@ -342,8 +347,6 @@
 				F18C9B872E5199C5006E5561 /* MasonPoint.swift */,
 				F18C9B852E5170B8006E5561 /* Scroll.swift */,
 				F18E99122DCB73F80062B4F7 /* Img.swift */,
-				F13B6C7C2DC81AE000624D17 /* NSCFontFace.swift */,
-				F13B6C7A2DC81AC400624D17 /* NSCFontFaceSet.swift */,
 				F184838F293534D800EC35F4 /* Mason.h */,
 				F1848390293534D800EC35F4 /* Mason.docc */,
 				F18483DA29356C3A00EC35F4 /* MasonUIView.swift */,
@@ -377,6 +380,8 @@
 		F18483AB2935351200EC35F4 /* MasonDemo */ = {
 			isa = PBXGroup;
 			children = (
+				F1ECDA162F6A88D200C60E04 /* TransformViewController.swift */,
+				F175AB1A2F683EFD00465812 /* BugViewController.swift */,
 				F18483AC2935351200EC35F4 /* AppDelegate.swift */,
 				F18483AE2935351200EC35F4 /* SceneDelegate.swift */,
 				F18483B02935351200EC35F4 /* ViewController.swift */,
@@ -556,7 +561,8 @@
 			);
 			mainGroup = F1848382293534D800EC35F4;
 			packageReferences = (
-				F13289742F2AD6DE0026A7E2 /* XCRemoteSwiftPackageReference "SDWebImage" */,
+				F1C3CDB92FDEB7BB006B9F6C /* XCRemoteSwiftPackageReference "font-manager" */,
+				F11B22262FE5F757009B961E /* XCRemoteSwiftPackageReference "SDWebImage" */,
 			);
 			productRefGroup = F184838D293534D800EC35F4 /* Products */;
 			projectDirPath = "";
@@ -638,7 +644,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F13B6C7D2DC81AE100624D17 /* NSCFontFace.swift in Sources */,
 				F13D4E932E96EDF300456A68 /* MasonDocument.swift in Sources */,
 				F1E4F95E296266A60091913B /* MasonLine.swift in Sources */,
 				F1E4F958296241FD0091913B /* MinMax.swift in Sources */,
@@ -667,7 +672,7 @@
 				F1E4F960296271FB0091913B /* TrackSizingFunction.swift in Sources */,
 				F1EE402D2ECFA98F00EAF4CC /* CSSFilters.swift in Sources */,
 				F1E4F956296231A50091913B /* MasonCompat.swift in Sources */,
-				F13B6C7B2DC81AC800624D17 /* NSCFontFaceSet.swift in Sources */,
+				F17A6C7F2F6DBF0F0009E643 /* MasonTextArea.swift in Sources */,
 				F155B4D52F0E75C9004419BF /* MasonEvent.swift in Sources */,
 				F1BEB7482F0F933600FDFE3F /* MasonRangeInput.swift in Sources */,
 				F1E4F95229622AD60091913B /* MasonRect.swift in Sources */,
@@ -707,9 +712,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F1ECDA172F6A88D200C60E04 /* TransformViewController.swift in Sources */,
 				F18483B12935351200EC35F4 /* ViewController.swift in Sources */,
 				F18483AD2935351200EC35F4 /* AppDelegate.swift in Sources */,
 				F18483AF2935351200EC35F4 /* SceneDelegate.swift in Sources */,
+				F175AB1B2F683EFD00465812 /* BugViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -903,6 +910,7 @@
 		F18483A1293534D800EC35F4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -910,6 +918,7 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				EXCLUDED_ARCHS = "";
 				EXPORTED_SYMBOLS_FILE = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "\"$(SRCROOT)/include\"/**";
@@ -946,14 +955,30 @@
 					"-lmasonnative",
 					"-ObjC",
 				);
+				"OTHER_LDFLAGS[sdk=xros*][arch=arm64]" = (
+					"$(inherited)",
+					"-L\"$(SRCROOT)/../../../../../target/aarch64-apple-visionos/debug\"",
+					"-Wl,-no_compact_unwind",
+					"-lmasonnative",
+					"-ObjC",
+				);
+				"OTHER_LDFLAGS[sdk=xrsimulator*][arch=arm64]" = (
+					"$(inherited)",
+					"-L\"$(SRCROOT)/../../../../../target/aarch64-apple-visionos-sim/debug\"",
+					"-Wl,-no_compact_unwind",
+					"-lmasonnative",
+					"-ObjC",
+				);
 				OTHER_SWIFT_FLAGS = "-Xcc -Wno-error=non-modular-include-in-framework-module -enable-library-evolution";
 				PRODUCT_BUNDLE_IDENTIFIER = org.nativescript.mason.Mason;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "xrsimulator xros iphonesimulator iphoneos";
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,7";
 				USE_HEADERMAP = YES;
 			};
 			name = Debug;
@@ -961,6 +986,7 @@
 		F18483A2293534D800EC35F4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -968,6 +994,7 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				EXCLUDED_ARCHS = "";
 				EXPORTED_SYMBOLS_FILE = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "\"$(SRCROOT)/include\"/**";
@@ -1004,13 +1031,29 @@
 					"-lmasonnative",
 					"-ObjC",
 				);
+				"OTHER_LDFLAGS[sdk=xros*][arch=arm64]" = (
+					"$(inherited)",
+					"-L\"$(SRCROOT)/../../../../../target/aarch64-apple-visionos/release\"",
+					"-Wl,-no_compact_unwind",
+					"-lmasonnative",
+					"-ObjC",
+				);
+				"OTHER_LDFLAGS[sdk=xrsimulator*][arch=arm64]" = (
+					"$(inherited)",
+					"-L\"$(SRCROOT)/../../../../../target/aarch64-apple-visionos-sim/release\"",
+					"-Wl,-no_compact_unwind",
+					"-lmasonnative",
+					"-ObjC",
+				);
 				OTHER_SWIFT_FLAGS = "-Xcc -Wno-error=non-modular-include-in-framework-module -enable-library-evolution";
 				PRODUCT_BUNDLE_IDENTIFIER = org.nativescript.mason.Mason;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "xrsimulator xros iphonesimulator iphoneos";
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,7";
 				USE_HEADERMAP = YES;
 			};
 			name = Release;
@@ -1239,21 +1282,34 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		F13289742F2AD6DE0026A7E2 /* XCRemoteSwiftPackageReference "SDWebImage" */ = {
+		F11B22262FE5F757009B961E /* XCRemoteSwiftPackageReference "SDWebImage" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/SDWebImage/SDWebImage.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 5.21.5;
+				minimumVersion = 5.21.7;
+			};
+		};
+		F1C3CDB92FDEB7BB006B9F6C /* XCRemoteSwiftPackageReference "font-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/NativeScript/font-manager";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		F13289752F2AD6DE0026A7E2 /* SDWebImage */ = {
+		F11B22272FE5F757009B961E /* SDWebImage */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = F13289742F2AD6DE0026A7E2 /* XCRemoteSwiftPackageReference "SDWebImage" */;
+			package = F11B22262FE5F757009B961E /* XCRemoteSwiftPackageReference "SDWebImage" */;
 			productName = SDWebImage;
+		};
+		F1C3CDBA2FDEB7BB006B9F6C /* FontManager */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F1C3CDB92FDEB7BB006B9F6C /* XCRemoteSwiftPackageReference "font-manager" */;
+			productName = FontManager;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
