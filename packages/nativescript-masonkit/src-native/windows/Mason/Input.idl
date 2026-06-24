@@ -1,0 +1,21 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    // <input>: hosts a stock WinUI control chosen by Type (a MasonInputType raw value), backed by a
+    // Mason leaf node measured from the control. Setting Type rebuilds the hosted control.
+    //   0 Text  1 Button  2 Checkbox  3 Email  4 Password  5 Date  6 Radio  7 Number
+    //   8 Range 9 Tel  10 Url  11 Color  12 File  13 Submit
+    [default_interface]
+    runtimeclass Input : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        Input();
+        Node Node{ get; };
+        Style Style{ get; };
+        Int32 Type;
+        String Value;
+        String Placeholder;
+        Boolean Multiple;
+        String Accept;
+    }
+}

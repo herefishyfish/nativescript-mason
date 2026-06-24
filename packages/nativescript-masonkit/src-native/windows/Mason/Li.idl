@@ -1,0 +1,14 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    // A list item: NativeScript.Mason.Li. A container (like View) backed by a Mason list-item node.
+    [default_interface]
+    runtimeclass Li : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        Li();
+        Node Node{ get; };
+        Style Style{ get; };
+        void Invalidate();
+    }
+}

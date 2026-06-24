@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mason-core", "crates/mason-android", "crates/mason-ios", "crates/mason-playground", "crates/mason-c"]
+members = ["crates/mason-core", "crates/mason-android", "crates/mason-ios", "crates/mason-playground", "crates/mason-c", "crates/mason-windows"]
 resolver = "2"
 
 [profile.release]

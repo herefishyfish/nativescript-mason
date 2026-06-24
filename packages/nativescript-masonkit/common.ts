@@ -76,11 +76,77 @@ function getViewStyle(view: WeakRef<NSViewBase> | WeakRef<TextBase>): MasonStyle
 
 export interface MasonChild extends ViewBase {}
 
-/**
- * Cached per-view accessor for the framework's virtual DOM element.
- * The accessor is a function that retrieves the element cheaply on subsequent calls.
- * We use `false` as a sentinel to indicate "no framework detected" (avoids re-scanning).
- */
+// move to cpp
+function parseCssTransformToMatrix(s: string): { m11: number; m12: number; m21: number; m22: number; tx: number; ty: number } | null {
+  if (!s || s === 'none') return null;
+  let tx = 0,
+    ty = 0,
+    rad = 0,
+    sx = 1,
+    sy = 1;
+  let found = false;
+  const re = /(\w+)\(([^)]*)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) {
+    found = true;
+    const args = m[2].split(',').map((a) => parseFloat(a.trim()));
+    switch (m[1]) {
+      case 'translate':
+        tx += args[0] || 0;
+        ty += args[1] || 0;
+        break;
+      case 'translateX':
+        tx += args[0] || 0;
+        break;
+      case 'translateY':
+        ty += args[0] || 0;
+        break;
+      case 'rotate':
+      case 'rotateZ':
+        rad += ((args[0] || 0) * Math.PI) / 180;
+        break;
+      case 'scale':
+        sx *= args[0] != null ? args[0] : 1;
+        sy *= args[1] != null ? args[1] : args[0] != null ? args[0] : 1;
+        break;
+      case 'scaleX':
+        sx *= args[0] != null ? args[0] : 1;
+        break;
+      case 'scaleY':
+        sy *= args[0] != null ? args[0] : 1;
+        break;
+    }
+  }
+  if (!found) return null;
+  const cos = Math.cos(rad),
+    sin = Math.sin(rad);
+  // CSS matrix(a,b,c,d,e,f) of rotate*scale → WinUI Matrix(M11,M12,M21,M22,OffsetX,OffsetY).
+  return { m11: sx * cos, m12: sx * sin, m21: -sy * sin, m22: sy * cos, tx, ty };
+}
+
+// move to cpp
+function parseBoxShadow(s: string): { ox: number; oy: number; blur: number; argb: number } | null {
+  if (!s || s === 'none') return null;
+  let color = 'rgba(0,0,0,0.2)';
+  let rest = s;
+  const m = s.match(/rgba?\([^)]*\)|#[0-9a-fA-F]{3,8}/);
+  if (m) {
+    color = m[0];
+    rest = s.replace(m[0], ' ');
+  }
+  const nums = (rest.match(/-?\d*\.?\d+/g) || []).map((n) => parseFloat(n));
+  const ox = nums[0] || 0,
+    oy = nums[1] || 0,
+    blur = nums[2] || 0;
+  let argb = 0x33000000;
+  try {
+    argb = new Color(color as never).argb >>> 0;
+  } catch (_) {
+    /* keep default */
+  }
+  return { ox, oy, blur, argb };
+}
+
 const _frameworkAccessorCache = new WeakMap<object, ((view: any) => any) | false>();
 
 function getFrameworkElement(view: any): any {
@@ -328,6 +394,39 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
         callback['mason:event:id'] = id;
       }
+      if (__WINDOWS__) {
+        if (arg === 'click' || arg === 'tap') {
+          try {
+            const NSWinRT_: any = (globalThis as any).NSWinRT;
+            const MUX: any = (globalThis as any).Microsoft;
+            const owner = this;
+            const view: any = (this as any)._view;
+            const delegate = NSWinRT_.asDelegate('Microsoft.UI.Xaml.Input.TappedEventHandler', (_sender: any, _e: any) => {
+              const ret: any = {};
+              ret[native_] = _e;
+              ret._target = owner;
+              callback.call(thisArg || owner, ret);
+            });
+            if (view.Background == null && MUX?.UI?.Xaml?.Media?.SolidColorBrush) {
+              view.Background = new MUX.UI.Xaml.Media.SolidColorBrush(MUX.UI.Colors.Transparent);
+            }
+
+            const tappedEvent = MUX?.UI?.Xaml?.UIElement?.TappedEvent ?? view.TappedEvent;
+            let attached = false;
+            if (tappedEvent && typeof view.AddHandler === 'function') {
+              try {
+                view.AddHandler(tappedEvent, delegate, true);
+                callback['mason:event:tapped'] = tappedEvent;
+                attached = true;
+              } catch (_e) {}
+            }
+            if (!attached) {
+              view.Tapped = delegate;
+            }
+            callback['mason:event:id'] = delegate;
+          } catch (_) {}
+        }
+      }
     }
   }
 
@@ -355,6 +454,21 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
           const removed = (this._view as NSObject).mason_removeEventListenerId(arg, id);
 
           callback['mason:event:id'] = undefined;
+        }
+      }
+      if (__WINDOWS__) {
+        if (id && (arg === 'click' || arg === 'tap')) {
+          try {
+            const view: any = (this as any)._view;
+            const tappedEvent = callback['mason:event:tapped'];
+            if (tappedEvent && typeof view.RemoveHandler === 'function') {
+              view.RemoveHandler(tappedEvent, id);
+            } else if (view) {
+              view.Tapped = null;
+            }
+          } catch (_) {}
+          callback['mason:event:id'] = undefined;
+          callback['mason:event:tapped'] = undefined;
         }
       }
     }
@@ -735,6 +849,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
         // Drop the proxy binding so a later re-adopt re-installs cleanly.
         child[textNodeProxied_] = false;
         child[textNode_] = undefined;
+        this._syncTextRunLayout();
         (this as any).requestLayout?.();
         return;
       }
@@ -764,6 +879,10 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
       if (view.mason_removeChildNode) view.mason_removeChildNode(node);
       //@ts-ignore
       else view.mason_removeChildAt?.(index);
+    }
+    if (__WINDOWS__) {
+      //@ts-ignore
+      if (typeof view.RemoveRun === 'function') view.RemoveRun(node);
     }
   }
 
@@ -860,6 +979,9 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
       if (__APPLE__) {
         (node[textNode_] as MasonTextNode).data = text;
       }
+      if (__WINDOWS__) {
+        (node[textNode_] as NativeScript.Mason.TextNode).Data = text;
+      }
       this._installTextNodeProxy(node);
       return node[textNode_];
     }
@@ -870,6 +992,11 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     }
     if (__APPLE__) {
       textNode = MasonTextNode.alloc().initWithMasonDataAttributes(Tree.instance.native as never, text, null);
+    }
+    if (__WINDOWS__) {
+      const tn = new NativeScript.Mason.TextNode();
+      tn.Data = text;
+      textNode = tn;
     }
     node[textNode_] = textNode;
     // Back-reference from the native node to the framework text node.
@@ -925,6 +1052,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
           const data = value == null ? '' : `${value}`;
           if (__ANDROID__) (nativeTextNode as org.nativescript.mason.masonkit.TextNode).setData(data);
           if (__APPLE__) (nativeTextNode as MasonTextNode).data = data;
+          if (__WINDOWS__) (nativeTextNode as NativeScript.Mason.TextNode).Data = data;
           // Re-measure/layout so the new text is reflected on screen.
           (owner as any).requestLayout?.();
         }
@@ -937,6 +1065,12 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     if (__ANDROID__) this._view.addChildAt(textNode, index);
     //@ts-ignore
     if (__APPLE__) this._view.mason_addChildAtNode(textNode, index);
+    if (__WINDOWS__) {
+      const view = (this as any)._view;
+      if (!view) return;
+      if (typeof view.SetRun === 'function') view.SetRun(textNode, index);
+      else NativeScript.Mason.Css.ReparentChild(view, textNode, index);
+    }
   }
 
   private _nativeReplaceChild(textNode: any, index: number) {
@@ -944,6 +1078,12 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     if (__ANDROID__) this._view.replaceChildAt(textNode, index);
     //@ts-ignore
     if (__APPLE__) this._view.mason_replaceChildAtNode(textNode, index);
+    if (__WINDOWS__) {
+      const view = (this as any)._view;
+      if (!view) return;
+      if (typeof view.SetRun === 'function') view.SetRun(textNode, index);
+      else NativeScript.Mason.Css.ReparentChild(view, textNode, index);
+    }
   }
 
   private _setOrPushChild(index: number, entry: any) {
@@ -969,6 +1109,10 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     const text = node.text ?? node.data ?? '';
     const textNode = this._createOrUpdateNativeTextNode(node, text);
 
+    if (__WINDOWS__ && textNode && typeof (textNode as any).SetBreak === 'function') {
+      (textNode as any).SetBreak(!!operation?.isBreak);
+    }
+
     if (!operation) return;
 
     const entry = { [text_]: text, [textNode_]: textNode, [textNodeIndex_]: operation.index ?? this._children.length };
@@ -987,6 +1131,19 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
         this._nativeAddChild(textNode, operation.index);
         this._setOrPushChild(operation.index, entry);
         break;
+    }
+    this._syncTextRunLayout();
+  }
+
+  private _syncTextRunLayout() {
+    if (!__WINDOWS__) return;
+    // @ts-ignore
+    const sh = this._styleHelper;
+    if (!sh) return;
+    try {
+      sh.display = 'block';
+    } catch (_) {
+      // empty
     }
   }
 
@@ -1195,6 +1352,13 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     // @ts-ignore
     const style = this._styleHelper;
     if (style) {
+      // Pass the raw value straight through — the style setter's normalizeColorValue handles
+      // number / string / Color / {argb} via duck-typing, which is robust even when a `Color`
+      // instance comes from a different @nativescript/core copy (cross-copy `instanceof` fails).
+      // @ts-ignore
+      style.backgroundColor = value;
+      return;
+      // eslint-disable-next-line no-unreachable
       switch (typeof value) {
         case 'number':
           // @ts-ignore
@@ -1257,28 +1421,22 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
   [lineHeightProperty.setNative](value: CoreTypes.LengthType) {
     // @ts-ignore
     const style = this._styleHelper;
-    if (style) {
-      // @ts-ignore
-      style.lineHeight = value;
-    }
+    // @ts-ignore
+    if (style) style.lineHeight = value;
   }
 
   [letterSpacingProperty.setNative](value: CoreTypes.LengthType) {
     // @ts-ignore
     const style = this._styleHelper;
-    if (style) {
-      // @ts-ignore
-      style.letterSpacing = value;
-    }
+    // @ts-ignore
+    if (style) style.letterSpacing = value;
   }
 
   [textAlignmentProperty.setNative](value) {
     // @ts-ignore
     const style = this._styleHelper;
-    if (style) {
-      // @ts-ignore
-      style.textAlignment = value;
-    }
+    // @ts-ignore
+    if (style) style.textAlignment = value;
   }
 
   [textDecorationProperty.setNative](value) {
@@ -1442,13 +1600,33 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     }
   }
 
+  // Windows: push a font/text property to the native Text container, which applies it to its
+  // TextBlock (the default for all inline runs). Font props otherwise only land in the style buffer,
+  // which the TextBlock-backed text doesn't read — so size/weight/line-height/letter-spacing
+  // wouldn't change visually. No-op on a container that isn't a Text.
+  private _applyTextRunProp(method: string, arg: number) {
+    if (!__WINDOWS__) return;
+    try {
+      const view = (this as any)._view;
+      if (view && typeof view[method] === 'function') view[method](arg);
+    } catch (_) {}
+  }
+
   [colorProperty.setNative](value) {
-    if (value instanceof Color) {
+    // @ts-ignore
+    const style = this._styleHelper;
+    if (style) {
+      // Duck-typed via normalizeColorValue (robust to cross-core Color instances).
       // @ts-ignore
-      const style = this._styleHelper;
-      if (style) {
-        // @ts-ignore
-        style.color = value.argb;
+      style.color = value;
+      if (__WINDOWS__) {
+        // Push the resolved color to the Text container's TextBlock (the default for all runs).
+        // Imperative — not during layout.
+        try {
+          const argb = (style as any).color >>> 0 || 0;
+          const view = (this as any)._view;
+          if (view && argb && typeof view.SetColor === 'function') view.SetColor(argb);
+        } catch (_) {}
       }
     }
   }
@@ -2132,6 +2310,16 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     if (style) {
       // @ts-ignore
       style.boxShadow = value;
+      if (__WINDOWS__) {
+        // box-shadow isn't a Mason buffer prop — render it as a Composition DropShadow on the element
+        // (masked to its rounded-rect shape, re-applied on resize). The corner radius is read natively.
+        const nv: any = (this as any).nativeViewProtected ?? (this as any)._view;
+        try {
+          const sh = parseBoxShadow(typeof value === 'string' ? value : '');
+          if (!sh) NativeScript.Mason.Css.ClearShadow(nv);
+          else NativeScript.Mason.Css.ApplyShadow(nv, sh.ox, sh.oy, sh.blur, sh.argb, 0);
+        } catch (_) {}
+      }
     }
   }
 
@@ -2141,6 +2329,17 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     if (style) {
       // @ts-ignore
       style.transform = value;
+      if (__WINDOWS__) {
+        // transform isn't a Mason buffer prop — apply it to the FrameworkElement via Composition,
+        // like @nativescript/core does on its own panels (the plugin's View is a custom Panel core
+        // doesn't drive transforms on). Parse the CSS string to a matrix and set RenderTransform.
+        const nv: any = (this as any).nativeViewProtected ?? (this as any)._view;
+        try {
+          const mtx = parseCssTransformToMatrix(typeof value === 'string' ? value : '');
+          if (!mtx) NativeScript.Mason.Css.ClearTransform(nv);
+          else NativeScript.Mason.Css.ApplyTransform(nv, mtx.m11, mtx.m12, mtx.m21, mtx.m22, mtx.tx, mtx.ty);
+        } catch (_) {}
+      }
     }
   }
 }

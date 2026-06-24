@@ -34,7 +34,7 @@ export default function Typography() {
                 fontWeight: weight() as any,
                 letterSpacing: spacing(),
                 lineHeight: lineHeight() / 100,
-                textAlign: align(),
+                textAlignment: align() as any,
                 color: color(),
                 width: '100%',
               }}

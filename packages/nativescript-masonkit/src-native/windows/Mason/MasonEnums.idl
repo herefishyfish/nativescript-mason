@@ -1,0 +1,186 @@
+namespace NativeScript.Mason
+{
+    // CSS/Taffy enums projected to JS. Integer values match crates/mason-core (and the iOS
+    // Enums.swift raw values) exactly, so a value read here can be passed straight back into
+    // Style.SetWithValues. The "Normal = -1" members mirror Taffy's optional alignment encoding.
+
+    enum Display
+    {
+        None = 0,
+        Flex = 1,
+        Grid = 2,
+        Block = 3,
+        Inline = 4,
+        InlineBlock = 5,
+        InlineFlex = 6,
+        InlineGrid = 7,
+    };
+
+    enum Position
+    {
+        Relative = 0,
+        Absolute = 1,
+    };
+
+    enum Direction
+    {
+        Inherit = 0,
+        Ltr = 1,
+        Rtl = 2,
+    };
+
+    enum FlexDirection
+    {
+        Row = 0,
+        Column = 1,
+        RowReverse = 2,
+        ColumnReverse = 3,
+    };
+
+    enum FlexWrap
+    {
+        NoWrap = 0,
+        Wrap = 1,
+        WrapReverse = 2,
+    };
+
+    enum Overflow
+    {
+        Visible = 0,
+        Hidden = 1,
+        Scroll = 2,
+        Clip = 3,
+        Auto = 4,
+    };
+
+    enum AlignItems
+    {
+        Normal = -1,
+        Start = 0,
+        End = 1,
+        Center = 2,
+        Baseline = 3,
+        Stretch = 4,
+        FlexStart = 5,
+        FlexEnd = 6,
+    };
+
+    enum AlignSelf
+    {
+        Normal = -1,
+        Start = 0,
+        End = 1,
+        Center = 2,
+        Baseline = 3,
+        Stretch = 4,
+        FlexStart = 5,
+        FlexEnd = 6,
+    };
+
+    enum AlignContent
+    {
+        Normal = -1,
+        Start = 0,
+        End = 1,
+        Center = 2,
+        Stretch = 3,
+        SpaceBetween = 4,
+        SpaceAround = 5,
+        SpaceEvenly = 6,
+        FlexStart = 7,
+        FlexEnd = 8,
+    };
+
+    enum JustifyItems
+    {
+        Normal = -1,
+        Start = 0,
+        End = 1,
+        Center = 2,
+        Baseline = 3,
+        Stretch = 4,
+        FlexStart = 5,
+        FlexEnd = 6,
+    };
+
+    enum JustifySelf
+    {
+        Normal = -1,
+        Start = 0,
+        End = 1,
+        Center = 2,
+        Baseline = 3,
+        Stretch = 4,
+        FlexStart = 5,
+        FlexEnd = 6,
+    };
+
+    enum JustifyContent
+    {
+        Normal = -1,
+        Start = 0,
+        End = 1,
+        Center = 2,
+        Stretch = 3,
+        SpaceBetween = 4,
+        SpaceAround = 5,
+        SpaceEvenly = 6,
+        FlexStart = 7,
+        FlexEnd = 8,
+    };
+
+    enum GridAutoFlow
+    {
+        Row = 0,
+        Column = 1,
+        RowDense = 2,
+        ColumnDense = 3,
+    };
+
+    enum BoxSizing
+    {
+        BorderBox = 0,
+        ContentBox = 1,
+    };
+
+    enum TextAlign
+    {
+        Auto = 0,
+        Left = 1,
+        Right = 2,
+        Center = 3,
+        Justify = 4,
+        Start = 5,
+        End = 6,
+    };
+
+    // Unit tag for length/percentage/auto values passed to Style.SetWithValues.
+    enum DimensionType
+    {
+        Auto = 0,
+        Points = 1,
+        Percent = 2,
+    };
+
+    // Constraint kind for Node.ComputeSize.
+    enum AvailableSpaceType
+    {
+        Definite = 0,
+        MinContent = 1,
+        MaxContent = 2,
+    };
+
+    // CSS pseudo-class flags (bitmask). Matches mason-core's per-node state bits.
+    [flags]
+    enum PseudoState
+    {
+        Default = 0x00000000,
+        Hover = 0x00000001,
+        Active = 0x00000002,
+        Focus = 0x00000004,
+        FocusWithin = 0x00000008,
+        FocusVisible = 0x00000010,
+        Disabled = 0x00000040,
+        Checked = 0x00000080,
+    };
+}

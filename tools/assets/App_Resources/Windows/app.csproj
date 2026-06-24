@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <AppDisplayName>NSMason</AppDisplayName>
+    <AppDescription>NativeScript Mason Solid Demo</AppDescription>
+    <ApplicationManifest Condition="'$(ApplicationManifest)' == '' and Exists('$(MSBuildThisFileDirectory)app.manifest')">$(MSBuildThisFileDirectory)app.manifest</ApplicationManifest>
+  </PropertyGroup>
+</Project>

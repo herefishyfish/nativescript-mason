@@ -9,6 +9,12 @@
   },
   "devDependencies": {
     "@nativescript/android": "~9.0.0",
-    "@nativescript/ios": "~9.0.0"
+    "@nativescript/ios": "~9.0.0",
+    "@nativescript/windows": "beta",
+    "@nativescript/webpack": "5.0.37-dev.0",
+    "nativescript": "dev"
+  },
+  "scripts": {
+    "start-windows": "npx ns run windows"
   }
 }

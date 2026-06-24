@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NativeScript.Mason NuGet - MSBuild integration for C++/WinRT consumers.
+
+  Pulled in automatically by <PackageReference Include="NativeScript.Mason" />. It:
+    1. Adds the .winmd as a reference so cppwinrt generates the projection headers (the consumer
+       can #include <winrt/NativeScript.Mason.h> and call Mason / Node / Style / Layout / View).
+    2. Copies the active-architecture implementation .dll (+ .winmd) to the build output, so the
+       OS can load the in-proc server at runtime.
+    3. Registers the Mason runtimeclasses as activatable in-proc classes in the consuming app's
+       Package.appxmanifest, so RoGetActivationFactory can create them.
+
+  Layout inside the package:
+    build/native/NativeScript.Mason.targets        (this file)
+    build/native/NativeScript.Mason.winmd          (arch-neutral metadata)
+    runtimes/win10-{x64,arm64}/native/NativeScript.Mason.dll
+-->
+<Project>
+  <PropertyGroup>
+    <_MasonRoot>$(MSBuildThisFileDirectory)..\..\</_MasonRoot>
+    <_MasonRuntime Condition="'$(Platform)'=='ARM64' or '$(Platform)'=='arm64'">win10-arm64</_MasonRuntime>
+    <_MasonRuntime Condition="'$(Platform)'=='x64' or '$(Platform)'=='x86_64'">win10-x64</_MasonRuntime>
+    <!-- Fallback to x64 when $(Platform) is unset/AnyCPU during evaluation. -->
+    <_MasonRuntime Condition="'$(_MasonRuntime)'==''">win10-x64</_MasonRuntime>
+    <_MasonDllPath>$(_MasonRoot)runtimes\$(_MasonRuntime)\native\NativeScript.Mason.dll</_MasonDllPath>
+    <_MasonWinmdPath>$(MSBuildThisFileDirectory)NativeScript.Mason.winmd</_MasonWinmdPath>
+  </PropertyGroup>
+
+  <!-- (1) Compile-time projection: cppwinrt consumes winmds discovered via @(Reference). -->
+  <ItemGroup>
+    <Reference Include="$(_MasonWinmdPath)">
+      <IsWinMDFile>true</IsWinMDFile>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- (2) Runtime: copy the matching-arch dll (+ metadata) next to the consumer's output. -->
+  <Target Name="CopyNativeScriptMason" AfterTargets="Build">
+    <ItemGroup>
+      <_MasonFiles Include="$(_MasonDllPath)" Condition="Exists('$(_MasonDllPath)')" />
+      <_MasonFiles Include="$(_MasonWinmdPath)" Condition="Exists('$(_MasonWinmdPath)')" />
+    </ItemGroup>
+    <Message Text="[NativeScript.Mason] Copying component ($(Platform) -> $(_MasonRuntime)) to $(OutDir)" Importance="normal" Condition="'@(_MasonFiles)' != ''" />
+    <Copy SourceFiles="@(_MasonFiles)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(_MasonFiles)' != ''" />
+  </Target>
+
+  <!-- (3) Register the activatable classes in the consuming app's Package.appxmanifest (idempotent). -->
+  <ItemGroup>
+    <NSMasonActivatableClass Include="NativeScript.Mason.Mason" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.MeasureOutput" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.View" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Text" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Image" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Button" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Br" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Li" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.List" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.TextNode" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.TextArea" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Input" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Css" />
+  </ItemGroup>
+
+  <Target Name="NSRegisterMasonActivatableClasses"
+          AfterTargets="ApplyManifestOverrides;MergeAppResourcesManifest"
+          BeforeTargets="Build"
+          Condition="Exists('$(MSBuildProjectDirectory)\Package.appxmanifest')">
+    <Message Text="[NativeScript.Mason] Registering activatable classes in Package.appxmanifest" Importance="normal" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='Stop'; $p='$(MSBuildProjectDirectory)\Package.appxmanifest'; if(-not (Test-Path $p)){exit 0}; $dll='NativeScript.Mason.dll'; $ids='@(NSMasonActivatableClass)'.Split(';'); [xml]$d=Get-Content -LiteralPath $p; $ns='http://schemas.microsoft.com/appx/manifest/foundation/windows10'; $m=New-Object System.Xml.XmlNamespaceManager($d.NameTable); $m.AddNamespace('a',$ns); $pkg=$d.DocumentElement; $ext=$pkg.SelectSingleNode('a:Extensions',$m); if(-not $ext){$ext=$d.CreateElement('Extensions',$ns);[void]$pkg.AppendChild($ext)}; $srv=$ext.SelectSingleNode('a:Extension[@Category=''windows.activatableClass.inProcessServer'']/a:InProcessServer[a:Path=''' + $dll + ''']',$m); if(-not $srv){$e=$d.CreateElement('Extension',$ns);$e.SetAttribute('Category','windows.activatableClass.inProcessServer');$srv=$d.CreateElement('InProcessServer',$ns);$pa=$d.CreateElement('Path',$ns);$pa.InnerText=$dll;[void]$srv.AppendChild($pa);[void]$e.AppendChild($srv);[void]$ext.AppendChild($e)}; $have=@($srv.SelectNodes('a:ActivatableClass',$m)|ForEach-Object{$_.GetAttribute('ActivatableClassId')}); $chg=$false; foreach($id in $ids){if($id -and ($have -notcontains $id)){$c=$d.CreateElement('ActivatableClass',$ns);$c.SetAttribute('ActivatableClassId',$id);$c.SetAttribute('ThreadingModel','both');[void]$srv.AppendChild($c);$chg=$true}}; if($chg){$d.Save($p)}&quot;" />
+  </Target>
+</Project>

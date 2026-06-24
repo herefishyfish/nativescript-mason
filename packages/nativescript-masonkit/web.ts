@@ -1,5 +1,5 @@
 import { CSSType } from '@nativescript/core';
-import { View, Text, Scroll } from '.';
+import { View, Text } from '.';
 
 const enum TextType {
   None = 0,
@@ -35,7 +35,7 @@ const enum TextType {
 }
 
 @CSSType('div')
-export class Div extends Scroll {}
+export class Div extends View {}
 
 @CSSType('section')
 export class Section extends View {}

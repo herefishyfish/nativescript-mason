@@ -69,7 +69,7 @@ const FEATURES = [
 
 const STATS = [
   { n: '184', label: 'CSS Props', color: '#6c5ce7' },
-  { n: '2', label: 'Platforms', color: '#0984e3' },
+  { n: '4', label: 'Platforms', color: '#0984e3' },
   { n: '6', label: 'Playgrounds', color: '#00b894' },
   { n: 'Rust', label: 'Powered', color: '#e84393' },
 ]
@@ -79,32 +79,8 @@ export default function Home() {
 
   return (
     <>
-      <actionbar title="Mason" />
+      <actionbar title="" />
       <scroll style={{ backgroundColor: '#f0f4f8', padding: 16, overflowY: 'scroll' }}>
-        {/* ── Grid Showcase ── */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '2fr 1fr 1fr',
-            gridTemplateRows: '48px 48px',
-            gap: '6px 6px',
-            marginBottom: 24,
-          }}
-        >
-          <div style={{ gridRow: 'span 2', backgroundColor: '#6c5ce7', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ fontSize: 13, color: 'white', fontWeight: 'bold' }}>row span 2</p>
-          </div>
-          <div style={{ backgroundColor: '#0984e3', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ fontSize: 11, color: 'white', fontWeight: 'bold' }}>A</p>
-          </div>
-          <div style={{ backgroundColor: '#00b894', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ fontSize: 11, color: 'white', fontWeight: 'bold' }}>B</p>
-          </div>
-          <div style={{ gridColumn: 'span 2', backgroundColor: '#e84393', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ fontSize: 11, color: 'white', fontWeight: 'bold' }}>col span 2</p>
-          </div>
-        </div>
-
         {/* ── Hero ── */}
         <div
           style={{
@@ -150,7 +126,7 @@ export default function Home() {
             Full Flexbox, Grid, Shadows & Transforms for NativeScript — powered by a Rust core. No web views.
           </p>
           <div style={{ display: 'flex', flexDirection: 'row', gap: '8px 8px', flexWrap: 'wrap' }}>
-            {(['Rust · Taffy', 'Flexbox', 'CSS Grid', 'Transforms', 'iOS + Android'] as const).map((tag) => (
+            {(['Rust · Taffy', 'Flexbox', 'CSS Grid', 'Transforms', 'iOS · Android · Windows · visionOS'] as const).map((tag) => (
               <div
                 style={{
                   backgroundColor: 'rgba(255,255,255,0.12)',
@@ -190,7 +166,7 @@ export default function Home() {
               }}
             >
               <p style={{ fontSize: 18, fontWeight: 'bold', color: s.color, lineHeight: 1 }}>{s.n}</p>
-              <p style={{ fontSize: 9, color: '#999', marginTop: 4, textAlign: 'center' }}>{s.label}</p>
+              <p style={{ fontSize: 9, color: '#999', marginTop: 4, textAlignment: 'center' }}>{s.label}</p>
             </div>
           ))}
         </div>
@@ -335,7 +311,7 @@ export default function Home() {
 
         {/* ── Footer ── */}
         <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', paddingTop: 8, paddingBottom: 24 }}>
-          <p style={{ fontSize: 11, color: '#b2bec3', textAlign: 'center' }}>
+          <p style={{ fontSize: 11, color: '#b2bec3', textAlignment: 'center' }}>
             Mason · NativeScript · Rust · Taffy
           </p>
         </div>

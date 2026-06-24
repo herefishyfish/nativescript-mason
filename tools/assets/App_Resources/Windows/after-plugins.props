@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <_NSCoreWindows>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..\node_modules\@nativescript\core\platforms\windows'))</_NSCoreWindows>
+    <_NSWidgetsArch Condition="'$(Platform)'=='ARM64' or '$(Platform)'=='arm64'">arm64</_NSWidgetsArch>
+    <_NSWidgetsArch Condition="'$(Platform)'=='x64' or '$(Platform)'=='x86_64'">x64</_NSWidgetsArch>
+    <!-- Fallback to x64 when $(Platform) is unset/AnyCPU during evaluation. -->
+    <_NSWidgetsArch Condition="'$(_NSWidgetsArch)'==''">x64</_NSWidgetsArch>
+    <_NSWidgetsDir>$(_NSCoreWindows)\$(_NSWidgetsArch)</_NSWidgetsDir>
+    <_NSWidgetsHasLocal>false</_NSWidgetsHasLocal>
+    <_NSWidgetsHasLocal Condition="Exists('$(_NSWidgetsDir)\NativeScript.Widgets.dll')">true</_NSWidgetsHasLocal>
+  </PropertyGroup>
+
+  <Target Name="NSCopyCoreWidgets" AfterTargets="Build" Condition="'$(_NSWidgetsHasLocal)'=='true'">
+    <ItemGroup>
+      <_NSWidgetsFiles Include="$(_NSWidgetsDir)\NativeScript.Widgets.dll" />
+      <_NSWidgetsFiles Include="$(_NSWidgetsDir)\NativeScript.Widgets.winmd" Condition="Exists('$(_NSWidgetsDir)\NativeScript.Widgets.winmd')" />
+    </ItemGroup>
+    <Message Text="[app] Copying NativeScript.Widgets ($(_NSWidgetsArch)) to $(OutDir)" Importance="normal" />
+    <Copy SourceFiles="@(_NSWidgetsFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.FlexboxLayout" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.StackLayout" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.ShadowHelper" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.TextShadowHelper" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.ClipHelper" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.ImageHelper" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.TileHelper" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.FontHelper" />
+    <NSWidgetsActivatableClass Include="NativeScript.Widgets.ScrollHelper" />
+  </ItemGroup>
+
+  <Target Name="NSRegisterCoreWidgets"
+          AfterTargets="ApplyManifestOverrides;MergeAppResourcesManifest"
+          BeforeTargets="Build"
+          Condition="'$(_NSWidgetsHasLocal)'=='true' and Exists('$(MSBuildProjectDirectory)\Package.appxmanifest')">
+    <Message Text="[app] Registering NativeScript.Widgets activatable classes in Package.appxmanifest" Importance="normal" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='Stop'; $p='$(MSBuildProjectDirectory)\Package.appxmanifest'; if(-not (Test-Path $p)){exit 0}; $dll='NativeScript.Widgets.dll'; $ids='@(NSWidgetsActivatableClass)'.Split(';'); [xml]$d=Get-Content -LiteralPath $p; $ns='http://schemas.microsoft.com/appx/manifest/foundation/windows10'; $m=New-Object System.Xml.XmlNamespaceManager($d.NameTable); $m.AddNamespace('a',$ns); $pkg=$d.DocumentElement; $ext=$pkg.SelectSingleNode('a:Extensions',$m); if(-not $ext){$ext=$d.CreateElement('Extensions',$ns);[void]$pkg.AppendChild($ext)}; $srv=$ext.SelectSingleNode('a:Extension[@Category=''windows.activatableClass.inProcessServer'']/a:InProcessServer[a:Path=''' + $dll + ''']',$m); if($srv){foreach($n in @($srv.SelectNodes('a:ActivatableClass',$m))){[void]$srv.RemoveChild($n)}}else{$e=$d.CreateElement('Extension',$ns);$e.SetAttribute('Category','windows.activatableClass.inProcessServer');$srv=$d.CreateElement('InProcessServer',$ns);$pa=$d.CreateElement('Path',$ns);$pa.InnerText=$dll;[void]$srv.AppendChild($pa);[void]$e.AppendChild($srv);[void]$ext.AppendChild($e)}; foreach($id in $ids){if($id){$c=$d.CreateElement('ActivatableClass',$ns);$c.SetAttribute('ActivatableClassId',$id);$c.SetAttribute('ThreadingModel','both');[void]$srv.AppendChild($c)}}; $seen=@{}; foreach($s in @($ext.SelectNodes('a:Extension/a:InProcessServer',$m))){foreach($c in @($s.SelectNodes('a:ActivatableClass',$m))){$cid=$c.GetAttribute('ActivatableClassId'); if($seen.ContainsKey($cid)){[void]$s.RemoveChild($c)}else{$seen[$cid]=$true}}}; $d.Save($p)&quot;" />
+  </Target>
+</Project>

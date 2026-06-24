@@ -1,0 +1,18 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+  
+    [default_interface]
+    runtimeclass TextArea : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        TextArea();
+        Node Node{ get; };
+        Style Style{ get; };
+        String Value;
+        String Placeholder;
+        Int32 Rows;
+        Int32 Cols;
+        Int32 MaxLength;
+    }
+}

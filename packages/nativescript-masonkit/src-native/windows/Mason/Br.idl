@@ -1,0 +1,14 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    // A line break: NativeScript.Mason.Br. A zero-size leaf backed by a Mason line-break node;
+    // forces a break in inline (text) flow. Renders nothing.
+    [default_interface]
+    runtimeclass Br : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        Br();
+        Node Node{ get; };
+        Style Style{ get; };
+    }
+}

@@ -1,13 +1,14 @@
 {
   "name": "@triniwiz/nativescript-masonkit",
-  "version": "1.0.0-beta.85",
+  "version": "1.0.0-beta.86",
   "description": "Web Inspired Layout",
   "main": "index",
   "typings": "index.d.ts",
   "nativescript": {
     "platforms": {
       "ios": "8.0.0",
-      "android": "8.0.0"
+      "android": "8.0.0",
+      "windows": "9.1.0"
     }
   },
   "repository": {
@@ -19,7 +20,8 @@
     "JavaScript",
     "TypeScript",
     "iOS",
-    "Android"
+    "Android",
+    "Windows"
   ],
   "author": {
     "name": "Osei Fortune",
@@ -34,6 +36,7 @@
   "scripts": {
     "build:android": "bash ../../tools/scripts/masonkit-build-android-aar.sh",
     "build:ios": "bash ../../tools/scripts/masonkit-build-ios-framework.sh",
+    "build:windows": "pwsh ./src-native/windows/publish.ps1",
     "build:native": "npm run build:android && npm run build:ios"
   },
   "bootstrapper": "@nativescript/plugin-seed",

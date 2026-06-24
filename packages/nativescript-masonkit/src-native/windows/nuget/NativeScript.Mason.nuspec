@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>NativeScript.Mason</id>
+    <version>1.0.0</version>
+    <title>NativeScript Mason (C++/WinRT)</title>
+    <authors>NativeScript</authors>
+    <owners>NativeScript</owners>
+    <license type="expression">Apache-2.0</license>
+    <readme>readme.md</readme>
+    <projectUrl>https://github.com/triniwiz/nativescript-mason</projectUrl>
+    <repository type="git" url="https://github.com/triniwiz/nativescript-mason.git" />
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>
+      Native C++/WinRT Windows Runtime Component backing @triniwiz/nativescript-masonkit: a
+      web-inspired (flexbox / CSS grid / block / inline) layout engine built on the Rust Taffy core
+      (mason-c). Consume from another C++/WinRT project via PackageReference to call the Mason / Node
+      / Style / Layout types and to register its activatable classes in the app's
+      Package.appxmanifest.
+    </description>
+    <summary>Mason layout-engine C++/WinRT component for NativeScript on Windows.</summary>
+    <tags>NativeScript Windows WinRT C++ layout flexbox grid taffy mason native</tags>
+  </metadata>
+  <files>
+    <file src="readme.md" target="readme.md" />
+    <!-- MSBuild integration: winmd projection + per-arch dll copy + manifest registration. -->
+    <file src="build\native\NativeScript.Mason.targets" target="build\native\NativeScript.Mason.targets" />
+    <!-- Architecture-neutral metadata used for the C++/WinRT projection at compile time. -->
+    <file src="..\..\..\platforms\windows\x64\NativeScript.Mason.winmd" target="build\native\NativeScript.Mason.winmd" />
+    <!-- Per-architecture implementation DLLs (no universal binary on Windows). One DLL holds the
+         engine (Mason/Node/Style/Layout) and the WinUI View control. -->
+    <file src="..\..\..\platforms\windows\x64\NativeScript.Mason.dll" target="runtimes\win10-x64\native\NativeScript.Mason.dll" />
+    <file src="..\..\..\platforms\windows\arm64\NativeScript.Mason.dll" target="runtimes\win10-arm64\native\NativeScript.Mason.dll" />
+  </files>
+</package>
