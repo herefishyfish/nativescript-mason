@@ -1,0 +1,21 @@
+import "Node.idl";
+import "Style.idl";
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    [default_interface]
+    runtimeclass View : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        View();
+        View(Int32 nodeKind);
+
+        Node Node{ get; };
+        Style Style{ get; };
+        Int32 NodeKind{ get; };
+
+        // Re-sync children and request a relayout (after mutating styles/children outside the
+        // normal XAML invalidation path).
+        void Invalidate();
+    }
+}

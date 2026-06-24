@@ -97,6 +97,15 @@
       },
       "executor": "nx:run-commands"
     },
+    "build.native.windows.release": {
+      "outputs": ["{workspaceRoot}/dist/packages"],
+      "options": {
+        "commands": ["pwsh ./publish.ps1"],
+        "cwd": "packages/nativescript-masonkit/src-native/windows",
+        "parallel": false
+      },
+      "executor": "nx:run-commands"
+    },
     "focus": {
       "executor": "nx:run-commands",
       "options": {

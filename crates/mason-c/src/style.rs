@@ -696,7 +696,7 @@ pub extern "C" fn mason_style_update_non_buffer_data(
             }
 
             if let Some(grid_row) = grid_row.as_deref() {
-                style.set_grid_row_css(grid_row)
+                style.set_grid_row_css(grid_row);
             }
 
             if let Some(start) = grid_row_start.as_deref() {
@@ -731,10 +731,16 @@ pub extern "C" fn mason_style_update_non_buffer_data(
                 style.set_grid_template_rows_css(rows);
             }
 
+            // `set_grid_area("")` RESETS grid_row/column start/end to auto (grid-area is a shorthand
+            // for them). Because windowsSetGrid reads-all-then-writes-all, it passes an empty grid_area
+            // whenever any *other* grid property changes — which would wipe an explicitly-set
+            // grid-row/grid-column span. Only apply grid-area when it is actually present.
             if let Some(area) = grid_area.as_deref() {
-                style.set_grid_area(area);
+                if !area.is_empty() {
+                    style.set_grid_area(area);
+                }
             }
-        })
+        });
     }
 }
 
@@ -1056,7 +1062,7 @@ pub extern "C" fn mason_style_get_grid_template_areas_css(
                 return std::ptr::null_mut();
             }
 
-            CString::new(area)
+            return CString::new(area)
                 .map(|v| v.into_raw())
                 .ok()
                 .unwrap_or(std::ptr::null_mut());
@@ -1142,7 +1148,7 @@ pub extern "C" fn mason_style_get_grid_column_start_css(
         if let Some(style) = mason.0.style(node.0.id()) {
             let start = style.get_grid_column_start_css();
 
-            CString::new(start)
+            return CString::new(start)
                 .map(|v| v.into_raw())
                 .ok()
                 .unwrap_or(std::ptr::null_mut());
@@ -1165,7 +1171,7 @@ pub extern "C" fn mason_style_get_grid_column_end_css(
         if let Some(style) = mason.0.style(node.0.id()) {
             let start = style.get_grid_column_end_css();
 
-            CString::new(start)
+            return CString::new(start)
                 .map(|v| v.into_raw())
                 .ok()
                 .unwrap_or(std::ptr::null_mut());
@@ -1209,7 +1215,7 @@ pub extern "C" fn mason_style_get_grid_row_start_css(
         if let Some(style) = mason.0.style(node.0.id()) {
             let start = style.get_grid_row_start_css();
 
-            CString::new(start)
+            return CString::new(start)
                 .map(|v| v.into_raw())
                 .ok()
                 .unwrap_or(std::ptr::null_mut());
@@ -1232,7 +1238,7 @@ pub extern "C" fn mason_style_get_grid_row_end_css(
         if let Some(style) = mason.0.style(node.0.id()) {
             let start = style.get_grid_row_end_css();
 
-            CString::new(start)
+            return CString::new(start)
                 .map(|v| v.into_raw())
                 .ok()
                 .unwrap_or(std::ptr::null_mut());

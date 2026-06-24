@@ -1170,6 +1170,7 @@ pub extern "C" fn mason_node_get_pseudo_style_buffer(
     }
 }
 
+#[cfg(target_vendor = "apple")]
 #[no_mangle]
 pub extern "C" fn mason_node_get_pseudo_style_buffer_apple(
     mason: *mut CMason,
@@ -1215,6 +1216,7 @@ pub extern "C" fn mason_node_prepare_pseudo_style_buffer(
     }
 }
 
+#[cfg(target_vendor = "apple")]
 #[no_mangle]
 pub extern "C" fn mason_node_prepare_pseudo_style_buffer_apple(
     mason: *mut CMason,
@@ -1389,7 +1391,7 @@ pub extern "C" fn mason_node_remove_context(mason: *mut CMason, node: *mut CMaso
     }
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(target_vendor = "apple")]
 #[no_mangle]
 pub extern "C" fn mason_node_set_apple_node(
     mason: *mut CMason,

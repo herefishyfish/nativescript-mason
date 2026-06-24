@@ -1,0 +1,25 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    [default_interface]
+    runtimeclass TextNode : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        TextNode();
+        Node Node{ get; };
+        Style Style{ get; };
+        String Data;
+        // Text run color (0xAARRGGBB) / size (px), set by the .windows.ts layer from the owning Text
+        // element's style. Imperative (not during layout) to avoid measure/arrange cycles.
+        void SetColor(UInt32 argb);
+        void SetFontSize(Double px);
+        // Font weight (100-900), line height (CSS unitless MULTIPLIER of font size; <=0 = auto) and
+        // letter spacing (in PX/CSS-length; converted to CharacterSpacing 1/1000 em via the font size).
+        void SetFontWeight(Int32 weight);
+        void SetLineHeight(Double multiplier);
+        void SetLetterSpacing(Double px);
+        // Mark this run as a hard line break (<br>): the owning Text renders it as a LineBreak inline
+        // instead of a text Run.
+        void SetBreak(Boolean isBreak);
+    }
+}

@@ -1,0 +1,114 @@
+namespace NativeScript.Mason
+{
+    // Writer over a node's style buffer. Bound to a (Mason, Node) pair and obtained from
+    // Node.Style. SetWithValues is a 1:1 passthrough to mason_style_set_with_values - the whole
+    // computed style is written in a single FFI crossing (the same batch path the iOS/Android
+    // layers use). Integer params are the enum raw values from MasonEnums.idl; "*Type" params are
+    // a DimensionType (0 auto / 1 points / 2 percent) and the paired "*Value" is the magnitude.
+    // Grid track/line/area properties are CSS strings (UpdateGrid / the trailing SetWithValues
+    // string params), parsed natively.
+    runtimeclass Style
+    {
+        void SetWithValues(
+            Int32 display,
+            Int32 position,
+            Int32 direction,
+            Int32 flexDirection,
+            Int32 flexWrap,
+            Int32 overflow,
+            Int32 alignItems,
+            Int32 alignSelf,
+            Int32 alignContent,
+            Int32 justifyItems,
+            Int32 justifySelf,
+            Int32 justifyContent,
+            Int32 insetLeftType, Single insetLeftValue,
+            Int32 insetRightType, Single insetRightValue,
+            Int32 insetTopType, Single insetTopValue,
+            Int32 insetBottomType, Single insetBottomValue,
+            Int32 marginLeftType, Single marginLeftValue,
+            Int32 marginRightType, Single marginRightValue,
+            Int32 marginTopType, Single marginTopValue,
+            Int32 marginBottomType, Single marginBottomValue,
+            Int32 paddingLeftType, Single paddingLeftValue,
+            Int32 paddingRightType, Single paddingRightValue,
+            Int32 paddingTopType, Single paddingTopValue,
+            Int32 paddingBottomType, Single paddingBottomValue,
+            Int32 borderLeftType, Single borderLeftValue,
+            Int32 borderRightType, Single borderRightValue,
+            Int32 borderTopType, Single borderTopValue,
+            Int32 borderBottomType, Single borderBottomValue,
+            Single flexGrow,
+            Single flexShrink,
+            Int32 flexBasisType, Single flexBasisValue,
+            Int32 widthType, Single widthValue,
+            Int32 heightType, Single heightValue,
+            Int32 minWidthType, Single minWidthValue,
+            Int32 minHeightType, Single minHeightValue,
+            Int32 maxWidthType, Single maxWidthValue,
+            Int32 maxHeightType, Single maxHeightValue,
+            Int32 gapRowType, Single gapRowValue,
+            Int32 gapColumnType, Single gapColumnValue,
+            Single aspectRatio,
+            String gridAutoRows,
+            String gridAutoColumns,
+            Int32 gridAutoFlow,
+            String gridColumn,
+            String gridColumnStart,
+            String gridColumnEnd,
+            String gridRow,
+            String gridRowStart,
+            String gridRowEnd,
+            String gridTemplateRows,
+            String gridTemplateColumns,
+            Int32 overflowX,
+            Int32 overflowY,
+            Single scrollbarWidth,
+            Int32 textAlign,
+            Int32 boxSizing,
+            String gridArea,
+            String gridTemplateAreas);
+
+        // Update only the string-encoded (non-buffer) grid properties. Pass an empty string to
+        // leave a property unchanged. Passthrough to mason_style_update_non_buffer_data.
+        void UpdateGrid(
+            String gridAutoRows,
+            String gridAutoColumns,
+            String gridColumn,
+            String gridColumnStart,
+            String gridColumnEnd,
+            String gridRow,
+            String gridRowStart,
+            String gridRowEnd,
+            String gridTemplateRows,
+            String gridTemplateColumns,
+            String gridArea,
+            String gridTemplateAreas);
+
+        // Mark the buffer as about-to-be-mutated (COW). Passthrough to
+        // mason_style_prepare_style_for_mut.
+        void PrepareForMutation();
+
+        // Snapshot the node's raw style buffer (read-only copy) for direct inspection.
+        Windows.Foundation.Collections.IVectorView<UInt8> GetStyleBuffer();
+
+        // Live, mutable view of the node's style buffer (COW-prepared). The .windows.ts layer wraps
+        // this as a JS ArrayBuffer and writes StyleKeys offsets directly (parity with the iOS
+        // MasonStyle.values), then calls the owning element's SyncStyle to flush.
+        Windows.Storage.Streams.IBuffer Values{ get; };
+
+        // CSS string getters for the grid properties.
+        String GridAreaCss{ get; };
+        String GridTemplateAreasCss{ get; };
+        String GridAutoRowsCss{ get; };
+        String GridAutoColumnsCss{ get; };
+        String GridColumnCss{ get; };
+        String GridColumnStartCss{ get; };
+        String GridColumnEndCss{ get; };
+        String GridRowCss{ get; };
+        String GridRowStartCss{ get; };
+        String GridRowEndCss{ get; };
+        String GridTemplateRowsCss{ get; };
+        String GridTemplateColumnsCss{ get; };
+    }
+}

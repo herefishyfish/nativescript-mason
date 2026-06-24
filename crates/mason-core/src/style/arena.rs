@@ -652,13 +652,15 @@ impl StyleArena {
 }
 
 
-#[cfg(target_os = "android")]
+#[cfg(not(target_vendor = "apple"))]
 impl StyleArena {
+    #[cfg(target_os = "android")]
     #[track_caller]
     pub fn buffer(&self, handle: StyleHandle) -> jni::sys::jint {
         self.buffers[handle.index()].buffer()
     }
 
+    #[cfg(target_os = "android")]
     #[track_caller]
     pub fn buffer_opt(&self, handle: StyleHandle) -> Option<jni::sys::jint> {
         self.buffers.get(handle.index()).and_then(|b| {
@@ -765,6 +767,7 @@ impl StyleArena {
         &self.buffers[handle.index()].data
     }
 
+    #[cfg(target_os = "android")]
     pub(crate) fn set_handle_buffer(&mut self, handle: StyleHandle, buffer_id: i32) {
         if let Some(data) = self.buffers.get_mut(handle.index()) {
             if data.buffer != -1 {

@@ -1,0 +1,20 @@
+import "Node.idl";
+import "Style.idl";
+
+namespace NativeScript.Mason
+{
+    // Implemented by every Mason element (View and the leaf controls Text/Image/Button/...). Lets a
+    // parent View treat any Mason child uniformly: it pulls the child's Node into the Taffy tree
+    // regardless of the concrete control type. Non-Mason UIElement children are wrapped as generic
+    // leaves instead.
+    interface IMasonElement
+    {
+        Node Node{ get; };
+        Style Style{ get; };
+
+        // Flush a batch of style writes (the .windows.ts layer wrote them through Style.Values).
+        // dirtyLow/dirtyHigh are the StateKeys bitmask halves as decimal strings. Currently advisory;
+        // marks the node dirty and requests a WinUI relayout.
+        void SyncStyle(String dirtyLow, String dirtyHigh);
+    }
+}

@@ -5,7 +5,6 @@ import { isFunction } from '@nativescript/core/utils';
 export const itemsProperty = new Property<ListBase, any[] | ItemsSource>({
   name: 'items',
   valueChanged: (target, oldValue, newValue) => {
-    console.log('Items property changed from', oldValue, 'to', newValue);
     if (oldValue instanceof Observable) {
       removeWeakEventListener(oldValue, ObservableArray.changeEvent, target._onItemsChanged, target);
     }

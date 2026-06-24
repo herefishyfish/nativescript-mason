@@ -1,0 +1,20 @@
+import "Element.idl";
+import "TextNode.idl";
+
+namespace NativeScript.Mason
+{
+    [default_interface]
+    runtimeclass Text : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        Text();
+        Node Node{ get; };
+        Style Style{ get; };
+        String Content;
+        Double FontSize;
+
+        // Inline-run management: runs are TextNode descriptors composed into the TextBlock's Inlines.
+        void SetRun(TextNode run, Int32 index);
+        void RemoveRun(TextNode run);
+        void ClearRuns();
+    }
+}

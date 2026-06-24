@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <_NSMasonHasLocal>false</_NSMasonHasLocal>
+    <_NSMasonHasLocal Condition="Exists('$(MSBuildThisFileDirectory)x64\NativeScript.Mason.dll') or Exists('$(MSBuildThisFileDirectory)arm64\NativeScript.Mason.dll')">true</_NSMasonHasLocal>
+  </PropertyGroup>
+
+  <Target Name="CopyNativeScriptMason" AfterTargets="Build" Condition="'$(_NSMasonHasLocal)'=='true'">
+    <PropertyGroup>
+      <_NSMasonArchDir Condition="'$(Platform)'=='ARM64' or '$(Platform)'=='arm64'">$(MSBuildThisFileDirectory)arm64\</_NSMasonArchDir>
+      <_NSMasonArchDir Condition="'$(Platform)'=='x64' or '$(Platform)'=='x86_64'">$(MSBuildThisFileDirectory)x64\</_NSMasonArchDir>
+      <!-- Fallback to x64 when $(Platform) is unset/AnyCPU during evaluation. -->
+      <_NSMasonArchDir Condition="'$(_NSMasonArchDir)'==''">$(MSBuildThisFileDirectory)x64\</_NSMasonArchDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_NSMasonFiles Include="$(_NSMasonArchDir)NativeScript.Mason.dll" Condition="Exists('$(_NSMasonArchDir)NativeScript.Mason.dll')" />
+      <_NSMasonFiles Include="$(_NSMasonArchDir)NativeScript.Mason.winmd" Condition="Exists('$(_NSMasonArchDir)NativeScript.Mason.winmd')" />
+    </ItemGroup>
+    <Message Text="[@triniwiz/nativescript-masonkit] Copying NativeScript.Mason ($(Platform)) to $(OutDir)" Importance="normal" Condition="'@(_NSMasonFiles)' != ''" />
+    <Copy SourceFiles="@(_NSMasonFiles)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(_NSMasonFiles)' != ''" />
+  </Target>
+
+  <ItemGroup>
+    <!-- Keep in sync with the activatable runtimeclasses exported by NativeScript.Mason.dll. -->
+    <NSMasonActivatableClass Include="NativeScript.Mason.Mason" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.MeasureOutput" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.View" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Text" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Image" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Button" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Br" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Li" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.List" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.TextNode" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.TextArea" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Input" />
+    <NSMasonActivatableClass Include="NativeScript.Mason.Css" />
+  </ItemGroup>
+
+  <Target Name="NSRegisterMasonActivatableClasses"
+          AfterTargets="ApplyManifestOverrides;MergeAppResourcesManifest"
+          BeforeTargets="Build"
+          Condition="'$(_NSMasonHasLocal)'=='true' and Exists('$(MSBuildProjectDirectory)\Package.appxmanifest')">
+    <Message Text="[@triniwiz/nativescript-masonkit] Registering NativeScript.Mason activatable classes in Package.appxmanifest" Importance="normal" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference='Stop'; $p='$(MSBuildProjectDirectory)\Package.appxmanifest'; if(-not (Test-Path $p)){exit 0}; $dll='NativeScript.Mason.dll'; $ids='@(NSMasonActivatableClass)'.Split(';'); [xml]$d=Get-Content -LiteralPath $p; $ns='http://schemas.microsoft.com/appx/manifest/foundation/windows10'; $m=New-Object System.Xml.XmlNamespaceManager($d.NameTable); $m.AddNamespace('a',$ns); $pkg=$d.DocumentElement; $ext=$pkg.SelectSingleNode('a:Extensions',$m); if(-not $ext){$ext=$d.CreateElement('Extensions',$ns);[void]$pkg.AppendChild($ext)}; $srv=$ext.SelectSingleNode('a:Extension[@Category=''windows.activatableClass.inProcessServer'']/a:InProcessServer[a:Path=''' + $dll + ''']',$m); if(-not $srv){$e=$d.CreateElement('Extension',$ns);$e.SetAttribute('Category','windows.activatableClass.inProcessServer');$srv=$d.CreateElement('InProcessServer',$ns);$pa=$d.CreateElement('Path',$ns);$pa.InnerText=$dll;[void]$srv.AppendChild($pa);[void]$e.AppendChild($srv);[void]$ext.AppendChild($e)}; $have=@($srv.SelectNodes('a:ActivatableClass',$m)|ForEach-Object{$_.GetAttribute('ActivatableClassId')}); $chg=$false; foreach($id in $ids){if($id -and ($have -notcontains $id)){$c=$d.CreateElement('ActivatableClass',$ns);$c.SetAttribute('ActivatableClassId',$id);$c.SetAttribute('ThreadingModel','both');[void]$srv.AppendChild($c);$chg=$true}}; if($chg){$d.Save($p)}&quot;" />
+  </Target>
+</Project>

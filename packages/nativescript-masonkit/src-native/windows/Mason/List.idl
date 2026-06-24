@@ -1,0 +1,17 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    // <ul>/<ol>: a Mason container. `Ordered` distinguishes ol from ul (marker rendering is a
+    // follow-up; layout is identical to a View of Li children). Not virtualized in v1.
+    [default_interface]
+    runtimeclass List : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        List();
+        List(Boolean ordered);
+        Node Node{ get; };
+        Style Style{ get; };
+        Boolean Ordered{ get; };
+        void Invalidate();
+    }
+}

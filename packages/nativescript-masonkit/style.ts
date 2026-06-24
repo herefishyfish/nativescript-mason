@@ -243,6 +243,49 @@ enum StyleKeys {
 
 export type OverFlow = 'visible' | 'hidden' | 'scroll' | 'clip' | 'auto';
 
+// Windows: the native Style.UpdateGrid takes all grid strings at once. To set one while preserving
+// the others, read the current values back from the Grid*Css getters. (Layout grid props like
+// grid-auto-flow and gap are buffer-stored and already flow through the live style buffer.)
+function windowsSetGrid(nativeView: any, field: string, value: string) {
+  const s = nativeView?.Style;
+  if (!s) return;
+  const g: any = {
+    gridAutoRows: s.GridAutoRowsCss,
+    gridAutoColumns: s.GridAutoColumnsCss,
+    gridColumn: s.GridColumnCss,
+    gridColumnStart: s.GridColumnStartCss,
+    gridColumnEnd: s.GridColumnEndCss,
+    gridRow: s.GridRowCss,
+    gridRowStart: s.GridRowStartCss,
+    gridRowEnd: s.GridRowEndCss,
+    gridTemplateRows: s.GridTemplateRowsCss,
+    gridTemplateColumns: s.GridTemplateColumnsCss,
+    gridArea: s.GridAreaCss,
+    gridTemplateAreas: s.GridTemplateAreasCss,
+  };
+  g[field] = value ?? '';
+  // `grid-row` / `grid-column` are SHORTHANDS for their `{start,end}` pair. UpdateGrid applies the
+  // shorthand first and then the start/end parts — and the parts (read back here as their defaults
+  // before this change) would overwrite the span we just set, collapsing the item to a single track.
+  // Derive start/end from the shorthand so the three stay consistent (`span 2` -> start `span 2`,
+  // end auto; `1 / 3` -> start `1`, end `3`).
+  if (field === 'gridRow' || field === 'gridColumn') {
+    const parts = String(value ?? '')
+      .split('/')
+      .map((p) => p.trim());
+    g[field + 'Start'] = parts[0] ?? '';
+    g[field + 'End'] = parts.length > 1 ? (parts[1] ?? '') : '';
+  }
+  s.UpdateGrid(g.gridAutoRows, g.gridAutoColumns, g.gridColumn, g.gridColumnStart, g.gridColumnEnd, g.gridRow, g.gridRowStart, g.gridRowEnd, g.gridTemplateRows, g.gridTemplateColumns, g.gridArea, g.gridTemplateAreas);
+  // UpdateGrid mutates the node's (non-buffer) grid placement directly; unlike a buffer write it does
+  // not mark the node dirty / invalidate XAML measure, so a grid ITEM's placement change wouldn't
+  // re-run the parent container's grid layout. SyncStyle marks the node dirty + InvalidateMeasure,
+  // which propagates up to the container.
+  try {
+    (nativeView as NativeScript.Mason.IMasonElement).SyncStyle('0', '0');
+  } catch (_) {}
+}
+
 function parseLengthPercentageAuto(type: number, value: number): LengthAuto {
   switch (type) {
     case 0:
@@ -443,6 +486,134 @@ const setFloat32 = (view: DataView, offset: number, value: number) => {
   view.setFloat32(offset, value, true);
 };
 
+// Split a comma-separated list at top level only (commas inside parentheses, e.g. rgba(0,0,0,.5),
+// are kept with their token).
+function splitTopLevelCommas(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of s) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim().length) out.push(cur);
+  return out;
+}
+
+// Map a CSS gradient direction token to a CSS angle in degrees (0deg = to top, 90deg = to right).
+function parseGradientAngle(token: string): number {
+  const t = token.trim().toLowerCase();
+  const deg = /^(-?[\d.]+)deg$/.exec(t);
+  if (deg) return parseFloat(deg[1]);
+  if (/^(-?[\d.]+)turn$/.exec(t)) return parseFloat(t) * 360;
+  if (/^(-?[\d.]+)rad$/.exec(t)) return (parseFloat(t) * 180) / Math.PI;
+  if (t === 'to top') return 0;
+  if (t === 'to right') return 90;
+  if (t === 'to bottom') return 180;
+  if (t === 'to left') return 270;
+  if (t === 'to top right' || t === 'to right top') return 45;
+  if (t === 'to bottom right' || t === 'to right bottom') return 135;
+  if (t === 'to bottom left' || t === 'to left bottom') return 225;
+  if (t === 'to top left' || t === 'to left top') return 315;
+  return 180; // CSS default is 'to bottom'
+}
+
+// Parse `linear-gradient(<dir>?, <color> <stop>?, ...)` into a CSS angle + per-stop argb + offsets.
+function parseLinearGradientCss(value: string): { angle: number; offsets: number[]; colors: number[] } | null {
+  const m = /linear-gradient\s*\(([\s\S]*)\)\s*$/i.exec(value.trim());
+  if (!m) return null;
+  const parts = splitTopLevelCommas(m[1])
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return null;
+  let angle = 180;
+  let start = 0;
+  if (/^(to\s|-?[\d.]+(deg|rad|turn))/i.test(parts[0])) {
+    angle = parseGradientAngle(parts[0]);
+    start = 1;
+  }
+  const colors: number[] = [];
+  const offsets: number[] = [];
+  const stops = parts.slice(start);
+  for (let i = 0; i < stops.length; i++) {
+    // A stop is `<color> [<percentage>]`; the color is everything up to a trailing % offset.
+    const stop = stops[i];
+    const pct = /\s+(-?[\d.]+)%\s*$/.exec(stop);
+    const colorStr = pct ? stop.slice(0, pct.index).trim() : stop;
+    const argb = normalizeColorValue(colorStr);
+    if (argb == null) continue;
+    colors.push(argb >>> 0);
+    offsets.push(pct ? parseFloat(pct[1]) / 100 : -1);
+  }
+  if (colors.length < 1) return null;
+  // Fill any unspecified offsets evenly across [0,1].
+  for (let i = 0; i < offsets.length; i++) {
+    if (offsets[i] < 0) offsets[i] = offsets.length > 1 ? i / (offsets.length - 1) : 0;
+  }
+  return { angle, offsets, colors };
+}
+
+// Parse one side of a padding/margin shorthand into a Length the buffer setters accept.
+function parseSideLength(tok: string | number): any {
+  if (typeof tok === 'number') return tok;
+  const t = String(tok).trim();
+  if (t === 'auto') return 'auto';
+  const m = /^(-?[\d.]+)(px|%)?$/.exec(t);
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (m[2] === 'px') return { value: n, unit: 'px' };
+  if (m[2] === '%') return { value: n, unit: '%' };
+  return n; // bare number = dip
+}
+
+// Expand a CSS padding/margin shorthand (number or 1-4 space-separated values) to per-side lengths.
+function parseSidesShorthand(value: string | number): { top: any; right: any; bottom: any; left: any } {
+  if (typeof value === 'number') return { top: value, right: value, bottom: value, left: value };
+  const parts = String(value ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(parseSideLength);
+  switch (parts.length) {
+    case 1:
+      return { top: parts[0], right: parts[0], bottom: parts[0], left: parts[0] };
+    case 2:
+      return { top: parts[0], right: parts[1], bottom: parts[0], left: parts[1] };
+    case 3:
+      return { top: parts[0], right: parts[1], bottom: parts[2], left: parts[1] };
+    case 4:
+      return { top: parts[0], right: parts[1], bottom: parts[2], left: parts[3] };
+    default:
+      return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+}
+
+// Parse a CSS `border-radius` shorthand into per-corner px radii. Handles 1-4 space-separated
+// values (CSS order: top-left, top-right, bottom-right, bottom-left) and ignores the optional
+// `/ <vertical>` part (we treat radii as circular). `parseFloat` strips the `px` unit.
+function parseBorderRadiusShorthand(value: string): { tl: number; tr: number; br: number; bl: number } {
+  const horizontal = String(value ?? '')
+    .split('/')[0]
+    .trim();
+  const vals = horizontal.length ? horizontal.split(/\s+/).map((v) => parseFloat(v) || 0) : [0];
+  switch (vals.length) {
+    case 1:
+      return { tl: vals[0], tr: vals[0], br: vals[0], bl: vals[0] };
+    case 2:
+      return { tl: vals[0], tr: vals[1], br: vals[0], bl: vals[1] };
+    case 3:
+      return { tl: vals[0], tr: vals[1], br: vals[2], bl: vals[1] };
+    default:
+      return { tl: vals[0], tr: vals[1], br: vals[2], bl: vals[3] };
+  }
+}
+
 const i8Buffer = new Int8Array(4);
 
 const f32Buffer = new Uint8Array(Float32Array.BYTES_PER_ELEMENT * 4);
@@ -585,6 +756,19 @@ export class Style {
       ret.style_view = new DataView(buffer);
       ret.i8View = new Int8Array(buffer);
       ret.u8View = new Uint8Array(buffer);
+    } else if (__WINDOWS__) {
+      let style: NativeScript.Mason.Style = (nativeView as NativeScript.Mason.IMasonElement)?.Style as never;
+      if (!style) {
+        style = NativeScript.Mason.Mason.Instance().CreateNode(false).Style as never;
+      }
+      // Live IBuffer over the engine's arena style memory; the @nativescript/windows runtime
+      // projects it as a writable ArrayBuffer, so the same StyleKeys-offset writes used on
+      // iOS/Android land straight in the node's style.
+      //@ts-ignore
+      const buffer = NSWinRT.interop.arrayBufferFromBuffer(style.Values) as ArrayBuffer;
+      ret.style_view = new DataView(buffer);
+      ret.i8View = new Int8Array(buffer);
+      ret.u8View = new Uint8Array(buffer);
     }
     //console.timeEnd('fromView');
 
@@ -712,6 +896,90 @@ export class Style {
         applyApple();
       }
     }
+
+    if (__WINDOWS__) {
+      // Android/Apple parse these CSS-string props in native setters; on Windows we write the
+      // buffer-backed ones (border-radius) directly to the live style buffer so VisualApply renders
+      // them. Border stroke / box-shadow / gradients still need the Css decoration overlay (TODO).
+      this.applyWindowsCssString(name, value);
+    }
+  }
+
+  // Apply a CSS-string property on Windows. Buffer-backed props (border-radius) are written to the
+  // live style buffer for VisualApply; gradients use the native Css helper to paint the Panel
+  // background directly.
+  private applyWindowsCssString(name: string, value: string) {
+    // `background` shorthand: gradient -> native Css gradient brush; solid color -> BACKGROUND_COLOR
+    // buffer (VisualApply paints it). Switching between them must override the other, so a gradient
+    // clears the solid bg first, and a solid write lets VisualApply repaint over a prior gradient brush.
+    if (name === 'background' || name === 'background-image') {
+      const v = typeof value === 'string' ? value : String(value ?? '');
+      if (/linear-gradient/i.test(v)) {
+        const g = parseLinearGradientCss(v);
+        if (g && g.colors.length) {
+          if (this.style_view) {
+            this.prepareMut();
+            setUint32(this.style_view, StyleKeys.BACKGROUND_COLOR, 0);
+            this.commitState(StateKeys.BACKGROUND_COLOR);
+          }
+          try {
+            // Pass stops as an "offset:argb,..." string — WinRT array_view params don't marshal
+            // reliably from the NS-Windows JS runtime (plain arrays -> E_FAIL, typed arrays -> crash).
+            const stops = g.offsets.map((o, i) => o + ':' + (g.colors[i] >>> 0)).join(',');
+            NativeScript.Mason.Css.ApplyLinearGradient(this.nativeView, g.angle, stops);
+          } catch (_) {}
+        }
+      } else if (v.trim().length && !/gradient/i.test(v)) {
+        // Solid color background; reuse the backgroundColor buffer setter -> VisualApply repaints,
+        // overriding any gradient brush set previously.
+        this.backgroundColor = v as never;
+      }
+      return;
+    }
+
+    // padding / margin SHORTHANDS route here (paddingProperty/marginProperty -> paddingCss/marginCss).
+    // Expand to the per-side buffer setters, which Mason already applies in layout.
+    if (name === 'padding' || name === 'margin') {
+      const s = parseSidesShorthand(value as never);
+      if (name === 'padding') {
+        this.paddingTop = s.top;
+        this.paddingRight = s.right;
+        this.paddingBottom = s.bottom;
+        this.paddingLeft = s.left;
+      } else {
+        this.marginTop = s.top;
+        this.marginRight = s.right;
+        this.marginBottom = s.bottom;
+        this.marginLeft = s.left;
+      }
+      return;
+    }
+
+    if (!this.style_view) {
+      return;
+    }
+    if (name === 'border-radius') {
+      const r = parseBorderRadiusShorthand(value);
+      this.prepareMut();
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_TOP_LEFT_X_VALUE, r.tl);
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_VALUE, r.tl);
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_VALUE, r.tr);
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_VALUE, r.tr);
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_VALUE, r.br);
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_VALUE, r.br);
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_VALUE, r.bl);
+      setFloat32(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_VALUE, r.bl);
+      // Type bytes: 0 = length (px).
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_TOP_LEFT_X_TYPE, 0);
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_TOP_LEFT_Y_TYPE, 0);
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_TOP_RIGHT_X_TYPE, 0);
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_TOP_RIGHT_Y_TYPE, 0);
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_X_TYPE, 0);
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_RIGHT_Y_TYPE, 0);
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_TYPE, 0);
+      setUint8(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE, 0);
+      this.commitState(StateKeys.BORDER_RADIUS);
+    }
   }
 
   resetState() {
@@ -729,6 +997,10 @@ export class Style {
       const view = this.view?.ios ?? (this.view._view as never as MasonText);
       // @ts-ignore
       view.mason_syncStyle(low, high);
+    } else if (__WINDOWS__) {
+      // @ts-ignore
+      const view = (this.view as any)?.windows ?? this.view._view;
+      (view as NativeScript.Mason.IMasonElement).SyncStyle(low, high);
     }
     this.resetState();
   }
@@ -799,6 +1071,18 @@ export class Style {
         style.prepareMut();
         const styleBuffer = style.getValues();
         const buffer = (<any>ArrayBuffer).from(styleBuffer);
+        this.style_view = new DataView(buffer);
+        this.i8View = new Int8Array(buffer);
+        this.u8View = new Uint8Array(buffer);
+      }
+
+      if (__WINDOWS__) {
+        let style: NativeScript.Mason.Style = (this.nativeView as NativeScript.Mason.IMasonElement)?.Style as never;
+        if (!style) {
+          style = NativeScript.Mason.Mason.Instance().CreateNode(false).Style as never;
+        }
+        style.PrepareForMutation();
+        const buffer = style.Values as never as ArrayBuffer;
         this.style_view = new DataView(buffer);
         this.i8View = new Int8Array(buffer);
         this.u8View = new Uint8Array(buffer);
@@ -1348,10 +1632,25 @@ export class Style {
   }
   set width(value: LengthAuto) {
     switch (typeof value) {
-      case 'string':
+      case 'string': {
+        // Parse the string instead of forcing `auto`. Reactively-applied sizes arrive as strings
+        // ("48", "48px", "50%") — the old stub dropped them to auto (0), so dynamically-added boxes
+        // rendered 0x0. unitless/dip → device pixels; px → as-is; % → percent.
         this.prepareMut();
-        setInt8(this.style_view, StyleKeys.WIDTH_TYPE, 0);
+        const t = (value as string).trim();
+        if (t === '' || t === 'auto') {
+          setInt8(this.style_view, StyleKeys.WIDTH_TYPE, 0);
+          setFloat32(this.style_view, StyleKeys.WIDTH_VALUE, 0);
+        } else if (t.endsWith('%')) {
+          setInt8(this.style_view, StyleKeys.WIDTH_TYPE, 2);
+          setFloat32(this.style_view, StyleKeys.WIDTH_VALUE, parseFloat(t) || 0);
+        } else {
+          const n = parseFloat(t) || 0;
+          setInt8(this.style_view, StyleKeys.WIDTH_TYPE, 1);
+          setFloat32(this.style_view, StyleKeys.WIDTH_VALUE, t.endsWith('px') ? n : layout.toDevicePixels(n));
+        }
         break;
+      }
       case 'number':
         this.prepareMut();
         setInt8(this.style_view, StyleKeys.WIDTH_TYPE, 1);
@@ -1387,11 +1686,23 @@ export class Style {
   }
   set height(value: LengthAuto) {
     switch (typeof value) {
-      case 'string':
+      case 'string': {
+        // Parse the string (see width setter) — the old stub forced auto/0, breaking string sizes.
         this.prepareMut();
-        setInt8(this.style_view, StyleKeys.HEIGHT_TYPE, 0);
-        setFloat32(this.style_view, StyleKeys.HEIGHT_VALUE, 0);
+        const t = (value as string).trim();
+        if (t === '' || t === 'auto') {
+          setInt8(this.style_view, StyleKeys.HEIGHT_TYPE, 0);
+          setFloat32(this.style_view, StyleKeys.HEIGHT_VALUE, 0);
+        } else if (t.endsWith('%')) {
+          setInt8(this.style_view, StyleKeys.HEIGHT_TYPE, 2);
+          setFloat32(this.style_view, StyleKeys.HEIGHT_VALUE, parseFloat(t) || 0);
+        } else {
+          const n = parseFloat(t) || 0;
+          setInt8(this.style_view, StyleKeys.HEIGHT_TYPE, 1);
+          setFloat32(this.style_view, StyleKeys.HEIGHT_VALUE, t.endsWith('px') ? n : layout.toDevicePixels(n));
+        }
         break;
+      }
       case 'number':
         this.prepareMut();
         setInt8(this.style_view, StyleKeys.HEIGHT_TYPE, 1);
@@ -2734,6 +3045,10 @@ export class Style {
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridAutoRows = value;
     }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridAutoRows', value);
+    }
   }
 
   get gridAutoColumns() {
@@ -2761,6 +3076,10 @@ export class Style {
 
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridAutoColumns = value;
+    }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridAutoColumns', value);
     }
   }
 
@@ -2813,6 +3132,10 @@ export class Style {
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridColumn = value;
     }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridColumn', value);
+    }
   }
 
   get gridColumn() {
@@ -2856,6 +3179,10 @@ export class Style {
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridColumnStart = value;
     }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridColumnStart', value);
+    }
   }
 
   get gridColumnEnd(): string {
@@ -2884,6 +3211,10 @@ export class Style {
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridColumnEnd = value;
     }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridColumnEnd', value);
+    }
   }
 
   set gridRow(value: string) {
@@ -2896,6 +3227,10 @@ export class Style {
 
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridRow = value;
+    }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridRow', value);
     }
   }
 
@@ -2940,6 +3275,10 @@ export class Style {
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridRowStart = value;
     }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridRowStart', value);
+    }
   }
 
   get gridRowEnd(): string {
@@ -2968,6 +3307,10 @@ export class Style {
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridRowEnd = value;
     }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridRowEnd', value);
+    }
   }
 
   set gridArea(value: string) {
@@ -2980,6 +3323,10 @@ export class Style {
 
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridArea = value;
+    }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridArea', value);
     }
   }
 
@@ -3008,6 +3355,10 @@ export class Style {
 
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridTemplateRows = value;
+    }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridTemplateRows', value);
     }
   }
 
@@ -3052,6 +3403,10 @@ export class Style {
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridTemplateColumns = value;
     }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridTemplateColumns', value);
+    }
   }
 
   get gridTemplateAreas() {
@@ -3079,6 +3434,10 @@ export class Style {
 
     if (__APPLE__) {
       (this.nativeView as MasonElementObjc).style.gridTemplateAreas = value;
+    }
+
+    if (__WINDOWS__) {
+      windowsSetGrid(this.nativeView, 'gridTemplateAreas', value);
     }
   }
 

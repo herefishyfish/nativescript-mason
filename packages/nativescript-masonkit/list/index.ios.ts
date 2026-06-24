@@ -32,8 +32,6 @@ class ListDelegateImpl extends NSObject implements MasonListDelegate {
 
     const cell = list.dequeueReusableCellWithReuseIdentifierForIndexPath(identifier, indexPath) as MasonListCell;
 
-    console.log('Dequeued cell for index', index, 'with template index', templateIndex, 'and identifier', identifier);
-
     owner._prepareCell(cell, indexPath);
 
     return cell;

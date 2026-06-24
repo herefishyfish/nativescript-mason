@@ -1,0 +1,15 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    // An image leaf: NativeScript.Mason.Image. A Panel hosting a Microsoft.UI.Xaml.Controls.Image,
+    // backed by a Mason image (replaced-element) node. Source is a uri/path string.
+    [default_interface]
+    runtimeclass Image : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        Image();
+        Node Node{ get; };
+        Style Style{ get; };
+        String Source;
+    }
+}

@@ -1,0 +1,58 @@
+import "CssImageResult.idl";
+
+namespace NativeScript.Mason
+{
+    // Visual CSS helpers (background / border / radius / shadow / opacity / transform), driven by
+    // the .windows.ts layer with values it reads from the style buffer and the element's computed
+    // Mason layout. Layout CSS lives in the Mason engine; these cover the painting that a custom
+    // Microsoft.UI.Xaml.Controls.Panel can't express directly. Mirrors @nativescript/core's
+    // NativeScript.Widgets ClipHelper/ShadowHelper. Colors are 0xAARRGGBB.
+    runtimeclass Css
+    {
+        // Background fill on the element's Panel (rounded by ApplyCornerRadius).
+        static void ApplyBackground(Microsoft.UI.Xaml.UIElement element, UInt32 argb);
+        static void ClearBackground(Microsoft.UI.Xaml.UIElement element);
+
+        static void ApplyOpacity(Microsoft.UI.Xaml.UIElement element, Double opacity);
+
+        // RenderTransform from a 2D affine matrix (CSS transform).
+        static void ApplyTransform(Microsoft.UI.Xaml.UIElement element, Double m11, Double m12, Double m21, Double m22, Double offsetX, Double offsetY);
+        static void ClearTransform(Microsoft.UI.Xaml.UIElement element);
+
+        // Rounded-rectangle clip (border-radius) via a Composition geometric clip.
+        static void ApplyCornerRadius(Microsoft.UI.Xaml.UIElement element, Double offsetX, Double offsetY, Double width, Double height, Double radiusX, Double radiusY);
+        static void ClearClip(Microsoft.UI.Xaml.UIElement element);
+
+        // Rasterized box-shadow → an Image the TS layer places behind the element (offset by the
+        // returned Overhang). Pixel sizes are in device pixels.
+        static CssImageResult CreateShadow(Double width, Double height, Double blurRadius, Double spread, Double cornerRadius, Double offsetX, Double offsetY, UInt32 argb);
+
+        // Rasterized border (per-side widths + colors, rounded) → an Image the TS layer overlays.
+        static CssImageResult CreateBorder(Double width, Double height, Double topWidth, Double rightWidth, Double bottomWidth, Double leftWidth, UInt32 topArgb, UInt32 rightArgb, UInt32 bottomArgb, UInt32 leftArgb, Double cornerRadius);
+
+        // CSS gradients as the element's Panel background. `stops` is a comma-separated list of
+        // `offset:argb` pairs (offset 0..1, argb decimal 0xAARRGGBB), e.g. "0:4278190080,1:4294967295".
+        // A string is used instead of WinRT arrays because array_view params don't marshal reliably
+        // from the NS-Windows JS runtime. angleDegrees follows CSS (0 = to top, 90 = to right).
+        static void ApplyLinearGradient(Microsoft.UI.Xaml.UIElement element, Double angleDegrees, String stops);
+        static void ApplyRadialGradient(Microsoft.UI.Xaml.UIElement element, String stops);
+
+        // Robustly (re)parent a native child: detach it from its current logical parent panel (if
+        // different) before inserting into `parent` at `index` (or appending when index is out of
+        // range). Native COM identity + FrameworkElement.Parent are reliable, unlike JS-side WinRT
+        // projection identity/expandos — so this avoids the XAML "Element is already the child of
+        // another element" fault (surfaced as a LayoutCycleException) during framework reconciliation
+        // when text nodes / elements move between parents.
+        static void ReparentChild(Microsoft.UI.Xaml.Controls.Panel parent, Microsoft.UI.Xaml.UIElement child, Int32 index);
+
+        // Remove a native child from `parent` using COM identity (JS '===' is unreliable across the
+        // WinRT projection and silently misses the element) and invalidate the panel so it reflows.
+        static void RemoveChild(Microsoft.UI.Xaml.Controls.Panel parent, Microsoft.UI.Xaml.UIElement child);
+
+        // CSS box-shadow → a Composition DropShadow masked to the element's rounded-rect shape, drawn
+        // behind the element's content. Re-applies itself on SizeChanged so it tracks layout/resize.
+        // cornerRadius matches the element's border-radius. argb is 0xAARRGGBB.
+        static void ApplyShadow(Microsoft.UI.Xaml.UIElement element, Double offsetX, Double offsetY, Double blurRadius, UInt32 argb, Double cornerRadius);
+        static void ClearShadow(Microsoft.UI.Xaml.UIElement element);
+    }
+}

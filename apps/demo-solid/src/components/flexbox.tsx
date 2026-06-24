@@ -2,10 +2,10 @@ import { createSignal, Index } from 'solid-js'
 import { BG, CARD, MUTED, TEXT, ACCENT, COLORS, Card, Field, Segmented, Stepper, CodeBlock } from './controls'
 
 export default function Flexbox() {
-  const [direction, setDirection] = createSignal('row')
-  const [justify, setJustify] = createSignal('flex-start')
-  const [align, setAlign] = createSignal('stretch')
-  const [wrap, setWrap] = createSignal('nowrap')
+  const [direction, setDirection] = createSignal<'row' | 'column' | 'row-reverse' | 'column-reverse'>('row')
+  const [justify, setJustify] = createSignal<'normal' |'flex-start' | 'flex-end' | 'start' | 'end' | 'center' | 'stretch' | 'space-between' | 'space-around' | 'space-evenly'>('flex-start')
+  const [align, setAlign] = createSignal<'stretch' | 'flex-start' | 'center' | 'flex-end'>('stretch')
+  const [wrap, setWrap] = createSignal<'nowrap' | 'wrap' | 'wrap-reverse'>('nowrap')
   const [gap, setGap] = createSignal(8)
   const [count, setCount] = createSignal(4)
 
@@ -24,7 +24,7 @@ export default function Flexbox() {
               padding: 10,
               display: 'flex',
               flexDirection: direction(),
-              justifyContent: justify(),
+              justifyContent: justify() as never,
               alignItems: align(),
               flexWrap: wrap(),
               gap: `${gap()}px ${gap()}px`,

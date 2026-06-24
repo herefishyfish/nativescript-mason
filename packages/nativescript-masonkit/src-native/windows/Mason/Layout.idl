@@ -1,0 +1,46 @@
+namespace NativeScript.Mason
+{
+    // Immutable computed layout for a single node, plus its subtree. Produced by Node.Layout()/
+    // Node.Compute*AndLayout(). Geometry is in the engine's device pixels. Mirrors the iOS
+    // MasonLayout: a flat tree is parsed once from the engine's float buffer and each Layout is a
+    // lightweight (tree, index) view, so Children is cheap.
+    runtimeclass Layout
+    {
+        Single X{ get; };
+        Single Y{ get; };
+        Single Width{ get; };
+        Single Height{ get; };
+
+        Single BorderTop{ get; };
+        Single BorderRight{ get; };
+        Single BorderBottom{ get; };
+        Single BorderLeft{ get; };
+
+        Single MarginTop{ get; };
+        Single MarginRight{ get; };
+        Single MarginBottom{ get; };
+        Single MarginLeft{ get; };
+
+        Single PaddingTop{ get; };
+        Single PaddingRight{ get; };
+        Single PaddingBottom{ get; };
+        Single PaddingLeft{ get; };
+
+        Single ContentWidth{ get; };
+        Single ContentHeight{ get; };
+
+        Single ScrollbarWidth{ get; };
+        Single ScrollbarHeight{ get; };
+
+        Int32 Order{ get; };
+
+        // SIMD-evaluated emptiness checks (parity with iOS MasonLayout).
+        Boolean SizeIsEmpty{ get; };
+        Boolean BorderIsEmpty{ get; };
+        Boolean MarginIsEmpty{ get; };
+        Boolean PaddingIsEmpty{ get; };
+
+        Boolean HasChildren{ get; };
+        Windows.Foundation.Collections.IVectorView<Layout> Children{ get; };
+    }
+}

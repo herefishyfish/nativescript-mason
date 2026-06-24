@@ -1,0 +1,34 @@
+import "Node.idl";
+
+namespace NativeScript.Mason
+{
+    
+    runtimeclass Mason
+    {
+        Mason();
+
+        // Process-wide shared engine.
+        static Mason Instance();
+
+        // Drop all nodes and reset the arena to its defaults.
+        void Clear();
+
+        // Device pixel ratio applied to point values (e.g. 1.0, 1.5, 2.0).
+        void SetDeviceScale(Single scale);
+
+        // CSS preflight (normalize.css-style UA defaults). Global to the process; the setter also
+        // re-seeds this engine's arena defaults.
+        Boolean Preflight;
+
+        // Node factories. `anonymous` nodes are excluded from box-tree fix-up (used for wrappers).
+        Node CreateNode(Boolean anonymous);
+        Node CreateTextNode(Boolean anonymous);
+        Node CreateImageNode();
+        Node CreateButtonNode();
+        Node CreateLineBreakNode();
+        Node CreateListItemNode();
+
+        // Print the node's subtree (geometry + style) to the engine's debug log.
+        void PrintTree(Node node);
+    }
+}

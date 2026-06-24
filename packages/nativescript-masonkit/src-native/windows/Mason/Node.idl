@@ -1,0 +1,84 @@
+import "MasonEnums.idl";
+import "Style.idl";
+import "Layout.idl";
+
+namespace NativeScript.Mason
+{
+    // Custom measure callback for leaf/replaced/text nodes. The return value packs the measured
+    // width+height the same way the engine expects from mason_node_set_context: the high 32 bits
+    // are the width bits and the low 32 bits the height bits of two IEEE-754 floats
+    // (use MeasureOutput.Make to build it). All sizes are in device pixels.
+    delegate Int64 MeasureFunc(Single knownWidth, Single knownHeight, Single availableWidth, Single availableHeight);
+
+    // Helper for packing a measure result. Statics-only (reached via the activation factory, like
+    // Mason.Instance) so JS measure callbacks can return MeasureOutput.Make(w, h).
+    runtimeclass MeasureOutput
+    {
+        static Int64 Make(Single width, Single height);
+        static Single GetWidth(Int64 measureOutput);
+        static Single GetHeight(Int64 measureOutput);
+    }
+
+    // A node in the layout tree. Wraps a mason-c CMasonNode and keeps its owning Mason engine
+    // alive. Create via Mason.Create*; never constructed directly from JS.
+    runtimeclass Node
+    {
+        // --- tree mutation ---
+        void AddChild(Node child);
+        void Prepend(Node child);
+        void AddChildAt(Node child, UInt32 index);
+        void InsertChildBefore(Node child, Node reference);
+        void InsertChildAfter(Node child, Node reference);
+        Node ReplaceChildAt(Node child, UInt32 index);
+        Node RemoveChild(Node child);
+        Node RemoveChildAt(UInt32 index);
+        void RemoveChildren();
+        Node GetChildAt(UInt32 index);
+        void SetChildren(Node[] children);
+        void AddChildren(Node[] children);
+        void PrependChildren(Node[] children);
+        Boolean IsChildrenSame(Node[] children);
+
+        // --- dirty / equality ---
+        Boolean IsDirty();
+        void MarkDirty();
+        Boolean IsEqual(Node other);
+
+        // --- pseudo-class state ---
+        UInt32 PseudoStates;
+        Boolean HasPseudoState(UInt32 flag);
+
+        // Prepare (create-if-needed) the pseudo-class style buffer for the given state flags and
+        // return it as a live, writable IBuffer (cloned from the base style on first use). The
+        // .windows.ts Style.fromPseudo writes StyleKeys offsets into it.
+        Windows.Storage.Streams.IBuffer PreparePseudoBuffer(UInt32 flags);
+
+        // --- style ---
+        Style Style{ get; };
+
+        // --- measure ---
+        void SetMeasure(MeasureFunc callback);
+        void RemoveMeasure();
+
+        // --- compute (no layout read-back) ---
+        void Compute();
+        void ComputeWH(Single width, Single height);
+        void ComputeSize(AvailableSpaceType widthType, Single widthValue, AvailableSpaceType heightType, Single heightValue);
+        void ComputeMaxContent();
+        void ComputeMinContent();
+
+        // --- compute + read computed layout in one crossing ---
+        Layout GetLayout();
+        Layout ComputeAndLayout();
+        Layout ComputeWHAndLayout(Single width, Single height);
+        Layout ComputeMaxContentAndLayout();
+        Layout ComputeMinContentAndLayout();
+
+        // Print the subtree to the engine's debug log.
+        void PrintTree();
+
+        // Drop the underlying native node handle. The owning Mason engine is released when the
+        // last Node referencing it is collected.
+        void Destroy();
+    }
+}

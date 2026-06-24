@@ -1,0 +1,13 @@
+namespace NativeScript.Mason
+{
+    // Result of a rasterized visual (CSS box-shadow or border): an Image plus its pixel size and the
+    // overhang (extra transparent padding the rasterizer added around the element, so the TS layer
+    // can position the Image — e.g. a shadow extends beyond the element bounds).
+    runtimeclass CssImageResult
+    {
+        Microsoft.UI.Xaml.Controls.Image Image{ get; };
+        Double Width{ get; };
+        Double Height{ get; };
+        Double Overhang{ get; };
+    }
+}

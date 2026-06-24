@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
+    <CppWinRTGenerateWindowsMetadata>true</CppWinRTGenerateWindowsMetadata>
+    <MinimalCoreWin>true</MinimalCoreWin>
+    <ProjectGuid>{D5F8B2C1-AE4E-4B3F-9C7D-2E3F4A5B6C71}</ProjectGuid>
+    <ProjectName>NativeScript.Mason</ProjectName>
+    <RootNamespace>NativeScript.Mason</RootNamespace>
+    <TargetName>NativeScript.Mason</TargetName>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.17763.0</WindowsTargetPlatformMinVersion>
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <AppContainerApplication>false</AppContainerApplication>
+    <Desktop>true</Desktop>
+  </PropertyGroup>
+
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <!-- WinUI 3: the engine classes (Mason/Node/Style/Layout) are framework-agnostic, but the
+         NativeScript.Mason.View custom Panel needs the Windows App SDK. The NativeScript Windows
+         app already hosts WinUI, so this dependency is present at runtime. -->
+    <UseWinUI>true</UseWinUI>
+    <UseLegacyMallocAlign>false</UseLegacyMallocAlign>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries>
+    <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <!-- Locate the mason-c Rust static library (masonnative.lib, built from crates/mason-windows by
+       publish.ps1). Per-architecture: there is no universal Rust binary. The repo root is five
+       levels up from this project (windows/Mason -> windows -> src-native -> nativescript-masonkit
+       -> packages -> repo). The Rust build is invoked with +crt-static so it uses the static CRT
+       (libcmt), matching the /MT RuntimeLibrary below — keeping the DLL free of a VC++ redist
+       dependency. -->
+  <PropertyGroup Label="MasonRust">
+    <MasonRustTriple Condition="'$(Platform)'=='x64' or '$(Platform)'=='x86_64'">x86_64-pc-windows-msvc</MasonRustTriple>
+    <MasonRustTriple Condition="'$(Platform)'=='ARM64' or '$(Platform)'=='arm64'">aarch64-pc-windows-msvc</MasonRustTriple>
+    <MasonRepoRoot>$(MSBuildProjectDirectory)\..\..\..\..\..\</MasonRepoRoot>
+    <MasonRustLibDir>$(MasonRepoRoot)target\$(MasonRustTriple)\release</MasonRustLibDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <AdditionalOptions>%(AdditionalOptions) /bigobj</AdditionalOptions>
+      <!-- Static CRT: the in-proc server carries no external VCRUNTIME140.dll dependency. WinRT
+           components talk over the COM ABI, not CRT objects, so static linking is safe — and the
+           Rust archive is built with +crt-static to match (both resolve to libcmt). -->
+      <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)'!='Debug'">MultiThreaded</RuntimeLibrary>
+      <!-- Project root on the include path so the cppwinrt-generated files under "Generated Files\"
+           (module.g.cpp, *.g.h) resolve our project-root pch.h, and so include/mason_native.h
+           resolves. -->
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <AdditionalLibraryDirectories>$(MasonRustLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <!-- masonnative.lib (the Rust core) + its transitive Windows system libs, as reported by
+           rustc's native-static-libs print. -->
+      <AdditionalDependencies>masonnative.lib;kernel32.lib;ntdll.lib;userenv.lib;ws2_32.lib;dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="include\mason_native.h" />
+    <ClInclude Include="Layout.h" />
+    <ClInclude Include="Style.h" />
+    <ClInclude Include="Node.h" />
+    <ClInclude Include="MeasureOutput.h" />
+    <ClInclude Include="Mason.h" />
+    <ClInclude Include="LeafCommon.h" />
+    <ClInclude Include="PanelCore.h" />
+    <ClInclude Include="View.h" />
+    <ClInclude Include="Text.h" />
+    <ClInclude Include="Image.h" />
+    <ClInclude Include="Button.h" />
+    <ClInclude Include="Br.h" />
+    <ClInclude Include="Li.h" />
+    <ClInclude Include="List.h" />
+    <ClInclude Include="TextNode.h" />
+    <ClInclude Include="TextArea.h" />
+    <ClInclude Include="Input.h" />
+    <ClInclude Include="BufferUtil.h" />
+    <ClInclude Include="CssImageResult.h" />
+    <ClInclude Include="Css.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Layout.cpp" />
+    <ClCompile Include="Style.cpp" />
+    <ClCompile Include="Node.cpp" />
+    <ClCompile Include="MeasureOutput.cpp" />
+    <ClCompile Include="Mason.cpp" />
+    <ClCompile Include="View.cpp" />
+    <ClCompile Include="Text.cpp" />
+    <ClCompile Include="Image.cpp" />
+    <ClCompile Include="Button.cpp" />
+    <ClCompile Include="Br.cpp" />
+    <ClCompile Include="Li.cpp" />
+    <ClCompile Include="List.cpp" />
+    <ClCompile Include="TextNode.cpp" />
+    <ClCompile Include="TextArea.cpp" />
+    <ClCompile Include="Input.cpp" />
+    <ClCompile Include="Css.cpp" />
+    <ClCompile Include="exports.cpp" />
+    <!-- cppwinrt generates module.g.cpp (DllGetActivationFactory / DllCanUnloadNow) under
+         "Generated Files\"; a hand-authored project must compile it explicitly. NotUsing: it is
+         generated and does not use our PCH. -->
+    <ClCompile Include="$(IntDir)Generated Files\module.g.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Midl Include="MasonEnums.idl" />
+    <Midl Include="Layout.idl" />
+    <Midl Include="Style.idl" />
+    <Midl Include="Node.idl" />
+    <Midl Include="Mason.idl" />
+    <Midl Include="Element.idl" />
+    <Midl Include="View.idl" />
+    <Midl Include="Text.idl" />
+    <Midl Include="Image.idl" />
+    <Midl Include="Button.idl" />
+    <Midl Include="Br.idl" />
+    <Midl Include="Li.idl" />
+    <Midl Include="List.idl" />
+    <Midl Include="TextNode.idl" />
+    <Midl Include="TextArea.idl" />
+    <Midl Include="Input.idl" />
+    <Midl Include="CssImageResult.idl" />
+    <Midl Include="Css.idl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CppWinRT" Version="2.0.240111.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+    <!-- Shared font management (CSS Font Loading API: @font-face / custom fonts + DirectWrite
+         registration), mirroring the iOS SwiftPM and Android Gradle FontManager dependency. Mason
+         resolves a node's font-family/size/weight/style through this and applies it to the text
+         controls. The component reaches it via winrt/NativeScript.FontManager.h; the app stages +
+         registers NativeScript.FontManager.dll (see App_Resources/Windows). -->
+    <PackageReference Include="NativeScript.FontManager" Version="1.0.2" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

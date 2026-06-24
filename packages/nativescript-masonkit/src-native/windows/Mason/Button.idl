@@ -1,0 +1,15 @@
+import "Element.idl";
+
+namespace NativeScript.Mason
+{
+    // A button leaf: NativeScript.Mason.Button. A Panel hosting a Microsoft.UI.Xaml.Controls.Button,
+    // backed by a Mason button (inline-block, border-box) node. Content is the button label.
+    [default_interface]
+    runtimeclass Button : Microsoft.UI.Xaml.Controls.Panel, NativeScript.Mason.IMasonElement
+    {
+        Button();
+        Node Node{ get; };
+        Style Style{ get; };
+        String Content;
+    }
+}
