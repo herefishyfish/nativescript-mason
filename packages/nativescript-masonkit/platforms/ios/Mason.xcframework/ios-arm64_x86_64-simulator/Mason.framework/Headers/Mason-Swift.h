@@ -1243,6 +1243,10 @@ SWIFT_CLASS_NAMED("MasonStyle")
 - (void)setDecorationColorWithUi:(UIColor * _Nonnull)color;
 - (void)setDecorationColorWithCss:(NSString * _Nonnull)color;
 @property (nonatomic) enum MasonDecorationLine decorationLine;
+- (void)setTextDecoration:(NSString * _Nonnull)css;
+- (void)setBorderColor:(NSString * _Nonnull)css;
+- (void)applyListStyleType:(NSString * _Nonnull)css;
+- (void)applyListStylePosition:(NSString * _Nonnull)css;
 @property (nonatomic) int32_t fontSize;
 - (void)setFontStyle:(enum MasonFontStyle)style :(int32_t)slant;
 @property (nonatomic) enum MasonTextJustify textJustify;
@@ -1510,6 +1514,7 @@ SWIFT_CLASS_NAMED("MasonUIView")
 @property (nonatomic, readonly, strong) NSCMason * _Nonnull mason;
 @property (nonatomic, readonly, strong) UIView * _Nonnull uiView;
 @property (nonatomic) CGSize contentSize;
+@property (nonatomic) BOOL isScrollContainer;
 @property (nonatomic) CGPoint contentOffset;
 @property (nonatomic, readonly, strong) MasonStyle * _Nonnull style;
 - (void)markNodeDirty;
@@ -3216,6 +3221,10 @@ SWIFT_CLASS_NAMED("MasonStyle")
 - (void)setDecorationColorWithUi:(UIColor * _Nonnull)color;
 - (void)setDecorationColorWithCss:(NSString * _Nonnull)color;
 @property (nonatomic) enum MasonDecorationLine decorationLine;
+- (void)setTextDecoration:(NSString * _Nonnull)css;
+- (void)setBorderColor:(NSString * _Nonnull)css;
+- (void)applyListStyleType:(NSString * _Nonnull)css;
+- (void)applyListStylePosition:(NSString * _Nonnull)css;
 @property (nonatomic) int32_t fontSize;
 - (void)setFontStyle:(enum MasonFontStyle)style :(int32_t)slant;
 @property (nonatomic) enum MasonTextJustify textJustify;
@@ -3483,6 +3492,7 @@ SWIFT_CLASS_NAMED("MasonUIView")
 @property (nonatomic, readonly, strong) NSCMason * _Nonnull mason;
 @property (nonatomic, readonly, strong) UIView * _Nonnull uiView;
 @property (nonatomic) CGSize contentSize;
+@property (nonatomic) BOOL isScrollContainer;
 @property (nonatomic) CGPoint contentOffset;
 @property (nonatomic, readonly, strong) MasonStyle * _Nonnull style;
 - (void)markNodeDirty;

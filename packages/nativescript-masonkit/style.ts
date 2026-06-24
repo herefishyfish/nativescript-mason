@@ -3349,6 +3349,9 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset (e.g. a media query toggling grid-rows off) passes null; the native
+    // setters are non-null, so coerce to '' which clears the template.
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateRows(this.nativeView, value);
     }
@@ -3396,6 +3399,9 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset (e.g. a media query toggling grid-cols off) passes null; the native
+    // setters are non-null, so coerce to '' which clears the template.
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateColumns(this.nativeView, value);
     }
@@ -3428,6 +3434,8 @@ export class Style {
     if (!this.nativeView) {
       return;
     }
+    // Reset passes null; the native setters are non-null, coerce to '' (clears it).
+    value = value ?? '';
     if (__ANDROID__) {
       org.nativescript.mason.masonkit.NodeHelper.getShared().setGridTemplateAreas(this.nativeView, value);
     }
@@ -3601,7 +3609,9 @@ export class Style {
       this.prepareMut();
       setFloat32(this.style_view, StyleKeys.LINE_HEIGHT, value);
       setUint8(this.style_view, StyleKeys.LINE_HEIGHT_STATE, 1);
-      setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, 0);
+      // Values ≥ 4 are rem-derived px values (smallest Tailwind rem = leading-3: 0.75rem→12).
+      // Values < 4 are genuine CSS unitless multipliers (leading-loose=2, leading-normal=1.5).
+      setUint8(this.style_view, StyleKeys.LINE_HEIGHT_TYPE, value >= 4 ? 1 : 0);
       this.commitState(StateKeys.LINE_HEIGHT);
     } else if (typeof value === 'object') {
       switch (value.unit) {
@@ -3729,6 +3739,55 @@ export class Style {
       setInt32(this.style_view, StyleKeys.TEXT_ALIGN, align);
       setInt8(this.style_view, StyleKeys.TEXT_ALIGN_STATE, 1);
       this.commitState(StateKeys.TEXT_ALIGN);
+    }
+  }
+
+  get textTransform() {
+    if (!this.style_view) {
+      return 'none';
+    }
+    const type = getInt8(this.style_view, StyleKeys.TEXT_TRANSFORM);
+    switch (type) {
+      case 1:
+        return 'capitalize';
+      case 2:
+        return 'uppercase';
+      case 3:
+        return 'lowercase';
+      default:
+        return 'none';
+    }
+  }
+
+  set textTransform(value: 'none' | 'capitalize' | 'uppercase' | 'lowercase') {
+    if (!this.style_view) {
+      return;
+    }
+
+    let transform = -1;
+
+    switch (value) {
+      case 'none':
+        transform = 0;
+        break;
+      case 'capitalize':
+        transform = 1;
+        break;
+      case 'uppercase':
+        transform = 2;
+        break;
+      case 'lowercase':
+        transform = 3;
+        break;
+      default:
+        break;
+    }
+
+    if (transform !== -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.TEXT_TRANSFORM, transform);
+      setInt8(this.style_view, StyleKeys.TEXT_TRANSFORM_STATE, 1);
+      this.commitState(StateKeys.TEXT_TRANSFORM);
     }
   }
 
@@ -3897,6 +3956,15 @@ export class Style {
       value,
       () => org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderRadius(this.nativeView, value),
       () => ((this.nativeView as MasonElementObjc).style.borderRadius = value),
+    );
+  }
+
+  set textDecoration(value: string) {
+    this.setPseudoCssStringValue(
+      'text-decoration',
+      value,
+      () => org.nativescript.mason.masonkit.NodeHelper.getShared().setTextDecoration(this.nativeView, value),
+      () => (this.nativeView as MasonElementObjc).style.setTextDecoration(value),
     );
   }
 

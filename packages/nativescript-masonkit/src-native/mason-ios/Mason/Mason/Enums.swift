@@ -389,7 +389,7 @@ public enum MasonDimension: Codable, Equatable {
         self = .Points(value)
         break
       case "dip":
-        self = .Points(value * Float(UIScreen.main.scale))
+        self = .Points(value * NSCMason.scale)
         break
       case "%", "percent":
         self = .Percent(value)
@@ -522,7 +522,7 @@ public enum MasonLengthPercentage: Codable, Equatable {
       self = .Points(value)
       break
     case "dip":
-      self = .Points(value * Float(UIScreen.main.scale))
+      self = .Points(value * NSCMason.scale)
       break
     case "%", "percent":
       self = .Percent(value)
@@ -668,7 +668,7 @@ public enum MasonLengthPercentageAuto: Codable, Equatable {
         self = .Points(value)
         break
       case "dip":
-        self = .Points(value * Float(UIScreen.main.scale))
+        self = .Points(value * NSCMason.scale)
         break
       case "%", "percent":
         self = .Percent(value)

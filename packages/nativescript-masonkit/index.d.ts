@@ -95,6 +95,7 @@ declare module '@nativescript/core/ui/styling/style' {
     gridTemplateAreas: string;
     textOverflow: 'clip' | 'ellipsis' | string;
     textWrap: 'nowrap' | 'wrap' | 'balance';
+    textTransform: 'none' | 'capitalize' | 'uppercase' | 'lowercase';
     overflow: Overflow | `${Overflow} ${Overflow}`;
     overflowX: Overflow;
     overflowY: Overflow;
@@ -170,6 +171,7 @@ interface Style {
   gridTemplateAreas: string;
   textOverflow: 'clip' | 'ellipsis' | string;
   textWrap: 'nowrap' | 'wrap' | 'balance';
+  textTransform: 'none' | 'capitalize' | 'uppercase' | 'lowercase';
   overflow: Overflow | `${Overflow} ${Overflow}`;
   overflowX: Overflow;
   overflowY: Overflow;
@@ -243,6 +245,7 @@ interface IViewBase {
   gridTemplateAreas: string;
   textOverflow: 'clip' | 'ellipsis' | string;
   textWrap: 'nowrap' | 'wrap' | 'balance';
+  textTransform: 'none' | 'capitalize' | 'uppercase' | 'lowercase';
   overflow: Overflow;
   overflowX: Overflow;
   overflowY: Overflow;

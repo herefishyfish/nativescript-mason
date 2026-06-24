@@ -16,6 +16,7 @@ export class Scroll extends ViewBase {
     if (!this[native_]) {
       // using MasonUIView is now as it is a view with it's own scroll handling as UIKit's UIScrollView breaks with multiple nested scroll views.
       const view = Tree.instance.createView() as never;
+      (view as any).isScrollContainer = true;
       this[native_] = view;
       return view;
     }
@@ -119,8 +120,16 @@ export class Scroll extends ViewBase {
           // @ts-ignore
           var layout = this.ios.mason_layout();
           //const layout = this.ios.layout();
-          const w = Utils.layout.makeMeasureSpec(layout.width, Utils.layout.EXACTLY);
-          const h = Utils.layout.makeMeasureSpec(layout.height, Utils.layout.EXACTLY);
+          // A scroll container is a VIEWPORT: its own box must never exceed the
+          // available space, even though its children (the scrollable content)
+          // can. Mason lays the node out at its natural content height because
+          // the default overflow is `visible`; clamp the measured box back to
+          // the spec so the native view is the viewport and `contentSize`
+          // (the natural content extent) overflows it → the pan scroll engages.
+          const viewportW = widthMode === Utils.layout.EXACTLY ? specWidth : Math.min(layout.width, specWidth);
+          const viewportH = heightMode === Utils.layout.EXACTLY ? specHeight : Math.min(layout.height, specHeight);
+          const w = Utils.layout.makeMeasureSpec(viewportW, Utils.layout.EXACTLY);
+          const h = Utils.layout.makeMeasureSpec(viewportH, Utils.layout.EXACTLY);
 
           // this.eachLayoutChild((child) => {
           //   ViewBase.measureChild(this as never, child, child._currentWidthMeasureSpec, child._currentHeightMeasureSpec);

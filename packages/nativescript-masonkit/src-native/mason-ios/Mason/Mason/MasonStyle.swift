@@ -1694,6 +1694,54 @@ public class MasonStyle: NSObject {
     }
   }
   
+  public func setTextDecoration(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let line: DecorationLine
+    switch v {
+    case "none": line = .None
+    case "underline": line = .Underline
+    case "overline": line = .Overline
+    case "line-through": line = .LineThrough
+    default: return
+    }
+    decorationLine = line
+  }
+
+  public func setBorderColor(_ css: String) {
+    guard let color = UIColor(css: css) else { return }
+    mBorderLeft.color = color
+    mBorderTop.color = color
+    mBorderRight.color = color
+    mBorderBottom.color = color
+    setOrAppendState(.borderColor)
+    node.view?.setNeedsDisplay()
+  }
+
+  public func applyListStyleType(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let type: ListStyleType
+    switch v {
+    case "none": type = .None
+    case "disc": type = .Disc
+    case "circle": type = .Circle
+    case "square": type = .Square
+    case "decimal": type = .Decimal
+    default: return
+    }
+    listStyleType = type
+  }
+
+  public func applyListStylePosition(_ css: String) {
+    let v = css.trimmingCharacters(in: .whitespaces).lowercased()
+    let pos: ListStylePosition
+    switch v {
+    case "inside": pos = .Inside
+    case "outside": pos = .Outside
+    default: return
+    }
+    listStylePosition = pos
+  }
+
   public var fontSize: Int32 {
     get {
       return getInt32(StyleKeys.FONT_SIZE)
@@ -3914,7 +3962,8 @@ public class MasonStyle: NSObject {
       if backdropFilter.isEmpty && !mBackdropFilter.filters.isEmpty {
         mBackdropFilter.reset()
         if let view = node.view {
-          view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop" })?.removeFromSuperlayer()
+          view.subviews.filter { $0.layer.name == "_mason_backdrop" }.forEach { $0.removeFromSuperview() }
+          view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop_layer" })?.removeFromSuperlayer()
         }
         return
       }
@@ -3925,6 +3974,25 @@ public class MasonStyle: NSObject {
         if let view = node.view {
           mBackdropFilter.applyAsBackdrop(to: view)
         }
+      }
+    }
+  }
+
+  /// Keep the backdrop effect view / layer sized to the host view. Called from
+  /// `MasonUIView.layoutSubviews` because `backdropFilter` is usually set before
+  /// the view has a non-zero bounds, so the initial frame in `applyAsBackdrop`
+  /// would otherwise stay `.zero` and the effect would never appear.
+  func updateBackdropFrames(for bounds: CGRect) {
+    guard !mBackdropFilter.filters.isEmpty, let view = node.view else { return }
+    if let effectView = view.subviews.first(where: { $0.layer.name == "_mason_backdrop" }) {
+      if effectView.frame != bounds { effectView.frame = bounds }
+    }
+    if let backdropLayer = view.layer.sublayers?.first(where: { $0.name == "_mason_backdrop_layer" }) {
+      if backdropLayer.frame != bounds {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backdropLayer.frame = bounds
+        CATransaction.commit()
       }
     }
   }

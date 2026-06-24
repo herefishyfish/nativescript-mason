@@ -277,6 +277,10 @@ fun drawGradient(layer: BackgroundLayer, canvas: Canvas, width: Int, height: Int
     layer.shaderHeight = height
   }
 
+  // Fail-safe: if no shader could be built (e.g. an unrecognised gradient type
+  // after a re-parse on rotation), do NOT fill — gradientPaint is shared and its
+  // fallback colour is opaque black, which would paint a solid black box.
+  if (layer.shader == null) return
   gradientPaint.shader = layer.shader
   canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), gradientPaint)
 }

@@ -47,7 +47,6 @@ public class NSCMason: NSObject {
             let scale = NSCMason.scale
             let ascent = Float(font.ascender) * scale
             let descent = Float(-font.descender) * scale  // Make it positive
-            let lineHeight = Float(font.lineHeight) * scale
             let xHeight = Float(font.xHeight) * scale
             let capHeight = Float(font.capHeight) * scale
             let leading = Float(font.leading) * scale
@@ -289,5 +288,21 @@ public class NSCMason: NSObject {
     set { mason_set_preflight(nativePtr, newValue) }
   }
 
-  @objc public static let scale = Float(UIScreen.main.scale)
+  @objc public static var scale: Float {
+    get {
+      for scene in UIApplication.shared.connectedScenes {
+             guard let windowScene = scene as? UIWindowScene else { continue }
+
+             for window in windowScene.windows where window.isKeyWindow {
+                 return Float(window.traitCollection.displayScale)
+             }
+         }
+
+         #if os(visionOS)
+         return 1.0
+         #else
+         return Float(UIScreen.main.scale)
+         #endif
+    }
+  }
 }

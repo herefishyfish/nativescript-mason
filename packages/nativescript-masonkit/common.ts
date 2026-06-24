@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import { AddChildFromBuilder, CustomLayoutView, View as NSView, ViewBase as NSViewBase, getViewById, Property, widthProperty, heightProperty, View, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength, marginLeftProperty, marginRightProperty, marginTopProperty, marginBottomProperty, minWidthProperty, minHeightProperty, fontSizeProperty, fontWeightProperty, fontStyleProperty, colorProperty, Color, lineHeightProperty, letterSpacingProperty, textAlignmentProperty, borderLeftWidthProperty, borderTopWidthProperty, borderRightWidthProperty, borderBottomWidthProperty, backgroundColorProperty, paddingLeftProperty, paddingRightProperty, paddingTopProperty, paddingBottomProperty, zIndexProperty, PseudoClassHandler } from '@nativescript/core';
+import { AddChildFromBuilder, CustomLayoutView, View as NSView, ViewBase as NSViewBase, getViewById, Property, widthProperty, heightProperty, View, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength, marginLeftProperty, marginRightProperty, marginTopProperty, marginBottomProperty, minWidthProperty, minHeightProperty, fontSizeProperty, fontWeightProperty, fontStyleProperty, colorProperty, Color, lineHeightProperty, letterSpacingProperty, textAlignmentProperty, textDecorationProperty, borderLeftWidthProperty, borderTopWidthProperty, borderRightWidthProperty, borderBottomWidthProperty, backgroundColorProperty, paddingLeftProperty, paddingRightProperty, paddingTopProperty, paddingBottomProperty, zIndexProperty, PseudoClassHandler } from '@nativescript/core';
 import { Display, Gap, GridAutoFlow, JustifyItems, JustifySelf, Length, LengthAuto, Overflow, Position, BoxSizing, VerticalAlign, FlexDirection, Float, Clear } from '.';
 import { alignItemsProperty, alignSelfProperty, flexDirectionProperty, flexGrowProperty, flexShrinkProperty, flexWrapProperty, justifyContentProperty } from '@nativescript/core/ui/layouts/flexbox-layout';
 import { _forceStyleUpdate, _setGridAutoRows } from './utils';
@@ -57,6 +57,10 @@ import {
   verticalAlignProperty,
   boxShadowProperty,
   transformProperty,
+  borderColorProperty,
+  backgroundImageProperty,
+  listStyleTypeProperty,
+  listStylePositionProperty,
 } from './properties';
 import { isMasonView_, isTextChild_, isText_, isPlaceholder_, text_, native_, textNode_, textNodeIndex_, textNodeProxied_, pseudoStyles_ } from './symbols';
 import { Tree } from './tree';
@@ -1433,6 +1437,57 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     const style = this._styleHelper;
     // @ts-ignore
     if (style) style.textAlignment = value;
+  }
+
+  [textDecorationProperty.setNative](value) {
+    // @ts-ignore
+    const style = this._styleHelper;
+    if (style) {
+      style.textDecoration = String(value);
+    }
+  }
+
+  // @ts-ignore
+  [borderColorProperty.setNative](value: any) {
+    if (__ANDROID__) {
+      // @ts-ignore
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderColor(this.nativeView, String(value));
+    } else if (__APPLE__) {
+      // @ts-ignore
+      (this.nativeView as any).style.setBorderColor(String(value));
+    }
+  }
+
+  // @ts-ignore
+  [backgroundImageProperty.setNative](value: any) {
+    // @ts-ignore
+    const style = this._styleHelper;
+    if (style) {
+      // @ts-ignore
+      style.backgroundImage = String(value);
+    }
+  }
+
+  // @ts-ignore
+  [listStyleTypeProperty.setNative](value: any) {
+    if (__ANDROID__) {
+      // @ts-ignore
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setListStyleType(this.nativeView, String(value));
+    } else if (__APPLE__) {
+      // @ts-ignore
+      (this.nativeView as any).style.applyListStyleType(String(value));
+    }
+  }
+
+  // @ts-ignore
+  [listStylePositionProperty.setNative](value: any) {
+    if (__ANDROID__) {
+      // @ts-ignore
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setListStylePosition(this.nativeView, String(value));
+    } else if (__APPLE__) {
+      // @ts-ignore
+      (this.nativeView as any).style.applyListStylePosition(String(value));
+    }
   }
 
   get boxSizing(): BoxSizing {

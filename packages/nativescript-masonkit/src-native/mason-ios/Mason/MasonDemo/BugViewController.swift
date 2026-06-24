@@ -4,7 +4,7 @@ import Mason
 class BugViewController: UIViewController {
   let mason = NSCMason.shared
   let body = NSCMason.shared.createScrollView()
-  let scale = Float(UIScreen.main.scale)
+  let scale = NSCMason.scale
 
   override func viewDidLoad() {
     super.viewDidLoad()

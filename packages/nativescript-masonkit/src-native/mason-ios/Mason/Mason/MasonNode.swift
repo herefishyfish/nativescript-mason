@@ -580,7 +580,8 @@ public class MasonNode: NSObject {
     }
     
     let paragraphStyle = NSMutableParagraphStyle()
-    
+    var fontNaturalLineHeight: CGFloat = 0
+
     var type = MasonTextType.None
     
     if let view = view as? MasonText {
@@ -646,6 +647,7 @@ public class MasonNode: NSObject {
       attrs[.font] = font
       attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] = weight.rawValue
       attrs[NSAttributedString.Key(Constants.FONT_STYLE)] = fontStyle
+      fontNaturalLineHeight = CTFontGetAscent(font) + CTFontGetDescent(font)
     }
     
     
@@ -709,13 +711,24 @@ public class MasonNode: NSObject {
     
     let lineHeightType = style.resolvedLineHeightType
     let lineHeight = style.resolvedLineHeight
+    // Absolute line-height is a dip value (dip == pt on iOS); a unitless one is
+    // em-relative (multiplier * font-size). Either way set a fixed min==max box
+    // so every line advances uniformly (lineHeightMultiple would over-space lines
+    // with taller inline content like <code>).
+    var lineBox: CGFloat = 0
     if(lineHeightType == 1){
-      let height = CGFloat(lineHeight) / CGFloat(NSCMason.scale)
-      paragraphStyle.minimumLineHeight = height
-      paragraphStyle.maximumLineHeight = height
-    }else {
-      if(lineHeight > 0){
-        paragraphStyle.lineHeightMultiple = CGFloat(lineHeight)
+      lineBox = CGFloat(lineHeight)
+    } else if(lineHeight > 0){
+      lineBox = CGFloat(lineHeight) * CGFloat(style.resolvedFontSize)
+    }
+    if lineBox > 0 {
+      paragraphStyle.minimumLineHeight = lineBox
+      paragraphStyle.maximumLineHeight = lineBox
+      // min==max adds all the extra leading ABOVE the glyphs, sinking the text to
+      // the bottom of the box; Android splits it evenly (centred). Raise the
+      // glyphs by half the extra so the text is vertically centred to match.
+      if fontNaturalLineHeight > 0 && lineBox > fontNaturalLineHeight {
+        attrs[.baselineOffset] = (lineBox - fontNaturalLineHeight) / 2.0
       }
     }
     

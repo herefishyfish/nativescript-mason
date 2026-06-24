@@ -2235,6 +2235,8 @@ declare class MasonStyle extends NSObject {
 
 	prepareMut(): void;
 
+	setTextDecoration(decoration: string);
+
 	setBackgroundColorWithString(color: string): void;
 
 	setBackgroundColorWithUi(color: UIColor): void;

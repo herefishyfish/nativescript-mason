@@ -48,8 +48,15 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     let hasBorder = _cachedHasBorder
     let hasFilter = _cachedHasFilter
 
+    // Check for HTML <li> children that need marker drawing in the parent's padding zone.
+    var hasListMarkers = false
+    for sv in subviews where (sv as? MasonText)?.type == .Li {
+      hasListMarkers = true
+      break
+    }
+
     // Early-out: skip all CoreGraphics work for plain views with no decoration
-    guard hasBackground || hasBoxShadow || hasBorder || hasFilter else { return }
+    guard hasBackground || hasBoxShadow || hasBorder || hasFilter || hasListMarkers else { return }
 
     guard let context = UIGraphicsGetCurrentContext() else {
       return
@@ -65,7 +72,7 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     // edge-aligned children when border widths are present.
     if hasBackground {
       // Expand by a fractional device pixel to avoid 1px hairline gaps
-      let scale = UIScreen.main.scale
+      let scale = CGFloat(NSCMason.scale)
       let expand: CGFloat = 1.0 / scale
       let innerRect = bounds.insetBy(dx: -expand, dy: -expand)
 
@@ -85,6 +92,11 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       style.mBoxShadowRenderer.drawInsetShadows(in: context, rect: bounds, borderRenderer: style.mBorderRender)
     }
 
+    // Draw list markers for HTML <li> children into the parent's padding zone.
+    if hasListMarkers {
+      drawListItemMarkers(in: context)
+    }
+
     // No external clip: CSSBorderRenderer.draw() builds its own rounded stroke
     // paths, and clipping the outer edge causes black anti-alias fringing with
     // border-radius + box-shadow.
@@ -93,6 +105,115 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     }
 
     style.applyResolvedFilter(in: context, rect: bounds, view: self)
+  }
+
+  private func drawListItemMarkers(in context: CGContext) {
+    var position = 0
+    for sv in subviews {
+      guard let liText = sv as? MasonText, liText.type == .Li else { continue }
+      drawMarkerFor(listItem: liText, in: context, position: position)
+      position += 1
+    }
+  }
+
+  private func resolveListStyleTypeFor(_ child: MasonText) -> ListStyleType {
+    if style.isValueInitialized {
+      let isSet = style.getUInt8(StyleKeys.LIST_STYLE_TYPE_STATE) != 0
+      if isSet, let type = ListStyleType(rawValue: Int8(style.getUInt8(StyleKeys.LIST_STYLE_TYPE))) {
+        return type
+      }
+    }
+    if child.style.isValueInitialized {
+      let isSet = child.style.getUInt8(StyleKeys.LIST_STYLE_TYPE_STATE) != 0
+      if isSet, let type = ListStyleType(rawValue: Int8(child.style.getUInt8(StyleKeys.LIST_STYLE_TYPE))) {
+        return type
+      }
+    }
+    return .Disc
+  }
+
+  private func drawMarkerFor(listItem child: MasonText, in context: CGContext, position: Int) {
+    let listType = resolveListStyleTypeFor(child)
+    guard listType != .None else { return }
+
+    let uiFont = child.style.resolvedFontFace.uiFont ?? UIFont.systemFont(ofSize: CGFloat(Constants.DEFAULT_FONT_SIZE))
+    let fontSize = uiFont.pointSize
+    let ascent = uiFont.ascender   // positive: distance from baseline to top
+    let descent = uiFont.descender // negative: distance from baseline to bottom
+
+    let markerSize = fontSize * 0.35
+    let gap = fontSize * 0.5
+
+    // Baseline in self (MasonUIView) coordinate space (y-down).
+    let childFrame = child.frame
+    // Centre the marker on the first line's box midpoint (text sits centred in
+    // the line-height box) — not the bare font baseline, which drifts off-line.
+    let lineHeightType = child.style.resolvedLineHeightType
+    let lineHeightVal = CGFloat(child.style.resolvedLineHeight)
+    let fontLineHeight = uiFont.ascender - uiFont.descender
+    let lineBox: CGFloat = {
+      if lineHeightType == 1 { return max(lineHeightVal, fontLineHeight) }   // absolute pt
+      if lineHeightVal > 0 { return max(lineHeightVal * fontSize, fontLineHeight) } // multiplier
+      return fontLineHeight
+    }()
+    let lineCenter = childFrame.minY + lineBox / 2.0
+    // Baseline of the first line, derived from the centred line box.
+    let baseline = lineCenter + (ascent + descent) / 2.0
+    // Marker shape centres on the line's visual middle (cap/x-height midpoint).
+    let cy = lineCenter
+
+    // Marker zone: child.frame.minX - gap - markerContentWidth .. child.frame.minX - gap
+    // (gap separates the marker from the text content)
+    let markerRight = childFrame.minX - gap
+
+    let textColor = UIColor.colorFromARGB(child.style.resolvedColor)
+
+    context.saveGState()
+    context.setFillColor(textColor.cgColor)
+    context.setStrokeColor(textColor.cgColor)
+
+    switch listType {
+    case .Disc:
+      let r = markerSize / 2.0
+      let cx = markerRight - r
+      context.fillEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
+
+    case .Circle:
+      let r = markerSize / 2.0
+      let cx = markerRight - r
+      let lineWidth = max(1.0, fontSize * 0.08)
+      context.setLineWidth(lineWidth)
+      context.strokeEllipse(in: CGRect(
+        x: cx - r + lineWidth / 2,
+        y: cy - r + lineWidth / 2,
+        width: r * 2 - lineWidth,
+        height: r * 2 - lineWidth
+      ))
+
+    case .Square:
+      let half = markerSize / 2.0
+      let cx = markerRight - half
+      context.fill(CGRect(x: cx - half, y: cy - half, width: half * 2, height: half * 2))
+
+    case .Decimal:
+      let text = "\(position + 1)."
+      let attrs: [NSAttributedString.Key: Any] = [.font: uiFont, .foregroundColor: textColor]
+      let attributed = NSAttributedString(string: text, attributes: attrs)
+      let textWidth = attributed.size().width
+      attributed.draw(at: CGPoint(x: markerRight - textWidth, y: baseline - ascent))
+
+    case .Custom:
+      let text = "\u{2022}"
+      let attrs: [NSAttributedString.Key: Any] = [.font: uiFont, .foregroundColor: textColor]
+      let attributed = NSAttributedString(string: text, attributes: attrs)
+      let textWidth = attributed.size().width
+      attributed.draw(at: CGPoint(x: markerRight - textWidth, y: baseline - ascent))
+
+    case .None:
+      break
+    }
+
+    context.restoreGState()
   }
 
   public let node: MasonNode
@@ -105,6 +226,8 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
   // bounds.origin (as UIScrollView does), driven by a pan gesture that only
   // begins when actually scrollable.
   public var contentSize: CGSize = .zero
+  // When true, default `visible` overflow on Y acts as `auto` (web-like scroll-on-overflow).
+  @objc public var isScrollContainer: Bool = false
   private var _scrollPanStartOffset: CGPoint = .zero
   private var _scrollDecelerationLink: CADisplayLink?
   private var _scrollDecelerationVelocity: CGPoint = .zero
@@ -119,16 +242,18 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
 
   public var contentOffset: CGPoint {
     get { bounds.origin }
-    set {
-      let c = _clampScrollOffset(newValue)
-      guard bounds.origin != c else { return }
-      // Disable implicit CA animations so scroll bounds changes don't lag.
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      var b = bounds; b.origin = c; bounds = b
-      _updateScrollMask()
-      CATransaction.commit()
-    }
+    set { _setScrollOrigin(_clampScrollOffset(newValue)) }
+  }
+
+  // Set the scroll origin without clamping, so pan/deceleration can hold an overscrolled position.
+  private func _setScrollOrigin(_ c: CGPoint) {
+    guard bounds.origin != c else { return }
+    // Disable implicit CA animations so scroll bounds changes don't lag.
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    var b = bounds; b.origin = c; bounds = b
+    _updateScrollMask()
+    CATransaction.commit()
   }
 
   private lazy var _scrollPanGesture: UIPanGestureRecognizer = {
@@ -164,6 +289,9 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
     // Always reposition the shadow layer: frame.origin can change without a size
     // change, and the layer is keyed to our frame in the superview's coords.
     style.updateShadowLayer(for: CGRect(origin: .zero, size: currentSize))
+    // Keep the backdrop-filter effect view/layer sized to us (it's usually set
+    // before layout, when bounds is still .zero).
+    style.updateBackdropFrames(for: CGRect(origin: .zero, size: currentSize))
     guard !currentSize.equalTo(_lastBoundsSize) else { return }
     _lastBoundsSize = currentSize
     invalidateDrawFlags()
@@ -185,18 +313,11 @@ public class MasonUIView: UIView, MasonEventTarget, MasonElement, MasonElementOb
       isOpaque = false
     }
 
-    // Rasterize only the gradient + rounded-corners case, and never when
-    // layer.mask is set (rasterize-then-mask produces black anti-alias fringes).
-    // Box-shadow must NOT trigger it: shadows render via a child layer, and
-    // flattening the subtree here visibly softens small text.
-    let hasGradient = !bg.layers.isEmpty
-    let wantsRasterize = hasGradient && style.mBorderRender.hasRadii()
-    if wantsRasterize && layer.mask == nil {
-      layer.shouldRasterize = true
-      layer.rasterizationScale = UIScreen.main.scale
-    } else {
-      layer.shouldRasterize = false
-    }
+    // Never rasterize: it flattens the sublayer subtree into an offscreen bitmap
+    // that gets resampled when composited, softening child text. draw(_:) already
+    // clips the gradient background to the rounded border path, so corners stay
+    // clean without it.
+    layer.shouldRasterize = false
     // Re-apply transform after layout changes
     style.applyTransformFromBuffer()
   }
@@ -1060,16 +1181,17 @@ extension MasonUIView {
   var _canScrollH: Bool {
     switch node.style.overflow.x {
     case .Scroll: return true
-    case .Auto:   return contentSize.width > bounds.width
-    default:      return false
+    case .Auto:    return contentSize.width > bounds.width
+    default:       return false
     }
   }
 
   var _canScrollV: Bool {
     switch node.style.overflow.y {
     case .Scroll: return true
-    case .Auto:   return contentSize.height > bounds.height
-    default:      return false
+    case .Auto:    return contentSize.height > bounds.height
+    case .Visible: return isScrollContainer && contentSize.height > bounds.height
+    default:       return false
     }
   }
 
@@ -1077,6 +1199,29 @@ extension MasonUIView {
     CGPoint(
       x: _canScrollH ? max(0, min(offset.x, max(0, contentSize.width  - bounds.width))) : 0,
       y: _canScrollV ? max(0, min(offset.y, max(0, contentSize.height - bounds.height))) : 0
+    )
+  }
+
+  // MARK: Rubber-banding
+  // UIScrollView-style resistance curve; `dim` is the viewport size along the axis.
+  private func _rubber(_ distance: CGFloat, _ dim: CGFloat) -> CGFloat {
+    let c: CGFloat = 0.55
+    let d = max(dim, 1)
+    return (1 - 1 / (distance * c / d + 1)) * d
+  }
+
+  private func _rubberAxis(_ v: CGFloat, _ lo: CGFloat, _ hi: CGFloat, _ dim: CGFloat) -> CGFloat {
+    if v < lo { return lo - _rubber(lo - v, dim) }
+    if v > hi { return hi + _rubber(v - hi, dim) }
+    return v
+  }
+
+  private func _rubberBanded(_ o: CGPoint) -> CGPoint {
+    let hiX = max(0, contentSize.width - bounds.width)
+    let hiY = max(0, contentSize.height - bounds.height)
+    return CGPoint(
+      x: _canScrollH ? _rubberAxis(o.x, 0, hiX, bounds.width) : 0,
+      y: _canScrollV ? _rubberAxis(o.y, 0, hiY, bounds.height) : 0
     )
   }
 
@@ -1129,10 +1274,11 @@ extension MasonUIView {
 
     case .changed:
       let t = gesture.translation(in: self)
-      contentOffset = CGPoint(
+      let raw = CGPoint(
         x: _scrollPanStartOffset.x - (_canScrollH ? t.x : 0),
         y: _scrollPanStartOffset.y - (_canScrollV ? t.y : 0)
       )
+      _setScrollOrigin(_rubberBanded(raw))
 
     case .ended, .cancelled:
       let v = gesture.velocity(in: self)
@@ -1148,9 +1294,15 @@ extension MasonUIView {
   // MARK: Deceleration
 
   private func _startScrollDeceleration(_ velocity: CGPoint) {
-    guard hypot(velocity.x, velocity.y) > 1 else { return }
-    _stopScrollDeceleration()
+    // Start when there's momentum to decay or we're overscrolled and must spring back.
+    let overscrolled = contentOffset != _clampScrollOffset(contentOffset)
+    guard hypot(velocity.x, velocity.y) > 1 || overscrolled else {
+      _isScrolling = false
+      return
+    }
+    _scrollDecelerationLink?.invalidate()
     _scrollDecelerationVelocity = velocity
+    _isScrolling = true
     let link = CADisplayLink(target: self, selector: #selector(_scrollDecelerationStep))
     link.add(to: .main, forMode: .common)
     _scrollDecelerationLink = link
@@ -1163,19 +1315,40 @@ extension MasonUIView {
     _isScrolling = false
   }
 
-  @objc func _scrollDecelerationStep() {
-    _scrollDecelerationVelocity.x *= _scrollDecelerationRate
-    _scrollDecelerationVelocity.y *= _scrollDecelerationRate
-    let prev = contentOffset
-    contentOffset = CGPoint(
-      x: contentOffset.x + _scrollDecelerationVelocity.x / 60,
-      y: contentOffset.y + _scrollDecelerationVelocity.y / 60
-    )
-    // Stop threshold 30 pt/s, matching UIScrollView stopping feel.
-    if hypot(_scrollDecelerationVelocity.x, _scrollDecelerationVelocity.y) < 30
-      || contentOffset == prev {
-      _stopScrollDeceleration()
+  // Advance one axis: momentum decay in-bounds, spring-back when overscrolled.
+  // Returns (offset, velocity, settled).
+  private func _integrateScrollAxis(
+    _ value: CGFloat, _ velocity: CGFloat, _ lo: CGFloat, _ hi: CGFloat, _ dt: CGFloat
+  ) -> (CGFloat, CGFloat, Bool) {
+    if value >= lo && value <= hi {
+      let nv = velocity * _scrollDecelerationRate
+      let nval = value + nv * dt
+      // Settle only when slow and still in-bounds (else momentum bounces off the edge).
+      if abs(nv) < 30, nval >= lo, nval <= hi { return (nval, nv, true) }
+      return (nval, nv, false)
     }
+    let target = value < lo ? lo : hi
+    let stiffness: CGFloat = 280
+    let damping = 2 * stiffness.squareRoot()   // critically damped — no oscillation
+    let nv = velocity + (-stiffness * (value - target) - damping * velocity) * dt
+    let nval = value + nv * dt
+    if abs(nval - target) < 0.5, abs(nv) < 5 { return (target, 0, true) }
+    return (nval, nv, false)
+  }
+
+  @objc func _scrollDecelerationStep() {
+    let dt: CGFloat = 1.0 / 60.0
+    let hiX = max(0, contentSize.width - bounds.width)
+    let hiY = max(0, contentSize.height - bounds.height)
+    var o = contentOffset
+    var v = _scrollDecelerationVelocity
+    var doneX = true
+    var doneY = true
+    if _canScrollH { (o.x, v.x, doneX) = _integrateScrollAxis(o.x, v.x, 0, hiX, dt) }
+    if _canScrollV { (o.y, v.y, doneY) = _integrateScrollAxis(o.y, v.y, 0, hiY, dt) }
+    _scrollDecelerationVelocity = v
+    _setScrollOrigin(o)
+    if doneX && doneY { _stopScrollDeceleration() }
   }
 }
 

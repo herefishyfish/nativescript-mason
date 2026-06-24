@@ -725,7 +725,23 @@ class MasonElementHelpers: NSObject {
         let insets = UIEdgeInsets(top: top, left: left, bottom: bottom, right: right)
         newFrame.inset(by: insets)
       }
-      
+
+      // Root scroll container is a VIEWPORT: Mason sizes a height:auto / visible
+      // node to its full content, but the on-screen box must not exceed the
+      // available space, or there is no scrollable delta (box == contentSize).
+      // Clamp the box to the superview (the NativeScript-managed viewport); the
+      // children stay laid out in the full content space and `contentSize`
+      // (computed below from the unclamped layout) overflows it → scroll engages.
+      // Only roots (superview is not a MasonElement) self-size; nested nodes are
+      // positioned by their Mason parent and must keep the computed frame.
+      if let mv = view as? MasonUIView, mv.isScrollContainer,
+         !(view.superview is MasonElement),
+         let avail = view.superview?.bounds.size,
+         avail.width > 0, avail.height > 0 {
+        if newFrame.size.height > avail.height { newFrame.size.height = avail.height }
+        if newFrame.size.width > avail.width { newFrame.size.width = avail.width }
+      }
+
       // Setting `view.frame` is undefined when the view has a non-identity
       // transform, so position via bounds+center instead (equivalent to frame
       // when the transform is identity).
@@ -753,10 +769,14 @@ class MasonElementHelpers: NSObject {
       // axis, Auto clips only on overflow, Visible never. Border-radius always
       // clips children to the rounded rect regardless of overflow.
       let overflow = node.style.overflow
+      // Scroll container: default `visible` acts as `auto` on the Y axis only;
+      // horizontal stays visible to avoid surprise sideways scrolling.
+      let _isScrollContainer = (node.view as? MasonUIView)?.isScrollContainer ?? false
       let clipX = overflow.x == .Hidden || overflow.x == .Scroll || overflow.x == .Clip
         || (overflow.x == .Auto && realLayout.contentWidth > realLayout.width)
       let clipY = overflow.y == .Hidden || overflow.y == .Scroll || overflow.y == .Clip
         || (overflow.y == .Auto && realLayout.contentHeight > realLayout.height)
+        || (overflow.y == .Visible && _isScrollContainer && realLayout.contentHeight > realLayout.height)
 
       let borderRender = node.style.mBorderRender
       borderRender.resolve(for: view.bounds)
@@ -825,8 +845,10 @@ class MasonElementHelpers: NSObject {
       
       // Compute content size for any scrollable view (Scroll or MasonUIView).
       let _overflow = node.style.overflow
-      let _hasScrollOverflow = _overflow.x == .Scroll || _overflow.x == .Auto
-        || _overflow.y == .Scroll || _overflow.y == .Auto
+      let _ox = _overflow.x
+      let _oy: Overflow = (_overflow.y == .Visible && _isScrollContainer) ? .Auto : _overflow.y
+      let _hasScrollOverflow = _ox == .Scroll || _ox == .Auto
+        || _oy == .Scroll || _oy == .Auto
       if _hasScrollOverflow {
         let cw = CGFloat(realLayout.contentWidth.isNaN ? 0 : realLayout.contentWidth/NSCMason.scale)
         let ch = CGFloat(realLayout.contentHeight.isNaN ? 0 : realLayout.contentHeight/NSCMason.scale)
@@ -837,13 +859,13 @@ class MasonElementHelpers: NSObject {
         // For `auto`: use content size only when it overflows the box
         // For `visible`/`hidden`/`clip`: use box size (no scrolling)
         let scrollWidth: CGFloat
-        switch _overflow.x {
+        switch _ox {
         case .Scroll: scrollWidth = max(cw, bw)
         case .Auto:   scrollWidth = cw > bw ? cw : bw
         default:      scrollWidth = bw
         }
         let scrollHeight: CGFloat
-        switch _overflow.y {
+        switch _oy {
         case .Scroll: scrollHeight = max(ch, bh)
         case .Auto:   scrollHeight = ch > bh ? ch : bh
         default:      scrollHeight = bh

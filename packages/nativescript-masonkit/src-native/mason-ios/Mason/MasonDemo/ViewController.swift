@@ -10,7 +10,7 @@ import Mason
 
 class ViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate, UICollectionViewDelegateFlowLayout, MasonList.MasonListDelegate, UIScrollViewDelegate {
   
-  let scale = Float(UIScreen.main.scale)
+  let scale = NSCMason.scale
   
   var items: [String] = []
   var olVirtualData: [String] = []
@@ -64,7 +64,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     
     
     func setupView(){
-      let scale = Float(UIScreen.main.scale)
+      let scale = NSCMason.scale
       bodyView.configure { style in
         style.alignItems = .Center
         style.flexDirection = .Column
@@ -1029,7 +1029,7 @@ class ViewController: UIViewController, UICollectionViewDataSource, UICollection
     // body auto-computes in layoutSubviews when bounds change
   }
   override func viewDidLoad() {
-    NSCMason.shared.setDeviceScale(Float(UIScreen.main.scale))
+    NSCMason.shared.setDeviceScale(NSCMason.scale)
     super.viewDidLoad()
     // Add a simple demo picker at the top and the Mason body below it
     let demoPicker = UISegmentedControl(items: ["Web","Text","Grid","Gallery","HN","Pseudo","Nums","Squircle","Shadow","Display"])

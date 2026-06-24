@@ -1624,6 +1624,8 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
       val layers = parseBackgroundLayers(value)
       mBackground?.layers = layers.toMutableList()
+      isValueInitialized = true
+      (node.view as? android.view.View)?.invalidate()
     }
 
   var backgroundRepeat: String
@@ -3001,6 +3003,9 @@ class Style internal constructor(@Transient internal var node: Node) {
   // ============================================================
   internal var mBackdropFilter: CSSFilters.CSSFilter? = null
 
+  // Filters content BEHIND the view; unlike setRenderEffect, children stay sharp (API 31+).
+  internal var mBackdropHelper: BackdropHelper? = null
+
   var backdropFilter: String = ""
     set(value) {
       field = value
@@ -3015,20 +3020,25 @@ class Style internal constructor(@Transient internal var node: Node) {
   @android.annotation.SuppressLint("NewApi")
   private fun applyBackdropFilter() {
     val view = node.view as? android.view.View ?: return
-    val filter = mBackdropFilter
-    if (filter == null || filter.filters.isEmpty()) {
-      if (android.os.Build.VERSION.SDK_INT >= 31) {
-        view.setRenderEffect(null)
-      }
+
+    if (android.os.Build.VERSION.SDK_INT < 31) {
       view.invalidate()
       return
     }
 
-    if (android.os.Build.VERSION.SDK_INT >= 31) {
-      // Build a chained RenderEffect from ALL parsed filter functions,
-      // matching the same pipeline as FilterHelperV3 for regular `filter`.
-      view.setRenderEffect(filter.buildBackdropRenderEffect())
+    // Never apply the filter to the view's OWN output — that blurs children.
+    view.setRenderEffect(null)
+
+    val filter = mBackdropFilter
+    if (filter == null || filter.filters.isEmpty()) {
+      mBackdropHelper?.disable()
+      mBackdropHelper = null
+      view.invalidate()
+      return
     }
+
+    val helper = mBackdropHelper ?: BackdropHelper(view).also { mBackdropHelper = it }
+    helper.setFilter(filter)
     view.invalidate()
   }
 

@@ -3547,6 +3547,7 @@ declare module org {
 			export module masonkit {
 				export class NodeHelper {
 					public static class: java.lang.Class<org.nativescript.mason.masonkit.NodeHelper>;
+					public setTextDecoration(this_: globalAndroid.view.View, view: string): void;
 					public getGridAutoColumns(this_: globalAndroid.view.View): string;
 					public setGridColumnStart(this_: globalAndroid.view.View, view: string): void;
 					public getAlignSelf(this_: globalAndroid.view.View): org.nativescript.mason.masonkit.enums.AlignSelf;

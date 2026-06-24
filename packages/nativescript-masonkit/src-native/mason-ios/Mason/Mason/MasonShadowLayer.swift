@@ -45,7 +45,7 @@ class MasonShadowLayer: CALayer {
     masksToBounds = false
     isOpaque = false
     needsDisplayOnBoundsChange = true
-    contentsScale = UIScreen.main.scale
+    contentsScale = CGFloat(NSCMason.scale)
   }
 
   // Disable implicit CALayer animations so the shadow snaps with its item during

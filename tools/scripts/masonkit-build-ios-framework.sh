@@ -7,7 +7,7 @@ rm -rf ../platforms/ios || true
 mkdir -p ../platforms/ios
 
 echo "Build iOS"
-./build.sh
+INCLUDE_VISIONOS=1 ./build.sh
 #cd ..
 echo "Copy /dist/*.xcframework platforms/ios"
 

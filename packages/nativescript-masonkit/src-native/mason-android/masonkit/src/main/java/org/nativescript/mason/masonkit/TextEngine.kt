@@ -111,7 +111,11 @@ class TextEngine(val container: TextContainer) {
       }
     }
 
-  private var mIncludePadding: Boolean = true
+  // Web parity: browsers don't add Android's extra "font padding" (top/bottom
+  // metrics) to the line box — `line-height: normal` uses the font's recommended
+  // ascent/descent (~1.2×). includeFontPadding=true inflated lines to ~1.33×, so
+  // default it off to match the web/iOS line box.
+  private var mIncludePadding: Boolean = false
   var includePadding: Boolean
     get() {
       return mIncludePadding
@@ -358,8 +362,15 @@ class TextEngine(val container: TextContainer) {
     // width constraint so StaticLayout won't measure wider than the author
     // intended. Percent/Auto cases require context-dependent resolution
     // and are not handled here.
-
-    when (val msw = style.maxSize.width) {
+    //
+    // Skip this during the min-content pass (availableWidth == -1): min-content
+    // is the widest unbreakable word and is NOT reduced by `max-width`. Clamping
+    // here forces widthConstraint to the max-width, so the min-content branch
+    // below returns the wrapped line width (~max-width) instead of the widest
+    // word. A grid item then reports a min-content as large as its max-width,
+    // which becomes an `auto` track's base size — the track can no longer shrink
+    // to its container and overflows (e.g. a heading with `max-w-*` never wraps).
+    if (availableWidth != -1f) when (val msw = style.maxSize.width) {
       is Dimension.Points -> {
         val resolvedMax = msw.points.toInt()
         if (resolvedMax > 0) {
@@ -841,6 +852,47 @@ class TextEngine(val container: TextContainer) {
     }
 
     return builder.build()
+  }
+
+  /**
+   * Rebuild and cache a plain StaticLayout at the given content width. Used by
+   * onDraw after rotation, when Taffy reuses cached measure results so measure()
+   * never re-runs — leaving cachedStaticLayout null after onSizeChanged cleared
+   * it, which would drop drawing back to the platform's top-aligned TextView.
+   */
+  internal fun rebuildCachedStaticLayout(paint: TextPaint, contentWidth: Int): StaticLayout? {
+    if (contentWidth <= 0) return null
+    val text = (container as? android.widget.TextView)?.text as? Spannable ?: return null
+    if (text.isEmpty()) return null
+
+    val alignment = getLayoutAlignment()
+    val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      val heuristic = getTextDirectionHeuristic()
+      var builder = StaticLayout.Builder.obtain(text, 0, text.length, paint, contentWidth)
+        .setAlignment(alignment)
+        .setLineSpacing(0f, 1f)
+        .setIncludePad(includePadding)
+        .setTextDirection(heuristic as android.text.TextDirectionHeuristic)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        builder = builder.setUseLineSpacingFromFallbacks(true)
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        builder = if (style.resolvedTextAlign == TextAlign.Justify) {
+          builder.setJustificationMode(android.text.Layout.JUSTIFICATION_MODE_INTER_WORD)
+        } else {
+          builder.setJustificationMode(android.text.Layout.JUSTIFICATION_MODE_NONE)
+        }
+      }
+      builder.build()
+    } else {
+      StaticLayout(text, paint, contentWidth, alignment, 1f, 0f, includePadding)
+    }
+
+    if (container is TextView) {
+      container.cachedStaticLayout = layout
+      container.cachedStaticLayoutWidth = contentWidth
+    }
+    return layout
   }
 
   private fun collectAndCacheSegments(
@@ -1702,14 +1754,19 @@ class TextEngine(val container: TextContainer) {
     val lineHeight = container.style.resolvedLineHeight
     val lineType = container.style.resolvedLineHeightType
 
-    // Apply line height
-
+    // Resolve line-height to an absolute dip value (multiplier * font-size) and use
+    // the idempotent FixedLineHeightSpan. RelativeLineHeightSpan multiplies the
+    // already-modified metrics on each repeated chooseHeight() call -> exponential blowup.
     lineHeight.takeIf { it > 0 }?.let {
-      // 1
       if (lineType == StyleState.SET) {
         spannable.setSpan(FixedLineHeightSpan(it.toInt()), start, end, flags)
       } else {
-        spannable.setSpan(RelativeLineHeightSpan(it), start, end, flags)
+        val fontSizeDip = container.style.resolvedFontSize.takeIf { fs -> fs > 0 }
+          ?: Constants.DEFAULT_FONT_SIZE
+        val absolute = (it * fontSizeDip).toInt()
+        if (absolute > 0) {
+          spannable.setSpan(FixedLineHeightSpan(absolute), start, end, flags)
+        }
       }
     }
 

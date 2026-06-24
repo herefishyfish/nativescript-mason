@@ -1410,18 +1410,22 @@ class BorderRenderer(private val style: Style) {
   enum class Side { Left, Top, Right, Bottom }
 }
 
-private val lengthPercentageRegex = Regex("""^(-?\d+(?:\.\d+)?)(px|%|dip|em)?$""")
+private val lengthPercentageRegex = Regex("""^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(px|%|dip|em)?$""")
 
 // allow hex, simple names, and functional color forms like rgb(...), rgba(...), hsl(...)
 private val colorRegex = Regex("""^(#\w{3,8}|[a-zA-Z]+|(?:rgb|rgba|hsl|hsla|hsv|hsva)\([^)]*\))$""")
 
 fun parseLengthPercentage(value: String): LengthPercentage? {
   val match = lengthPercentageRegex.matchEntire(value.trim()) ?: return null
-  val num = match.groupValues[1].toFloatOrNull() ?: return null
+  val raw = match.groupValues[1].toFloatOrNull() ?: return null
+  // Clamp values that exceed a practical maximum (e.g. Float.MAX_VALUE from
+  // calc(infinity*1px) evaluated by NS's CSS parser) so cssRadiusScale()
+  // doesn't overflow when summing corner pairs.
+  val num = raw.coerceIn(-9999f, 9999f)
   val unit = match.groupValues.getOrNull(2)
   return when (unit) {
     "px" -> Points(num)
-    "%" -> Percent(num / 100f)
+    "%" -> Percent(raw / 100f)  // percentages don't overflow so use raw
     "dip" -> Points(num * Mason.shared.scale)
     else -> {
       return Points(num * Mason.shared.scale)

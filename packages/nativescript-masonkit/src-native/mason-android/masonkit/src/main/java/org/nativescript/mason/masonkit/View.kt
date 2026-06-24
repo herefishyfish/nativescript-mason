@@ -25,8 +25,11 @@ import org.nativescript.mason.masonkit.enums.GridAutoFlow
 import org.nativescript.mason.masonkit.enums.JustifyContent
 import org.nativescript.mason.masonkit.enums.JustifyItems
 import org.nativescript.mason.masonkit.enums.JustifySelf
+import org.nativescript.mason.masonkit.enums.ListStyleType
 import org.nativescript.mason.masonkit.enums.Overflow
 import org.nativescript.mason.masonkit.enums.Position
+import org.nativescript.mason.masonkit.enums.TextType
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 open class View @JvmOverloads constructor(
@@ -165,12 +168,103 @@ open class View @JvmOverloads constructor(
 
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    // so they can extend beyond child bounds
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
+    // Draw children's outset box shadows at parent level so they can extend
+    // beyond child bounds — after this view's own background/border (see
+    // ViewUtils.render) so an opaque parent background can't paint over them.
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) { c ->
+      // Draw list markers for HTML <li> children before drawing children,
+      // so markers appear in the parent's padding zone (left of the content area).
+      drawListItemMarkers(c)
+      super.dispatchDraw(c)
+    }
+  }
 
-    ViewUtils.dispatchDraw(this, canvas, style) {
-      super.dispatchDraw(it)
+  private fun resolveListStyleTypeFor(child: TextView): Byte {
+    if (style.isValueInitialized) {
+      val isSet = style.values.get(StyleKeys.LIST_STYLE_TYPE_STATE) != StyleState.INHERIT
+      if (isSet) return style.values.get(StyleKeys.LIST_STYLE_TYPE)
+    }
+    if (child.style.isValueInitialized) {
+      val isSet = child.style.values.get(StyleKeys.LIST_STYLE_TYPE_STATE) != StyleState.INHERIT
+      if (isSet) return child.style.values.get(StyleKeys.LIST_STYLE_TYPE)
+    }
+    return ListStyleType.Disc.value
+  }
+
+  private fun drawListItemMarkers(canvas: Canvas) {
+    var liIndex = 0
+    for (i in 0 until childCount) {
+      val child = getChildAt(i) as? TextView ?: continue
+      if (child.type != TextType.Li) continue
+      drawMarkerForListItem(canvas, child, liIndex++)
+    }
+  }
+
+  private fun drawMarkerForListItem(canvas: Canvas, child: TextView, position: Int) {
+    val listTypeByte = resolveListStyleTypeFor(child)
+    if (listTypeByte == ListStyleType.None.value) return
+
+    val basePaint = child.style.paint
+    val markerPaint = android.graphics.Paint(basePaint).apply {
+      color = child.style.resolvedColor
+      style = android.graphics.Paint.Style.FILL
+      strokeWidth = 0f
+    }
+
+    val fm = basePaint.fontMetrics
+    val markerSize = basePaint.textSize * 0.35f
+    val gap = basePaint.textSize * 0.5f
+
+    // Centre the marker on the first line's box midpoint (text sits centred in
+    // the line-height box) — not the bare font baseline, which drifts off-line.
+    val fontLineHeight = fm.descent - fm.ascent
+    val lhVal = child.style.resolvedLineHeight
+    val lhType = child.style.resolvedLineHeightType
+    val lineBox = when {
+      lhType == StyleState.SET -> max(lhVal * basePaint.density, fontLineHeight)
+      lhVal > 0f -> max(lhVal * basePaint.textSize, fontLineHeight)
+      else -> fontLineHeight
+    }
+    val cy = child.top.toFloat() + lineBox / 2f
+    // Baseline of the first line derived from the centred line box (fm.ascent is
+    // negative, fm.descent positive on Android).
+    val baselineY = cy - (fm.ascent + fm.descent) / 2f
+
+    // The marker shape's right edge sits at child.left - gap.
+    val markerRight = child.left.toFloat() - gap
+
+    when (listTypeByte) {
+      ListStyleType.Disc.value -> {
+        val r = markerSize / 2f
+        canvas.drawCircle(markerRight - r, cy, r, markerPaint)
+      }
+
+      ListStyleType.Circle.value -> {
+        val r = markerSize / 2f
+        markerPaint.style = android.graphics.Paint.Style.STROKE
+        markerPaint.strokeWidth = max(1f, basePaint.textSize * 0.08f)
+        canvas.drawCircle(markerRight - r, cy, r, markerPaint)
+      }
+
+      ListStyleType.Square.value -> {
+        val half = markerSize / 2f
+        val cx = markerRight - half
+        canvas.drawRect(cx - half, cy - half, cx + half, cy + half, markerPaint)
+      }
+
+      ListStyleType.Decimal.value -> {
+        val text = "${position + 1}."
+        val textWidth = basePaint.measureText(text)
+        canvas.drawText(text, markerRight - textWidth, baselineY, markerPaint)
+      }
+
+      ListStyleType.Custom.value -> {
+        val text = "•"
+        val textWidth = basePaint.measureText(text)
+        canvas.drawText(text, markerRight - textWidth, baselineY, markerPaint)
+      }
     }
   }
 
@@ -190,6 +284,8 @@ open class View @JvmOverloads constructor(
 
   override fun onChange(low: Long, high: Long) {
     Node.invalidateDescendantTextViews(node, low, high)
+    // Redraw self so parent-drawn markers (list items in padding zone) are updated.
+    invalidate()
   }
 
 //  fun setStyleFromString(style: String) {
