@@ -42,12 +42,11 @@ export class Tree {
     this._base = base ?? new org.nativescript.mason.masonkit.Mason();
   }
 
-  static {
-    this._tree = new Tree(org.nativescript.mason.masonkit.Mason.getShared());
-    this._tree._base.setDeviceScale(Screen.mainScreen.scale);
-  }
-
   static get instance() {
+    if (!Tree._tree) {
+      Tree._tree = new Tree(org.nativescript.mason.masonkit.Mason.getShared());
+      Tree._tree._base.setDeviceScale(Screen.mainScreen.scale);
+    }
     return Tree._tree;
   }
 

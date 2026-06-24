@@ -5,15 +5,14 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Looper
 import android.util.Log
-import android.view.View
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import org.nativescript.fontmanager.FontFaceSet
 import org.nativescript.mason.masondemo.databinding.ActivityMainBinding
 import org.nativescript.mason.masonkit.IdleHandler
 import org.nativescript.mason.masonkit.Mason
-import org.nativescript.mason.masonkit.enums.TextType
 
 class MainActivity : AppCompatActivity() {
   private lateinit var binding: ActivityMainBinding
@@ -22,6 +21,7 @@ class MainActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
     // Ensure native Mason state is cleared on app start to avoid stale state
     mason.clear()
+    FontFaceSet.instance.load(this, "16px sans-serif", null) { a, b -> }
     enableEdgeToEdge()
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
       startActivity(intent)
     }
 
-      binding.minimalRepro.setOnClickListener {
+    binding.minimalRepro.setOnClickListener {
       val intent = Intent(this, MinimalReproActivity::class.java)
       startActivity(intent)
     }

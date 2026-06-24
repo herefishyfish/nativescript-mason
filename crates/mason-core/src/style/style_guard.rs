@@ -308,8 +308,8 @@ impl<'a> GridContainerStyle for StyleGuard<'a> {
     #[inline(always)]
     fn grid_align_content(&self, axis: AbstractAxis) -> AlignContent {
         match axis {
-            AbstractAxis::Inline => self.get_justify_content().unwrap_or(AlignContent::Stretch),
-            AbstractAxis::Block => self.get_align_content().unwrap_or(AlignContent::Stretch),
+            AbstractAxis::Inline => self.get_align_content().unwrap_or(JustifyContent::STRETCH),
+            AbstractAxis::Block => self.get_align_content().unwrap_or(AlignContent::STRETCH),
         }
     }
 }

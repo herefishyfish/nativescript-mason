@@ -198,22 +198,30 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
         }
       }
 
-      // Apply letter spacing
-      attributes.letterSpacing?.takeIf { it > 0 }?.let { spacing ->
+      // Apply letter spacing. Use LetterSpacingSpan (paint.letterSpacing, EM units)
+      // which adds tracking between glyphs; ScaleXSpan was wrong — it scales each
+      // glyph's width and visibly stretches the text.
+      attributes.letterSpacing?.takeIf { it != 0f }?.let { spacing ->
         spannable.setSpan(
-          android.text.style.ScaleXSpan(1f + spacing), start, end, flags
+          Spans.LetterSpacingSpan(spacing), start, end, flags
         )
       }
 
-      // Apply line height
+      // Resolve line-height to absolute (multiplier * font-size) + idempotent
+      // FixedLineHeightSpan; RelativeLineHeightSpan compounds on repeated
+      // chooseHeight() calls into an exponential blowup.
       attributes.lineHeight?.let { lineHeight ->
         val type = attributes.lineHeightType ?: 0
         lineHeight.takeIf { it > 0 }?.let {
-          // 1 px/dip
           if (type == StyleState.SET) {
             spannable.setSpan(FixedLineHeightSpan(it.toInt()), start, end, flags)
           } else {
-            spannable.setSpan(RelativeLineHeightSpan(it), start, end, flags)
+            val fontSizeDip = (attributes.fontSize?.takeIf { fs -> fs > 0 }
+              ?: Constants.DEFAULT_FONT_SIZE).toFloat()
+            val absolute = (it * fontSizeDip).toInt()
+            if (absolute > 0) {
+              spannable.setSpan(FixedLineHeightSpan(absolute), start, end, flags)
+            }
           }
         }
       }
@@ -221,9 +229,9 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       // Apply typeface
       attributes.font?.let { fontFace ->
         fontFace.font?.let { typeface ->
-          val isBold = fontFace.fontDescriptors.weight.isBold
+          val isBold = fontFace.weight.weight >= 600
           val isItalic =
-            fontFace.fontDescriptors.style.fontStyle == android.graphics.Typeface.ITALIC
+            fontFace.style.fontStyle == android.graphics.Typeface.ITALIC
           spannable.setSpan(Spans.TypefaceSpan(typeface, isBold, isItalic), start, end, flags)
         }
       }

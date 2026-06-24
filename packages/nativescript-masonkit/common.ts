@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
-import { AddChildFromBuilder, CustomLayoutView, View as NSView, ViewBase as NSViewBase, getViewById, Property, widthProperty, heightProperty, View, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength, marginLeftProperty, marginRightProperty, marginTopProperty, marginBottomProperty, minWidthProperty, minHeightProperty, fontSizeProperty, fontWeightProperty, fontStyleProperty, colorProperty, Color, lineHeightProperty, letterSpacingProperty, textAlignmentProperty, borderLeftWidthProperty, borderTopWidthProperty, borderRightWidthProperty, borderBottomWidthProperty, backgroundColorProperty, paddingLeftProperty, paddingRightProperty, paddingTopProperty, paddingBottomProperty, zIndexProperty, PseudoClassHandler } from '@nativescript/core';
+import { AddChildFromBuilder, CustomLayoutView, View as NSView, ViewBase as NSViewBase, getViewById, Property, widthProperty, heightProperty, View, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength, marginLeftProperty, marginRightProperty, marginTopProperty, marginBottomProperty, minWidthProperty, minHeightProperty, fontSizeProperty, fontWeightProperty, fontStyleProperty, colorProperty, Color, lineHeightProperty, letterSpacingProperty, textAlignmentProperty, textDecorationProperty, borderLeftWidthProperty, borderTopWidthProperty, borderRightWidthProperty, borderBottomWidthProperty, backgroundColorProperty, paddingLeftProperty, paddingRightProperty, paddingTopProperty, paddingBottomProperty, zIndexProperty, PseudoClassHandler } from '@nativescript/core';
 import { Display, Gap, GridAutoFlow, JustifyItems, JustifySelf, Length, LengthAuto, Overflow, Position, BoxSizing, VerticalAlign, FlexDirection, Float, Clear } from '.';
 import { alignItemsProperty, alignSelfProperty, flexDirectionProperty, flexGrowProperty, flexShrinkProperty, flexWrapProperty, justifyContentProperty } from '@nativescript/core/ui/layouts/flexbox-layout';
 import { _forceStyleUpdate, _setGridAutoRows } from './utils';
@@ -57,13 +57,17 @@ import {
   verticalAlignProperty,
   boxShadowProperty,
   transformProperty,
+  borderColorProperty,
+  backgroundImageProperty,
+  listStyleTypeProperty,
+  listStylePositionProperty,
 } from './properties';
-import { isMasonView_, isTextChild_, isText_, isPlaceholder_, text_, native_, textNode_, textNodeIndex_, pseudoStyles_ } from './symbols';
+import { isMasonView_, isTextChild_, isText_, isPlaceholder_, text_, native_, textNode_, textNodeIndex_, textNodeProxied_, pseudoStyles_ } from './symbols';
 import { Tree } from './tree';
 import { TextNode } from './text-node';
 import { compile } from './pseudo';
 
-declare const kotlin;
+declare const kotlin: any;
 
 function getViewStyle(view: WeakRef<NSViewBase> | WeakRef<TextBase>): MasonStyle {
   const ret: NSViewBase & { _styleHelper: MasonStyle } = (__ANDROID__ ? view.get() : view.deref()) as never;
@@ -147,6 +151,7 @@ declare module '@nativescript/core/ui/styling/style' {
     display: Display;
     position: Position;
     flexDirection: FlexDirection;
+    // @ts-ignore
     flex: string | 'auto' | 'none' | number | 'initial';
     maxWidth: LengthAuto;
     maxHeight: LengthAuto;
@@ -160,6 +165,7 @@ declare module '@nativescript/core/ui/styling/style' {
     rowGap: Length;
     columnGap: Length;
     aspectRatio: number;
+    // @ts-ignore
     flexFlow: string;
     justifyItems: JustifyItems;
     justifySelf: JustifySelf;
@@ -193,9 +199,6 @@ declare module '@nativescript/core/ui/styling/style' {
 }
 
 export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
-  readonly android: org.nativescript.mason.masonkit.View;
-  readonly ios: MasonUIView;
-
   _children: (NSView | { text?: string } | TextNode)[] = [];
   [isMasonView_] = false;
 
@@ -577,21 +580,71 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     }
   }
 
+  insertBefore(child: any, reference: any) {
+    if (reference === null || reference === undefined) {
+      if (child && child.nodeType === 3) {
+        this._updateTextNode(child, { type: 'add', index: -1, isBreak: child.nodeName === 'br' });
+        return;
+      }
+      this.addChild(child);
+      return;
+    }
+    let atIndex = this._children.indexOf(reference);
+    if (atIndex === -1) {
+      // reference may be a DOM text node; look it up via its native text-node back-link
+      const nativeTextNode = reference[textNode_];
+      if (nativeTextNode) {
+        atIndex = (this._children as any[]).findIndex((c: any) => c && c[textNode_] === nativeTextNode);
+      }
+      if (atIndex === -1) {
+        throw new Error('NotFoundError');
+      }
+    }
+
+    if (child && child.nodeType === 3) {
+      this._updateTextNode(child, { type: 'insert', index: atIndex, isBreak: child.nodeName === 'br' });
+      return;
+    }
+
+    this.insertChild(child, atIndex);
+  }
+
+  // Native child index for an insertion at `atIndex`: counts only the
+  // preceding siblings that already exist in the native tree. Text nodes and
+  // placeholders attach natively right away, but NativeScript views attach
+  // lazily (on `loaded`), so a raw `_children` index can run ahead of the
+  // native children list and push the insert past the end.
+  private _nativeIndexFor(atIndex: number) {
+    let index = 0;
+    const max = Math.min(atIndex, this._children.length);
+    for (let i = 0; i < max; i++) {
+      const c: any = this._children[i];
+      if (!c) {
+        continue;
+      }
+      if (c[textNode_] || c instanceof TextNode || text_ in c || (c[isPlaceholder_] && c[native_]) || c._isMasonChild) {
+        index++;
+      }
+    }
+    return index;
+  }
+
   insertChild(child: any, atIndex: number) {
     if (child && child[isPlaceholder_] && child._view) {
-      this._children[atIndex] = child;
+      const nativeIndex = this._nativeIndexFor(atIndex);
+      this._children.splice(atIndex, 0, child);
       if (this[isText_]) {
         child[isTextChild_] = true;
       }
 
       if (__ANDROID__) {
         //@ts-ignore
-        this._view.addChildAt(child._view, atIndex);
+        this._view.addChildAt(child._view, nativeIndex);
       }
 
       if (__APPLE__) {
         //@ts-ignore
-        this._view.mason_addChildAtNode(child._view, atIndex);
+        this._view.mason_addChildAtElement(child._view, nativeIndex);
       }
     } else if (child instanceof NSView) {
       this._children.splice(atIndex, 0, child);
@@ -616,7 +669,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
 
       if (__APPLE__) {
         //@ts-ignore
-        this._view.mason_replaceChildAtNode(child._view, atIndex);
+        this._view.mason_replaceChildAtElement(child._view, atIndex);
       }
     } else if (child instanceof NSView) {
       this._children[atIndex] = child;
@@ -648,10 +701,69 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
   }
 
   removeChild(child: any) {
+    // Placeholder (e.g. Br): it was attached straight to the mason tree via the
+    // native element APIs (never `_addView`-ed), so `_removeView` would throw.
+    // Remove the native node directly instead.
+    if (child && child[isPlaceholder_] && child._view) {
+      const index = this._children.indexOf(child);
+      if (index > -1) {
+        this._children.splice(index, 1);
+        if (__ANDROID__) {
+          //@ts-ignore
+          this._view.removeChild(child._view.node);
+        }
+        if (__APPLE__) {
+          //@ts-ignore
+          this._view.mason_removeChildNode(child._view.node);
+        }
+        child[isTextChild_] = false;
+        (this as any).requestLayout?.();
+      }
+      return;
+    }
+    // Framework text node: it isn't stored in `_children` directly — its native
+    // `MasonTextNode` is stamped on it as `child[textNode_]`. Use that to locate
+    // and remove the matching native node from the mason tree. NativeScript has
+    // no real text nodes (frameworks just set `.text`), so this is what lets a
+    // framework's `removeChild(textNode)` actually drop the mason node.
+    if (child && child[textNode_]) {
+      const native = child[textNode_];
+      const tnIndex = this._children.findIndex((c: any) => c && c[textNode_] === native);
+      if (tnIndex > -1) {
+        this._nativeRemoveChildNode(native, tnIndex);
+        this._children.splice(tnIndex, 1);
+        // Drop the proxy binding so a later re-adopt re-installs cleanly.
+        child[textNodeProxied_] = false;
+        child[textNode_] = undefined;
+        (this as any).requestLayout?.();
+        return;
+      }
+    }
+
     const index = this._children.indexOf(child);
     if (index > -1) {
       this._children.splice(index, 1);
       this._removeView(child);
+    }
+  }
+
+  // Remove the native node directly when supported (no index drift), falling
+  // back to index-based removal on native builds that predate the by-node API.
+  private _nativeRemoveChildNode(node: any, index: number) {
+    //@ts-ignore
+    const view = this._view;
+    if (!view) return;
+    if (__ANDROID__) {
+      //@ts-ignore
+      if (typeof view.removeChild === 'function') view.removeChild(node);
+      //@ts-ignore
+      else view.removeChildAt(index);
+    }
+    if (__APPLE__) {
+      //@ts-ignore
+      if (view.mason_removeChildNode) view.mason_removeChildNode(node);
+      //@ts-ignore
+      else view.mason_removeChildAt?.(index);
     }
   }
 
@@ -695,6 +807,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     }
   }
 
+  // @ts-ignore
   set flex(value) {
     this.style.flex = value;
   }
@@ -747,6 +860,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
       if (__APPLE__) {
         (node[textNode_] as MasonTextNode).data = text;
       }
+      this._installTextNodeProxy(node);
       return node[textNode_];
     }
 
@@ -758,7 +872,64 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
       textNode = MasonTextNode.alloc().initWithMasonDataAttributes(Tree.instance.native as never, text, null);
     }
     node[textNode_] = textNode;
+    // Back-reference from the native node to the framework text node.
+    textNode['__raw__'] = node;
+    this._installTextNodeProxy(node);
     return textNode;
+  }
+
+  /**
+   * Bind a framework text node directly to its backing native `MasonTextNode`.
+   *
+   * Once mason adopts a text node (any framework — dominative/undom, Vue, React,
+   * Angular) we redefine its `data` accessor so future in-place writes
+   * (`node.data = …`, `node.nodeValue = …`, `node.textContent = …`, all of which
+   * funnel through `data` on a CharacterData node) flow straight through to the
+   * native node and trigger a relayout. The original accessor is still invoked so
+   * the framework's own bookkeeping (undom's `__undom_data`, change callbacks)
+   * stays intact. This is the framework-agnostic counterpart to the structural
+   * reconcile in `textProperty.setNative` — structure is handled there, granular
+   * text edits are handled here, with no per-framework glue.
+   */
+  private _installTextNodeProxy(node: any) {
+    if (!node || node[textNodeProxied_]) return;
+
+    // Locate the inherited `data` accessor (undom CharacterData and friends define
+    // it on a prototype). If the node isn't CharacterData-like there's nothing to
+    // proxy — the structural path already covers it.
+    let proto = Object.getPrototypeOf(node);
+    let dataDesc: PropertyDescriptor | undefined;
+    while (proto && !dataDesc) {
+      dataDesc = Object.getOwnPropertyDescriptor(proto, 'data');
+      proto = Object.getPrototypeOf(proto);
+    }
+    if (!dataDesc || !dataDesc.set) return;
+
+    node[textNodeProxied_] = true;
+    const owner = this;
+
+    Object.defineProperty(node, 'data', {
+      configurable: true,
+      enumerable: false,
+      get() {
+        return dataDesc.get ? dataDesc.get.call(this) : this.__undom_data;
+      },
+      set(value: any) {
+        // Preserve the framework's own bookkeeping first.
+        dataDesc.set.call(this, value);
+
+        // Push through to the native node (read `textNode_` lazily so we always
+        // target the current backing node even if it was re-created).
+        const nativeTextNode = this[textNode_];
+        if (nativeTextNode) {
+          const data = value == null ? '' : `${value}`;
+          if (__ANDROID__) (nativeTextNode as org.nativescript.mason.masonkit.TextNode).setData(data);
+          if (__APPLE__) (nativeTextNode as MasonTextNode).data = data;
+          // Re-measure/layout so the new text is reflected on screen.
+          (owner as any).requestLayout?.();
+        }
+      },
+    });
   }
 
   private _nativeAddChild(textNode: any, index: number) {
@@ -793,7 +964,7 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
       type: 'add' | 'replace' | 'insert';
       index?: number;
       isBreak?: boolean;
-    } = null,
+    } | null = null,
   ) {
     const text = node.text ?? node.data ?? '';
     const textNode = this._createOrUpdateNativeTextNode(node, text);
@@ -849,7 +1020,19 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
           const node = nodes[i];
           const isTextNode = node.nodeType === 'text' || node.nodeType === 3;
           if (isTextNode) {
-            const type = i === 0 && nodes.length === 1 && !this._children.length ? 'add' : 'replace';
+            let type: 'add' | 'replace' | 'insert' = i === 0 && nodes.length === 1 && !this._children.length ? 'add' : 'replace';
+
+            if (type === 'replace') {
+              const toReplace = this._children[i] as any;
+              // Replace in place only if this slot already holds THIS framework
+              // node (its native node back-references it via '__raw__'); otherwise
+              // a different node lives here, so shift via insert instead of
+              // overwriting it.
+              if (!toReplace || toReplace[textNode_]?.['__raw__'] !== node) {
+                type = 'insert';
+              }
+            }
+
             this._updateTextNode(node, { type, index: i, isBreak: node.nodeName === 'br' });
           }
         }
@@ -1095,6 +1278,57 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     if (style) {
       // @ts-ignore
       style.textAlignment = value;
+    }
+  }
+
+  [textDecorationProperty.setNative](value) {
+    // @ts-ignore
+    const style = this._styleHelper;
+    if (style) {
+      style.textDecoration = String(value);
+    }
+  }
+
+  // @ts-ignore
+  [borderColorProperty.setNative](value: any) {
+    if (__ANDROID__) {
+      // @ts-ignore
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setBorderColor(this.nativeView, String(value));
+    } else if (__APPLE__) {
+      // @ts-ignore
+      (this.nativeView as any).style.setBorderColor(String(value));
+    }
+  }
+
+  // @ts-ignore
+  [backgroundImageProperty.setNative](value: any) {
+    // @ts-ignore
+    const style = this._styleHelper;
+    if (style) {
+      // @ts-ignore
+      style.backgroundImage = String(value);
+    }
+  }
+
+  // @ts-ignore
+  [listStyleTypeProperty.setNative](value: any) {
+    if (__ANDROID__) {
+      // @ts-ignore
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setListStyleType(this.nativeView, String(value));
+    } else if (__APPLE__) {
+      // @ts-ignore
+      (this.nativeView as any).style.applyListStyleType(String(value));
+    }
+  }
+
+  // @ts-ignore
+  [listStylePositionProperty.setNative](value: any) {
+    if (__ANDROID__) {
+      // @ts-ignore
+      org.nativescript.mason.masonkit.NodeHelper.getShared().setListStylePosition(this.nativeView, String(value));
+    } else if (__APPLE__) {
+      // @ts-ignore
+      (this.nativeView as any).style.applyListStylePosition(String(value));
     }
   }
 
@@ -2003,7 +2237,7 @@ export class Event {
       return this[native_]?.timeStamp;
     }
 
-    return false;
+    return 0;
   }
 
   get defaultPrevented() {
@@ -2091,9 +2325,18 @@ export class Event {
     return this[native_]?.type;
   }
 
+  set type(_: string) {}
+
   get target(): any {
     return this['_target'];
   }
+
+  set target(_: any) {}
+  set currentTarget(_: any) {}
+  set bubbles(_: boolean) {}
+  set cancelable(_: boolean) {}
+  set timeStamp(_: number) {}
+  set defaultPrevented(_: boolean) {}
 }
 
 export class InputEvent extends Event {

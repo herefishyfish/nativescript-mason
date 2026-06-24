@@ -1,16 +1,14 @@
 use crate::style::utils::{set_style_data_i32, set_style_data_u32};
 use crate::style::{DisplayMode, StyleKeys};
-use crate::utils::{display_mode_to_enum, display_to_enum, text_align_to_enum};
+use crate::utils::{display_mode_to_enum, display_to_enum};
 use crate::Style;
 use crate::PREFLIGHT_ENABLED;
-#[cfg(target_vendor = "apple")]
-use objc2::AllocAnyThread;
 #[cfg(target_vendor = "apple")]
 use objc2_foundation::NSMutableData;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
-use taffy::{Display, TextAlign};
+use taffy::Display;
 
 // always keep aligned 4
 pub const STYLE_BUFFER_SIZE: usize = 596;

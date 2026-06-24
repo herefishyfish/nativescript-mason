@@ -237,14 +237,20 @@ public class HTMLParser: NSObject {
     let element: MasonElement
 
     switch name {
-    // Container elements
-    case "div", "section", "header", "footer", "article", "main", "nav", "aside":
+    // Container / block-level elements
+    case "div", "section", "header", "footer", "article", "main", "nav", "aside",
+         "figure", "figcaption", "address", "details", "summary", "hgroup",
+         "dl", "dt", "dd", "form", "fieldset", "picture", "hr":
       element = mason.createView()
 
     // Text elements
     case "p":
       element = mason.createTextView(type: .P)
-    case "span":
+    // Inline / phrasing text elements share an inline (span) box so they flow
+    // within the surrounding line instead of breaking it.
+    case "span", "small", "mark", "sub", "sup", "u", "s", "strike", "del", "ins",
+         "abbr", "cite", "q", "dfn", "kbd", "samp", "var", "time", "output",
+         "data", "bdi", "bdo", "big", "tt", "label", "ruby", "wbr":
       element = mason.createTextView(type: .Span)
     case "code":
       element = mason.createTextView(type: .Code)
@@ -303,6 +309,10 @@ public class HTMLParser: NSObject {
       let inputType = mapInputType(attributes["type"])
       element = mason.createInput(inputType)
 
+    // Multi-line text input
+    case "textarea":
+      element = mason.createTextArea()
+
     // Button
     case "button":
       element = mason.createButton()
@@ -356,6 +366,9 @@ public class HTMLParser: NSObject {
       case "grid": style.display = .Grid
       case "block": style.display = .Block
       case "inline": style.display = .Inline
+      case "inline-block": style.display = .InlineBlock
+      case "inline-flex": style.display = .InlineFlex
+      case "inline-grid": style.display = .InlineGrid
       case "none": style.display = .None
       default: break
       }
@@ -415,7 +428,13 @@ public class HTMLParser: NSObject {
       if let v = Float(value) { style.flexShrink = v }
 
     case "gap":
-      if let v = parseDimension(value) {
+      // `gap` accepts one value (both axes) or two (`row-gap column-gap`).
+      let gapTokens = value.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+      if gapTokens.count >= 2,
+         let row = parseDimension(gapTokens[0]),
+         let column = parseDimension(gapTokens[1]) {
+        style.gap = MasonSize(row, column)
+      } else if let v = parseDimension(value) {
         style.gap = MasonSize(v, v)
       }
 
@@ -449,7 +468,17 @@ public class HTMLParser: NSObject {
       if let v = parseDimensionAuto(value) { style.maxWidth = v }
     case "max-height":
       if let v = parseDimensionAuto(value) { style.maxHeight = v }
-
+      
+    case "border":
+      style.mBorderRender.parseBorderShorthand(value)
+    case "border-left":
+      style.mBorderRender.parseBorderSideShorthand(.left, value)
+    case "border-right":
+      style.mBorderRender.parseBorderSideShorthand(.right, value)
+    case "border-top":
+      style.mBorderRender.parseBorderSideShorthand(.top, value)
+    case "border-bottom":
+      style.mBorderRender.parseBorderSideShorthand(.bottom, value)
     case "padding":
       if let v = parseDimension(value) {
         style.padding = MasonRect(v, v, v, v)
@@ -484,12 +513,13 @@ public class HTMLParser: NSObject {
       }
 
     case "overflow":
-      switch value {
-      case "visible": style.overflow = MasonPoint(.Visible, .Visible)
-      case "hidden": style.overflow = MasonPoint(.Hidden, .Hidden)
-      case "scroll": style.overflow = MasonPoint(.Scroll, .Scroll)
-      default: break
+      if let o = parseOverflow(value) {
+        style.overflow = MasonPoint(o, o)
       }
+    case "overflow-x":
+      if let o = parseOverflow(value) { style.overflowX = o }
+    case "overflow-y":
+      if let o = parseOverflow(value) { style.overflowY = o }
 
     case "text-align":
       switch value {
@@ -500,6 +530,230 @@ public class HTMLParser: NSObject {
       default: break
       }
 
+    // MARK: Additional flex / grid alignment
+
+    case "align-content":
+      switch value {
+      case "flex-start", "start": style.alignContent = .Start
+      case "flex-end", "end": style.alignContent = .End
+      case "center": style.alignContent = .Center
+      case "stretch": style.alignContent = .Stretch
+      case "space-between": style.alignContent = .SpaceBetween
+      case "space-around": style.alignContent = .SpaceAround
+      case "space-evenly": style.alignContent = .SpaceEvenly
+      case "normal": style.alignContent = .Normal
+      default: break
+      }
+
+    case "justify-items":
+      switch value {
+      case "flex-start", "start": style.justifyItems = .Start
+      case "flex-end", "end": style.justifyItems = .End
+      case "center": style.justifyItems = .Center
+      case "stretch": style.justifyItems = .Stretch
+      case "baseline": style.justifyItems = .Baseline
+      case "normal": style.justifyItems = .Normal
+      default: break
+      }
+
+    case "justify-self":
+      switch value {
+      case "flex-start", "start": style.justifySelf = .Start
+      case "flex-end", "end": style.justifySelf = .End
+      case "center": style.justifySelf = .Center
+      case "stretch": style.justifySelf = .Stretch
+      case "baseline": style.justifySelf = .Baseline
+      case "normal": style.justifySelf = .Normal
+      default: break
+      }
+
+    case "flex":
+      applyFlexShorthand(value, to: style)
+    case "flex-basis":
+      if let v = parseDimensionAuto(value) { style.flexBasis = v }
+
+    case "row-gap":
+      if let v = parseDimension(value) { style.gap = MasonSize(v, style.gap.height) }
+    case "column-gap":
+      if let v = parseDimension(value) { style.gap = MasonSize(style.gap.width, v) }
+
+    // MARK: Positioning
+
+    case "inset":
+      applyInsetShorthand(value, to: style)
+    case "top":
+      if let v = parseLengthPercentageAuto(value) { style.topInset = v }
+    case "right":
+      if let v = parseLengthPercentageAuto(value) { style.rightInset = v }
+    case "bottom":
+      if let v = parseLengthPercentageAuto(value) { style.bottomInset = v }
+    case "left":
+      if let v = parseLengthPercentageAuto(value) { style.leftInset = v }
+
+    case "aspect-ratio":
+      style.aspectRatio = parseAspectRatio(value)
+
+    case "box-sizing":
+      switch value {
+      case "border-box": style.boxSizing = .BorderBox
+      case "content-box": style.boxSizing = .ContentBox
+      default: break
+      }
+
+    case "direction":
+      switch value {
+      case "ltr": style.direction = .LTR
+      case "rtl": style.direction = .RTL
+      case "inherit": style.direction = .Inherit
+      default: break
+      }
+
+    // MARK: Grid
+
+    case "grid-template-columns": style.gridTemplateColumns = value
+    case "grid-template-rows": style.gridTemplateRows = value
+    case "grid-template-areas": style.gridTemplateAreas = value
+    case "grid-auto-rows": style.gridAutoRows = value
+    case "grid-auto-columns": style.gridAutoColumns = value
+    case "grid-auto-flow":
+      switch value {
+      case "row": style.gridAutoFlow = .Row
+      case "column": style.gridAutoFlow = .Column
+      case "row dense", "dense row", "dense": style.gridAutoFlow = .RowDense
+      case "column dense", "dense column": style.gridAutoFlow = .ColumnDense
+      default: break
+      }
+    case "grid-column": style.gridColumn = value
+    case "grid-row": style.gridRow = value
+    case "grid-area": style.gridArea = value
+    case "grid-column-start": style.gridColumnStart = value
+    case "grid-column-end": style.gridColumnEnd = value
+    case "grid-row-start": style.gridRowStart = value
+    case "grid-row-end": style.gridRowEnd = value
+
+    // MARK: Visual (pass-through CSS string parsers)
+
+    case "border-radius": style.borderRadius = value
+    case "corner-shape": style.cornerShape = value
+    case "box-shadow": style.boxShadow = value
+    case "text-shadow": style.textShadow = value
+    case "filter": style.filter = value
+    case "backdrop-filter": style.backdropFilter = value
+    case "transform": style.transform = value
+    case "background": style.background = value
+    case "background-image": style.backgroundImage = value
+    case "background-repeat": style.backgroundRepeat = value
+    case "background-position": style.backgroundPosition = value
+    case "background-size": style.backgroundSize = value
+
+    case "z-index":
+      if let v = Int32(value) { style.zIndex = v }
+
+    case "float":
+      switch value {
+      case "none": style.float = .None
+      case "left": style.float = .Left
+      case "right": style.float = .Right
+      default: break
+      }
+
+    case "clear":
+      switch value {
+      case "none": style.clear = .None
+      case "left": style.clear = .Left
+      case "right": style.clear = .Right
+      case "both": style.clear = .Both
+      default: break
+      }
+
+    case "object-fit":
+      switch value {
+      case "fill": style.objectFit = .Fill
+      case "contain": style.objectFit = .Contain
+      case "cover": style.objectFit = .Cover
+      case "none": style.objectFit = .None
+      case "scale-down": style.objectFit = .ScaleDown
+      default: break
+      }
+
+    case "list-style-type": style.applyListStyleType(value)
+    case "list-style-position": style.applyListStylePosition(value)
+
+    // MARK: Text / font
+
+    case "font-family":
+      style.fontFamily = value
+    case "font-style":
+      switch value {
+      case "italic": style.setFontStyle(.Italic, 0)
+      case "oblique": style.setFontStyle(.Oblique, 0)
+      case "normal": style.setFontStyle(.Normal, 0)
+      default: break
+      }
+    case "line-height":
+      if value != "normal", let v = parseFloatValue(value) { style.lineHeight = v }
+    case "letter-spacing":
+      if value == "normal" {
+        style.letterSpacing = 0
+      } else if let v = parseFloatValue(value) {
+        style.letterSpacing = v
+      }
+    case "font-variant-numeric":
+      style.fontVariantNumericString = value
+
+    case "text-decoration", "text-decoration-line":
+      // The shorthand may carry color/style too; the line keyword is handled here
+      // and the dedicated longhands below cover the rest.
+      style.setTextDecoration(firstToken(value))
+    case "text-decoration-color":
+      style.setDecorationColor(css: value)
+
+    case "text-transform":
+      switch value {
+      case "none": style.textTransform = .None
+      case "capitalize": style.textTransform = .Capitalize
+      case "uppercase": style.textTransform = .Uppercase
+      case "lowercase": style.textTransform = .Lowercase
+      default: break
+      }
+
+    case "white-space":
+      switch value {
+      case "normal": style.whiteSpace = .Normal
+      case "pre": style.whiteSpace = .Pre
+      case "pre-wrap": style.whiteSpace = .PreWrap
+      case "pre-line": style.whiteSpace = .PreLine
+      case "nowrap": style.whiteSpace = .NoWrap
+      case "break-spaces": style.whiteSpace = .BreakSpaces
+      default: break
+      }
+
+    case "text-wrap":
+      switch value {
+      case "wrap": style.textWrap = .Wrap
+      case "nowrap": style.textWrap = .NoWrap
+      case "balance": style.textWrap = .Balance
+      case "pretty": style.textWrap = .Pretty
+      default: break
+      }
+
+    case "text-overflow":
+      switch value {
+      case "clip": style.textOverflow = .Clip
+      case "ellipsis": style.textOverflow = .Ellipse(nil)
+      default: style.textOverflow = .Custom(value)
+      }
+
+    case "text-justify":
+      switch value {
+      case "none": style.textJustify = .None
+      case "auto": style.textJustify = .Auto
+      case "inter-word": style.textJustify = .InterWord
+      case "inter-character": style.textJustify = .InterCharacter
+      case "distribute": style.textJustify = .Distribute
+      default: break
+      }
+
     default:
       break
     }
@@ -507,35 +761,110 @@ public class HTMLParser: NSObject {
 
   // MARK: - Value Parsers
 
+  // Length parsing delegates to the canonical parsers (BorderParser.swift) so that
+  // device-scale and percentage handling match every other code path (margins,
+  // borders, etc.). Doing the math locally previously left width/padding unscaled
+  // while margins were scaled.
+
   private func parseDimension(_ value: String) -> MasonLengthPercentage? {
-    if value.hasSuffix("%") {
-      if let v = Float(value.dropLast()) {
-        return .Percent(v)
-      }
-    } else if value.hasSuffix("px") {
-      if let v = Float(value.dropLast(2)) {
-        return .Points(v)
-      }
-    } else if let v = Float(value) {
-      return .Points(v)
-    }
-    return nil
+    return parseLengthPercentage(value)
   }
 
   private func parseDimensionAuto(_ value: String) -> MasonDimension? {
-    if value == "auto" { return .Auto }
-    if value.hasSuffix("%") {
-      if let v = Float(value.dropLast()) {
-        return .Percent(v)
-      }
-    } else if value.hasSuffix("px") {
-      if let v = Float(value.dropLast(2)) {
-        return .Points(v)
-      }
-    } else if let v = Float(value) {
-      return .Points(v)
+    guard let lpa = parseLengthPercentageAuto(value) else { return nil }
+    switch lpa {
+    case .Auto: return .Auto
+    case .Points(let p): return .Points(p)
+    case .Percent(let p): return .Percent(p)
+    case .Zero: return .Points(0)
     }
-    return nil
+  }
+
+  /// First whitespace-delimited token of a value (e.g. the line keyword of a
+  /// `text-decoration` shorthand).
+  private func firstToken(_ value: String) -> String {
+    return value.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? value
+  }
+
+  private func parseOverflow(_ value: String) -> Overflow? {
+    switch value {
+    case "visible": return .Visible
+    case "hidden": return .Hidden
+    case "scroll": return .Scroll
+    case "clip": return .Clip
+    case "auto": return .Auto
+    default: return nil
+    }
+  }
+
+  /// Parses `aspect-ratio` as either a ratio (`16 / 9`) or a single number (`1.5`).
+  private func parseAspectRatio(_ value: String) -> Float? {
+    let v = value.lowercased()
+    if v == "auto" { return nil }
+    if v.contains("/") {
+      let parts = v.split(separator: "/")
+      if parts.count == 2,
+         let w = Float(parts[0].trimmingCharacters(in: .whitespaces)),
+         let h = Float(parts[1].trimmingCharacters(in: .whitespaces)),
+         h != 0 {
+        return w / h
+      }
+      return nil
+    }
+    return Float(v)
+  }
+
+  /// Parses the `flex` shorthand (`none`, `auto`, `<grow>`, `<grow> <shrink>`,
+  /// `<grow> <shrink> <basis>`, `<grow> <basis>`).
+  private func applyFlexShorthand(_ value: String, to style: MasonStyle) {
+    let v = value.trimmingCharacters(in: .whitespaces).lowercased()
+    switch v {
+    case "none":
+      style.flexGrow = 0; style.flexShrink = 0; style.flexBasis = .Auto
+      return
+    case "auto":
+      style.flexGrow = 1; style.flexShrink = 1; style.flexBasis = .Auto
+      return
+    case "initial":
+      style.flexGrow = 0; style.flexShrink = 1; style.flexBasis = .Auto
+      return
+    default: break
+    }
+
+    let tokens = v.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    var grow: Float? = nil
+    var shrink: Float? = nil
+    var basis: MasonDimension? = nil
+
+    for token in tokens {
+      // A plain unitless number is a grow/shrink factor; anything else is a basis.
+      if token == "auto" || token.hasSuffix("%") || token.hasSuffix("px") {
+        basis = parseDimensionAuto(token)
+      } else if let n = Float(token) {
+        if grow == nil { grow = n } else if shrink == nil { shrink = n }
+      } else {
+        basis = parseDimensionAuto(token)
+      }
+    }
+
+    style.flexGrow = grow ?? 1
+    style.flexShrink = shrink ?? 1
+    // `flex: 1` resolves basis to 0; an explicit basis token overrides that.
+    style.flexBasis = basis ?? .Points(0)
+  }
+
+  /// Parses the `inset` shorthand (1–4 length/percentage/auto values, CSS order
+  /// top / right / bottom / left).
+  private func applyInsetShorthand(_ value: String, to style: MasonStyle) {
+    let tokens = value.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    let parsed = tokens.compactMap { parseLengthPercentageAuto($0) }
+    guard !parsed.isEmpty else { return }
+
+    let top = parsed[0]
+    let right = parsed.count > 1 ? parsed[1] : top
+    let bottom = parsed.count > 2 ? parsed[2] : top
+    let left = parsed.count > 3 ? parsed[3] : right
+    style.inset = MasonRect(top, right, bottom, left)
   }
 
   private func parseFloatValue(_ value: String) -> Float? {
@@ -556,6 +885,12 @@ public class HTMLParser: NSObject {
   }
 
   private func parseColor(_ value: String) -> UInt32? {
+    // Prefer the canonical CSS color parser (handles rgb()/rgba()/hsl() and the
+    // full named-color set); fall back to the local hex/named handling below.
+    if let color = UIColor(css: value.trimmingCharacters(in: .whitespaces)) {
+      return color.toUInt32()
+    }
+
     var hex = value.trimmingCharacters(in: .whitespaces)
     if hex.hasPrefix("#") {
       hex = String(hex.dropFirst())

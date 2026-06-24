@@ -10,7 +10,7 @@ import UIKit
 /// A sublayer that renders CSS box-shadow effects outside the view's bounds
 class MasonShadowLayer: CALayer {
   
-  unowned var masonStyle: MasonStyle?
+  weak var masonStyle: MasonStyle?
   
   // Cache for invalidation
   private var cachedBounds: CGRect = .zero
@@ -42,11 +42,16 @@ class MasonShadowLayer: CALayer {
   }
   
   private func setup() {
-    // Allow drawing outside bounds
     masksToBounds = false
     isOpaque = false
     needsDisplayOnBoundsChange = true
-    contentsScale = UIScreen.main.scale
+    contentsScale = CGFloat(NSCMason.scale)
+  }
+
+  // Disable implicit CALayer animations so the shadow snaps with its item during
+  // reflow instead of trailing behind (it's repositioned every layout pass).
+  override func action(forKey event: String) -> CAAction? {
+    return NSNull()
   }
   
   private func resolveOutsetShadows() -> [BoxShadow] {
@@ -59,8 +64,10 @@ class MasonShadowLayer: CALayer {
     return cachedOutsetShadows
   }
 
-  /// Update the layer to match the view's frame (in superview coordinates) plus shadow expansion
-  func updateBounds(viewBounds: CGRect, viewFrame: CGRect) {
+  /// Position the layer to cover the shadow area.
+  /// - inOwnLayer: true → positioned in the view's own coords (origin .zero);
+  ///   false → in the superview's layer at the view's frame.
+  func updateBounds(viewBounds: CGRect, viewFrame: CGRect, inOwnLayer: Bool) {
     guard let style = masonStyle else { return }
 
     let outsetShadows = resolveOutsetShadows()
@@ -68,9 +75,9 @@ class MasonShadowLayer: CALayer {
       isHidden = true
       return
     }
-    
+
     isHidden = false
-    
+
     // Calculate max shadow expansion
     var maxExpand: CGFloat = 0
     for shadow in outsetShadows {
@@ -78,9 +85,11 @@ class MasonShadowLayer: CALayer {
       maxExpand = max(maxExpand, expand)
     }
     maxExpand += 20 // Extra padding
-    
-    // Position layer to cover shadow area (in superview coordinates)
-    let expandedFrame = viewFrame.insetBy(dx: -maxExpand, dy: -maxExpand)
+
+    // own-layer mode: geometry relative to view bounds (origin .zero); superview
+    // mode: the view's frame. `draw` centres the view rect in our bounds either way.
+    let base = inOwnLayer ? CGRect(origin: .zero, size: viewBounds.size) : viewFrame
+    let expandedFrame = base.insetBy(dx: -maxExpand, dy: -maxExpand)
     if frame != expandedFrame {
       frame = expandedFrame
     }
@@ -111,20 +120,15 @@ class MasonShadowLayer: CALayer {
     style.mBorderRender.resolve(for: cachedBounds)
     let hasRadii = style.mBorderRender.hasRadii()
     
-    // Pre-compute the inner clip used to mask every shadow iteration.
-    // Expand the inner clip by 1 device pixel so its anti-aliased edge
-    // sits underneath the view's opaque background.  Without this, the
-    // partially-transparent clip-edge pixels are visible through the
-    // view's transparent rounded corners, producing a dark fringe.
-    let scale = UIScreen.main.scale
-    let expand: CGFloat = 1.0 / scale
-    let expandedViewRect = viewRect.insetBy(dx: -expand, dy: -expand)
-
+    // Inner clip = the element's EXACT shape (no inflation), so the opaque caster
+    // fill is clipped precisely at the boundary and can't bleed into rounded
+    // corners. Inflating the rect while keeping the radius drifts the arcs and
+    // opens a corner gap.
     let innerClipPath: UIBezierPath
     if hasRadii {
-      innerClipPath = style.mBorderRender.getClipPath(rect: expandedViewRect, radius: style.mBorderRender.radius)
+      innerClipPath = style.mBorderRender.getClipPath(rect: viewRect, radius: style.mBorderRender.radius)
     } else {
-      innerClipPath = UIBezierPath(rect: expandedViewRect)
+      innerClipPath = UIBezierPath(rect: viewRect)
     }
     let reversedInner = innerClipPath.reversing()
 
@@ -143,9 +147,12 @@ class MasonShadowLayer: CALayer {
         height: viewRect.height + spread * 2
       )
 
-      // Create shadow path
       let shadowPath: UIBezierPath
-      if hasRadii {
+      if spread == 0 {
+        // Zero spread (common case): reuse the EXACT inner-clip path so caster ==
+        // clip-exclusion and the fill can't bleed past rounded corners.
+        shadowPath = innerClipPath
+      } else if hasRadii {
         let adjustedRadius = adjustRadius(style.mBorderRender.radius, spread: spread, rect: shadowRect)
         shadowPath = style.mBorderRender.getClipPath(rect: shadowRect, radius: adjustedRadius)
       } else {
@@ -157,23 +164,16 @@ class MasonShadowLayer: CALayer {
       let shadowOffset = CGSize(width: shadow.offsetX, height: shadow.offsetY)
       let shadowBlur = shadow.blurRadius
 
-      // Clip to area outside the view rect to only show shadow
+      // Clip to area outside the view rect so only the shadow shows
       let clipPath = UIBezierPath(rect: bounds)
       clipPath.append(reversedInner)
       context.addPath(clipPath.cgPath)
       context.clip()
 
-      // Draw shadow: fill the shape with an OPAQUE color so that the
-      // shadow projection carries the intended alpha from `shadowColor`
-      // alone.  The fill itself is clipped away (inner rect excluded),
-      // so only the blurred shadow projection is visible.  Using a
-      // translucent fill would double-attenuate the shadow (fill alpha
-      // × shadow-color alpha), producing a nearly invisible result.
-      //
-      // Use the shadow's own color (at full opacity) instead of black
-      // so that anti-alias bleed at the clip edge blends toward the
-      // shadow color rather than producing a visible black fringe —
-      // especially noticeable with small blur radii.
+      // Fill with the shadow's own color at full opacity: the fill is clipped
+      // away so only the blurred projection shows, and a translucent fill would
+      // double-attenuate it. Using the shadow color (not black) avoids a black
+      // anti-alias fringe at the clip edge.
       context.setShadow(offset: shadowOffset, blur: shadowBlur, color: shadowColor)
       let opaqueColor = shadow.color.withAlphaComponent(1.0).cgColor
       context.setFillColor(opaqueColor)

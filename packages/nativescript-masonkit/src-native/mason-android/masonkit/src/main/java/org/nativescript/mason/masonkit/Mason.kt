@@ -6,6 +6,8 @@ import android.text.TextPaint
 import android.util.Log
 import com.google.gson.Gson
 import dalvik.annotation.optimization.CriticalNative
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontFaceSet
 import org.nativescript.mason.masonkit.enums.TextType
 import org.nativescript.mason.masonkit.events.Event
 import java.lang.ref.WeakReference
@@ -31,7 +33,8 @@ class Mason {
   private val nodeEventListeners =
     WeakHashMap<Node, MutableMap<String, MutableMap<UUID, (Event) -> Unit>>>()
 
-  // True while Rust holds a lock during compute — prevents re-entrant lock acquisition via prepareMut
+  // True while Rust holds a lock during compute — prevents re-entrant
+  // compute calls on the UI thread (e.g. layout → dirty → layout).
   @JvmField
   internal var inCompute = false
 
@@ -46,12 +49,12 @@ class Mason {
       nativePtr, 0 // default handle
     )] as? ByteBuffer
 
-    buffer?.let {
-      FontFaceSet.instance.getOrNull("sans-serif")?.let { font ->
+    fun setFontData(face: FontFace) {
+      buffer?.let {
         val paint = TextPaint().apply {
           textSize =
             Constants.DEFAULT_FONT_SIZE * scale
-          this.typeface = font.font
+          this.typeface = face.font
         }
 
         val fm = paint.fontMetrics
@@ -78,6 +81,17 @@ class Mason {
         it.putFloat(StyleKeys.FONT_METRICS_LEADING_OFFSET, leading)
         it.putFloat(StyleKeys.FONT_METRICS_CAP_HEIGHT_OFFSET, capHeight)
       }
+    }
+
+    val defaultFont = FontFace("sans-serif")
+    FontFaceSet.instance.addOnLoadingDoneListener { face ->
+      if (face == defaultFont) {
+        setFontData(face)
+      }
+    }
+    FontFaceSet.instance.add(defaultFont)
+    defaultFont.addOnReloadListener { face, error ->
+      setFontData(face)
     }
   }
 

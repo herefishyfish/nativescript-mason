@@ -7,7 +7,7 @@
 
 import Foundation
 import UIKit
-
+import FontManager
 
 @objc(MasonDimensionCompatType)
 public enum MasonDimensionCompatType: Int, RawRepresentable, Codable {
@@ -389,7 +389,7 @@ public enum MasonDimension: Codable, Equatable {
         self = .Points(value)
         break
       case "dip":
-        self = .Points(value * Float(UIScreen.main.scale))
+        self = .Points(value * NSCMason.scale)
         break
       case "%", "percent":
         self = .Percent(value)
@@ -522,7 +522,7 @@ public enum MasonLengthPercentage: Codable, Equatable {
       self = .Points(value)
       break
     case "dip":
-      self = .Points(value * Float(UIScreen.main.scale))
+      self = .Points(value * NSCMason.scale)
       break
     case "%", "percent":
       self = .Percent(value)
@@ -668,7 +668,7 @@ public enum MasonLengthPercentageAuto: Codable, Equatable {
         self = .Points(value)
         break
       case "dip":
-        self = .Points(value * Float(UIScreen.main.scale))
+        self = .Points(value * NSCMason.scale)
         break
       case "%", "percent":
         self = .Percent(value)
@@ -1969,14 +1969,16 @@ public enum FontStyle: Int, RawRepresentable, CustomStringConvertible {
   }
   
   internal init(fontStyle: NSCFontStyle) {
-    switch (fontStyle)
+    switch (fontStyle.type)
     {
     case .normal:
       self = .Normal
     case .italic:
       self = .Italic
-    case .oblique(_):
+    case .oblique:
       self = .Oblique
+    @unknown default:
+      self = .Normal
     }
   }
   

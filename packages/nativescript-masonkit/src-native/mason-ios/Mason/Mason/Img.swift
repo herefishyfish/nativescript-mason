@@ -58,7 +58,7 @@ public class MasonImageLayer: CALayer {
   private func setup(){
     masksToBounds = true
     contentsLayer.contentsGravity = .resizeAspectFill
-    contentsLayer.contentsScale = UIScreen.main.scale
+    contentsLayer.contentsScale = CGFloat(NSCMason.scale)
     addSublayer(contentsLayer)
   }
   
@@ -380,7 +380,7 @@ public class Img: UIView, MasonEventTarget, MasonElement, MasonElementObjc {
     mason = doc
     super.init(frame: .zero)
     masonLayer.view = self
-    masonLayer.contentsScale = UIScreen.main.scale
+    masonLayer.contentsScale = CGFloat(NSCMason.scale)
     isOpaque = false
     node.view = self
     node.measureFunc = { [weak self] known, available in

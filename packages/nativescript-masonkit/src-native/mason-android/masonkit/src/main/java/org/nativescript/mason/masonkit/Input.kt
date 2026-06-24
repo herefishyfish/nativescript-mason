@@ -71,14 +71,14 @@ class Input @JvmOverloads constructor(
 
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-
+    // Draw children's outset box shadows at parent level, after this view's own
+    // background/border so an opaque parent background can't paint over them.
     ViewUtils.dispatchDraw(
       this,
       canvas,
       style,
-      ignoreBorder = (type == Type.Radio || type == Type.Checkbox)
+      ignoreBorder = (type == Type.Radio || type == Type.Checkbox),
+      beforeChildren = { c -> ViewUtils.drawChildrenOutsetShadows(this, c) }
     ) {
       super.dispatchDraw(it)
     }

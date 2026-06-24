@@ -1,14 +1,17 @@
 package org.nativescript.mason.masonkit
 
 import android.os.Build
+import org.nativescript.fontmanager.FontFace
+import org.nativescript.fontmanager.FontStyle
+import org.nativescript.fontmanager.FontWeight
 import org.nativescript.mason.masonkit.enums.TextAlign
 import org.nativescript.mason.masonkit.enums.VerticalAlign
 
 data class TextDefaultAttributes(
   var color: Int? = null,
   var fontSize: Int? = null,
-  var fontWeight: FontFace.NSCFontWeight? = null,
-  var fontStyle: FontFace.NSCFontStyle? = null,
+  var fontWeight: FontWeight? = null,
+  var fontStyle: FontStyle? = null,
   var fontFamily: String? = null,
   var font: FontFace? = null,
   var textWrap: Styles.TextWrap? = null,

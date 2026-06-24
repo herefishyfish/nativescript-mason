@@ -105,7 +105,7 @@ interface Element : EventTarget {
 
   fun compute() {
     val mason = node.mason
-    if (mason.inCompute) return // nested compute → skip to avoid Rust RWLock deadlock
+    if (mason.inCompute) return // re-entrant compute → skip to avoid Rust RWLock deadlock
     mason.inCompute = true
     try {
       NativeHelpers.nativeNodeCompute(mason.nativePtr, node.nativePtr)
@@ -126,7 +126,7 @@ interface Element : EventTarget {
     }
 
     val mason = node.mason
-    if (mason.inCompute) return // nested compute → skip to avoid Rust RWLock deadlock
+    if (mason.inCompute) return // re-entrant compute → skip to avoid Rust RWLock deadlock
     mason.inCompute = true
     try {
       NativeHelpers.nativeNodeComputeWH(mason.nativePtr, node.nativePtr, width, height)
@@ -139,7 +139,7 @@ interface Element : EventTarget {
 
   fun computeMaxContent() {
     val mason = node.mason
-    if (mason.inCompute) return // nested compute → skip to avoid Rust RWLock deadlock
+    if (mason.inCompute) return // re-entrant compute → skip to avoid Rust RWLock deadlock
     mason.inCompute = true
     try {
       NativeHelpers.nativeNodeComputeMaxContent(mason.nativePtr, node.nativePtr)
@@ -152,7 +152,7 @@ interface Element : EventTarget {
 
   fun computeMinContent() {
     val mason = node.mason
-    if (mason.inCompute) return // nested compute → skip to avoid Rust RWLock deadlock
+    if (mason.inCompute) return // re-entrant compute → skip to avoid Rust RWLock deadlock
     mason.inCompute = true
     try {
       NativeHelpers.nativeNodeComputeMinContent(mason.nativePtr, node.nativePtr)
@@ -173,7 +173,7 @@ interface Element : EventTarget {
 
   fun computeAndLayout(): MasonLayoutTree {
     val mason = node.mason
-    if (mason.inCompute) return node.layoutTree // nested compute → skip to avoid Rust RWLock deadlock
+    if (mason.inCompute) return node.layoutTree // re-entrant compute → skip to avoid Rust RWLock deadlock
     mason.inCompute = true
     try {
       val layout = NativeHelpers.nativeNodeComputeAndLayout(mason.nativePtr, node.nativePtr)
@@ -596,6 +596,13 @@ interface Element : EventTarget {
 
   fun removeChildAt(index: Int) {
     node.removeChildAt(index)
+  }
+
+  // Remove a specific child node (e.g. the TextNode a framework stamped onto its
+  // JS text node) without needing its index. Node.removeChild handles both
+  // TextNode and element children.
+  fun removeChild(node: Node) {
+    this.node.removeChild(node)
   }
 
 }

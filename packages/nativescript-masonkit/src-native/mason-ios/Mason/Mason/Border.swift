@@ -1089,26 +1089,45 @@ public final class CSSBorderRenderer {
     guard radius.x > 0 || radius.y > 0 else { return }
 
     if exponent == 1.0 {
-      // Standard quadratic Bézier (circular arc approximation)
-      let controlPoint: CGPoint
-      let endPoint: CGPoint
+      // Cubic Bézier approximation of a quarter (elliptical) arc. A quadratic
+      // Bézier through the box corner under-rounds the curve (sits ~0.25·r from
+      // the corner vs a true circle's ~0.293·r), leaving corners visibly squarer.
+      // The standard kappa control-point offset matches a circular arc to within
+      // ~0.02% and renders identically to CSS/Android.
+      let k: CGFloat = 0.5522847498307936
+      let cx = radius.x * (1 - k)
+      let cy = radius.y * (1 - k)
 
       switch corner {
       case .topRight:
-        controlPoint = CGPoint(x: rect.maxX, y: rect.minY)
-        endPoint = CGPoint(x: rect.maxX, y: rect.minY + radius.y)
+        // (maxX - radius.x, minY) -> (maxX, minY + radius.y)
+        path.addCurve(
+          to: CGPoint(x: rect.maxX, y: rect.minY + radius.y),
+          controlPoint1: CGPoint(x: rect.maxX - cx, y: rect.minY),
+          controlPoint2: CGPoint(x: rect.maxX, y: rect.minY + cy)
+        )
       case .bottomRight:
-        controlPoint = CGPoint(x: rect.maxX, y: rect.maxY)
-        endPoint = CGPoint(x: rect.maxX - radius.x, y: rect.maxY)
+        // (maxX, maxY - radius.y) -> (maxX - radius.x, maxY)
+        path.addCurve(
+          to: CGPoint(x: rect.maxX - radius.x, y: rect.maxY),
+          controlPoint1: CGPoint(x: rect.maxX, y: rect.maxY - cy),
+          controlPoint2: CGPoint(x: rect.maxX - cx, y: rect.maxY)
+        )
       case .bottomLeft:
-        controlPoint = CGPoint(x: rect.minX, y: rect.maxY)
-        endPoint = CGPoint(x: rect.minX, y: rect.maxY - radius.y)
+        // (minX + radius.x, maxY) -> (minX, maxY - radius.y)
+        path.addCurve(
+          to: CGPoint(x: rect.minX, y: rect.maxY - radius.y),
+          controlPoint1: CGPoint(x: rect.minX + cx, y: rect.maxY),
+          controlPoint2: CGPoint(x: rect.minX, y: rect.maxY - cy)
+        )
       case .topLeft:
-        controlPoint = CGPoint(x: rect.minX, y: rect.minY)
-        endPoint = CGPoint(x: rect.minX + radius.x, y: rect.minY)
+        // (minX, minY + radius.y) -> (minX + radius.x, minY)
+        path.addCurve(
+          to: CGPoint(x: rect.minX + radius.x, y: rect.minY),
+          controlPoint1: CGPoint(x: rect.minX, y: rect.minY + cy),
+          controlPoint2: CGPoint(x: rect.minX + cx, y: rect.minY)
+        )
       }
-
-      path.addQuadCurve(to: endPoint, controlPoint: controlPoint)
       return
     }
 

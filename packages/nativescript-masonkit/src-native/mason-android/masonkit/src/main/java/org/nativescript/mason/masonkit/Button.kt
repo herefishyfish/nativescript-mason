@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import androidx.core.view.ViewCompat
 import androidx.core.widget.TextViewCompat
+import org.nativescript.fontmanager.FontFace
 import org.nativescript.mason.masonkit.enums.BoxSizing
 import org.nativescript.mason.masonkit.enums.Display
 import org.nativescript.mason.masonkit.events.Event

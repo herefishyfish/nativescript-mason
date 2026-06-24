@@ -1,4 +1,4 @@
-import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
+import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, textTransformProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
 import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
@@ -75,6 +75,11 @@ export const filterProperty = new CssProperty<Style, string>({
   cssName: 'filter',
 });
 
+export const borderColorProperty = new CssProperty<Style, string>({
+  name: 'borderColor',
+  cssName: 'border-color',
+});
+
 export const borderProperty = new CssProperty<Style, string>({
   name: 'border',
   cssName: 'border',
@@ -103,6 +108,11 @@ export const borderBottomProperty = new CssProperty<Style, string>({
 export const backgroundProperty = new CssProperty<Style, string>({
   name: 'background',
   cssName: 'background',
+});
+
+export const backgroundImageProperty = new CssProperty<Style, string>({
+  name: 'backgroundImage',
+  cssName: 'background-image',
 });
 
 export const backgroundRepeatProperty = new CssProperty<Style, string>({
@@ -265,6 +275,9 @@ flexDirectionProperty.overrideHandlers({
 flexWrapProperty.overrideHandlers({
   name: 'flexWrap',
   cssName: 'flex-wrap',
+  valueConverter: function (value) {
+    return value as never;
+  },
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
     if (view) {
@@ -532,6 +545,23 @@ textAlignmentProperty.overrideHandlers({
   },
 });
 
+textTransformProperty.overrideHandlers({
+  name: 'textTransform',
+  cssName: 'text-transform',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      if (newValue) {
+        view.textTransform = newValue as never;
+      } else {
+        // Revert to old value if newValue is invalid
+        // @ts-ignore
+        target.textTransform = oldValue as never;
+      }
+    }
+  },
+});
+
 function masonLengthParse(value) {
   try {
     return CoreLength.parse(value);
@@ -554,6 +584,7 @@ export const maxWidthProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CoreLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthParse,
   valueChanged: (target, oldValue, newValue) => {
     const view = getViewStyle(target.viewRef);
@@ -571,6 +602,7 @@ export const maxHeightProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CoreLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -658,10 +690,10 @@ function convertToInsets(value: string | CoreTypes.LengthType): [CssProperty<Sty
     const thickness = parseShorthandPositioning(value);
 
     return [
-      [topProperty, masonLengthPercentParse(thickness.top)],
-      [rightProperty, masonLengthPercentParse(thickness.right)],
-      [bottomProperty, masonLengthPercentParse(thickness.bottom)],
-      [leftProperty, masonLengthPercentParse(thickness.left)],
+      [topProperty, masonLengthPercentParse(thickness.top) as LengthAuto],
+      [rightProperty, masonLengthPercentParse(thickness.right) as LengthAuto],
+      [bottomProperty, masonLengthPercentParse(thickness.bottom) as LengthAuto],
+      [leftProperty, masonLengthPercentParse(thickness.left) as LengthAuto],
     ];
   } else {
     return [
@@ -679,6 +711,7 @@ export const leftProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -694,6 +727,7 @@ export const rightProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -709,6 +743,7 @@ export const topProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -724,6 +759,7 @@ export const bottomProperty = new CssProperty<Style, LengthAuto>({
   defaultValue: 'auto',
   // @ts-ignore
   equalityComparer: CorePercentLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -903,7 +939,9 @@ export const flexBasisProperty = new CssProperty<Style, LengthAuto>({
   name: 'flexBasis',
   cssName: 'flex-basis',
   defaultValue: 'auto',
+  // @ts-ignore
   equalityComparer: CoreLength.equals,
+  // @ts-ignore
   valueConverter: masonLengthParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
@@ -1400,6 +1438,7 @@ borderRightProperty.register(Style);
 borderBottomProperty.register(Style);
 
 filterProperty.register(Style);
+borderColorProperty.register(Style);
 
 // New CSS properties
 
@@ -1478,5 +1517,20 @@ backdropFilterProperty.register(Style);
 writingModeProperty.register(Style);
 unicodeBidiProperty.register(Style);
 caretColorProperty.register(Style);
+
+backgroundImageProperty.register(Style);
+
+export const listStyleTypeProperty = new CssProperty<Style, string>({
+  name: 'listStyleType',
+  cssName: 'list-style-type',
+});
+
+export const listStylePositionProperty = new CssProperty<Style, string>({
+  name: 'listStylePosition',
+  cssName: 'list-style-position',
+});
+
+listStyleTypeProperty.register(Style);
+listStylePositionProperty.register(Style);
 
 displayProperty.register(Style);

@@ -1,6 +1,7 @@
 package org.nativescript.mason.masonkit
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.FocusFinder
@@ -12,8 +13,14 @@ import android.view.ViewConfiguration
 import android.view.ViewDebug.ExportedProperty
 import android.view.ViewGroup
 import android.view.animation.AnimationUtils
+import android.widget.EdgeEffect
 import android.widget.FrameLayout
 import android.widget.OverScroller
+import androidx.core.view.NestedScrollingChild3
+import androidx.core.view.NestedScrollingChildHelper
+import androidx.core.view.NestedScrollingParent3
+import androidx.core.view.NestedScrollingParentHelper
+import androidx.core.view.ViewCompat
 import androidx.core.view.isEmpty
 import androidx.core.view.isNotEmpty
 import kotlin.math.abs
@@ -30,9 +37,31 @@ import kotlin.math.min
  * virtual dimensions instead of querying a single child view, so the container
  * can host an arbitrary number of direct children.
  */
-open class TwoDScrollView : FrameLayout {
+open class TwoDScrollView : FrameLayout, NestedScrollingChild3, NestedScrollingParent3 {
 
   private val tempRect = Rect()
+
+  // Nested scrolling: this view participates both as a child (dispatching
+  // unconsumed scroll to an outer scrolling parent — e.g. another scroll
+  // container or a CoordinatorLayout) and as a parent (receiving nested
+  // scroll from inner scrolling children). The two helpers implement the
+  // full NestedScrollingChild3 / NestedScrollingParent3 contract.
+  private val childHelper = NestedScrollingChildHelper(this)
+  private val parentHelper = NestedScrollingParentHelper(this)
+
+  // Scratch buffers reused across a gesture to avoid per-frame allocation.
+  private val scrollOffset = IntArray(2)
+  private val scrollConsumed = IntArray(2)
+
+  // Accumulated window-coordinate shift contributed by nested parents during
+  // the current touch gesture, so finger deltas stay correct as the outer
+  // parent moves us.
+  private var nestedXOffset = 0
+  private var nestedYOffset = 0
+
+  // Tracks the scroller position consumed by the NON_TOUCH (fling) pass.
+  private var lastScrollerX = 0
+  private var lastScrollerY = 0
 
   private var lastScroll: Long = 0
 
@@ -68,6 +97,13 @@ open class TwoDScrollView : FrameLayout {
   private var touchSlop = 0
   private var minimumVelocity = 0
   private var maximumVelocity = 0
+  private var overflingDistance = 0
+
+  // Overscroll effects (stretch on API 31+, glow earlier), one per edge.
+  private lateinit var edgeGlowTop: EdgeEffect
+  private lateinit var edgeGlowBottom: EdgeEffect
+  private lateinit var edgeGlowLeft: EdgeEffect
+  private lateinit var edgeGlowRight: EdgeEffect
 
   @JvmOverloads
   constructor(context: Context, attrs: AttributeSet? = null) : super(context, attrs) {
@@ -139,6 +175,53 @@ open class TwoDScrollView : FrameLayout {
     touchSlop = configuration.scaledTouchSlop
     minimumVelocity = configuration.scaledMinimumFlingVelocity
     maximumVelocity = configuration.scaledMaximumFlingVelocity
+    overflingDistance = configuration.scaledOverflingDistance
+    edgeGlowTop = EdgeEffect(context)
+    edgeGlowBottom = EdgeEffect(context)
+    edgeGlowLeft = EdgeEffect(context)
+    edgeGlowRight = EdgeEffect(context)
+    childHelper.isNestedScrollingEnabled = true
+  }
+
+  /** Scroll axes this view can currently consume, for nested-scroll start. */
+  private fun nestedScrollAxes(): Int {
+    var axes = 0
+    if (enableScrollX) axes = axes or ViewCompat.SCROLL_AXIS_HORIZONTAL
+    if (enableScrollY) axes = axes or ViewCompat.SCROLL_AXIS_VERTICAL
+    return axes
+  }
+
+  /**
+   * Apply a scroll delta to this container, clamped to the scroll range, and
+   * return the amount actually consumed on each axis ([0] = x, [1] = y).
+   * Disabled axes consume nothing.
+   */
+  private fun scrollByClamped(dx: Int, dy: Int, out: IntArray) {
+    val ldx = if (enableScrollX) dx else 0
+    val ldy = if (enableScrollY) dy else 0
+    if (ldx == 0 && ldy == 0) {
+      out[0] = 0
+      out[1] = 0
+      return
+    }
+    val oldX = scrollX
+    val oldY = scrollY
+    scrollBy(ldx, ldy) // scrollTo override clamps to [0, range]
+    out[0] = scrollX - oldX
+    out[1] = scrollY - oldY
+  }
+
+  private fun getScrollRangeX(): Int =
+    maxOf(scrollContentWidth - (width - paddingLeft - paddingRight), 0)
+
+  private fun getScrollRangeY(): Int =
+    maxOf(scrollContentHeight - (height - paddingTop - paddingBottom), 0)
+
+  private fun releaseEdgeEffects() {
+    edgeGlowTop.onRelease()
+    edgeGlowBottom.onRelease()
+    edgeGlowLeft.onRelease()
+    edgeGlowRight.onRelease()
   }
 
   private fun canScroll(): Boolean {
@@ -184,6 +267,11 @@ open class TwoDScrollView : FrameLayout {
         if (!scroller!!.isFinished) scroller!!.abortAnimation()
         lastMotionY = y
         lastMotionX = x
+        nestedXOffset = 0
+        nestedYOffset = 0
+        // A touch gesture supersedes any in-flight fling nested scroll.
+        stopNestedScroll(ViewCompat.TYPE_NON_TOUCH)
+        startNestedScroll(nestedScrollAxes(), ViewCompat.TYPE_TOUCH)
         // Let the view handle the down event (e.g. for tap/click listeners)
         super.onTouchEvent(ev)
       }
@@ -191,33 +279,55 @@ open class TwoDScrollView : FrameLayout {
       MotionEvent.ACTION_MOVE -> {
         var deltaX = (lastMotionX - x).toInt()
         var deltaY = (lastMotionY - y).toInt()
-        lastMotionX = x
-        lastMotionY = y
 
-        if (enableScrollX) {
-          if (deltaX < 0) {
-            if (scrollX < 0) deltaX = 0
-          } else if (deltaX > 0) {
-            val rightEdge = width - paddingRight
-            val availableToScroll = scrollContentWidth - scrollX - rightEdge
-            deltaX = if (availableToScroll > 0) min(availableToScroll, deltaX) else 0
-          }
-        } else {
-          deltaX = 0
+        // Pre-scroll: give a nested parent first claim on the delta.
+        if (dispatchNestedPreScroll(deltaX, deltaY, scrollConsumed, scrollOffset, ViewCompat.TYPE_TOUCH)) {
+          deltaX -= scrollConsumed[0]
+          deltaY -= scrollConsumed[1]
+          nestedXOffset += scrollOffset[0]
+          nestedYOffset += scrollOffset[1]
         }
 
-        if (enableScrollY) {
-          if (deltaY < 0) {
-            if (scrollY < 0) deltaY = 0
-          } else if (deltaY > 0) {
-            val bottomEdge = height - paddingBottom
-            val availableToScroll = scrollContentHeight - scrollY - bottomEdge
-            deltaY = if (availableToScroll > 0) min(availableToScroll, deltaY) else 0
-          }
-        } else {
-          deltaY = 0
+        // Re-anchor against any window shift the parent applied.
+        lastMotionX = x - scrollOffset[0]
+        lastMotionY = y - scrollOffset[1]
+
+        // Consume locally what we can, within range.
+        scrollByClamped(deltaX, deltaY, scrollConsumed)
+        val scrolledX = scrollConsumed[0]
+        val scrolledY = scrollConsumed[1]
+        var unconsumedX = deltaX - scrolledX
+        var unconsumedY = deltaY - scrolledY
+
+        // Hand the leftover up to a nested parent (Child3 consumed-aware path).
+        scrollConsumed[0] = 0
+        scrollConsumed[1] = 0
+        dispatchNestedScroll(
+          scrolledX, scrolledY, unconsumedX, unconsumedY,
+          scrollOffset, ViewCompat.TYPE_TOUCH, scrollConsumed
+        )
+        lastMotionX -= scrollOffset[0]
+        lastMotionY -= scrollOffset[1]
+        nestedXOffset += scrollOffset[0]
+        nestedYOffset += scrollOffset[1]
+        unconsumedX -= scrollConsumed[0]
+        unconsumedY -= scrollConsumed[1]
+
+        // Whatever neither we nor any parent could take feeds the edge glow.
+        val w = width.coerceAtLeast(1).toFloat()
+        val h = height.coerceAtLeast(1).toFloat()
+        var needsInvalidate = false
+        if (enableScrollX && unconsumedX != 0 && !hasNestedScrollingParent(ViewCompat.TYPE_TOUCH)) {
+          if (unconsumedX < 0) edgeGlowLeft.onPull(-unconsumedX / w, 1f - y / h)
+          else edgeGlowRight.onPull(unconsumedX / w, y / h)
+          needsInvalidate = true
         }
-        if (deltaY != 0 || deltaX != 0) scrollBy(deltaX, deltaY)
+        if (enableScrollY && unconsumedY != 0 && !hasNestedScrollingParent(ViewCompat.TYPE_TOUCH)) {
+          if (unconsumedY < 0) edgeGlowTop.onPull(-unconsumedY / h, x / w)
+          else edgeGlowBottom.onPull(unconsumedY / h, 1f - x / w)
+          needsInvalidate = true
+        }
+        if (needsInvalidate) postInvalidateOnAnimation()
       }
 
       MotionEvent.ACTION_UP -> {
@@ -227,13 +337,27 @@ open class TwoDScrollView : FrameLayout {
         val initialYVelocity = vt.yVelocity.toInt()
         if ((abs(initialXVelocity) + abs(initialYVelocity) > minimumVelocity) && childCount > 0) {
           fling(-initialXVelocity, -initialYVelocity)
+        } else {
+          stopNestedScroll(ViewCompat.TYPE_TOUCH)
         }
         if (velocityTracker != null) {
           velocityTracker!!.recycle()
           velocityTracker = null
         }
+        releaseEdgeEffects()
+        postInvalidateOnAnimation()
         // Let the view handle the up event (e.g. for tap/click listeners)
         super.onTouchEvent(ev)
+      }
+
+      MotionEvent.ACTION_CANCEL -> {
+        if (velocityTracker != null) {
+          velocityTracker!!.recycle()
+          velocityTracker = null
+        }
+        stopNestedScroll(ViewCompat.TYPE_TOUCH)
+        releaseEdgeEffects()
+        postInvalidateOnAnimation()
       }
     }
     return true
@@ -268,23 +392,62 @@ open class TwoDScrollView : FrameLayout {
   }
 
   override fun computeScroll() {
-    if (scroller!!.computeScrollOffset()) {
-      val oldX = scrollX
-      val oldY = scrollY
-      val x = scroller!!.currX
-      val y = scroller!!.currY
-      if (childCount > 0) {
-        scrollTo(
-          clamp(x, width - paddingRight - paddingLeft, scrollContentWidth),
-          clamp(y, height - paddingBottom - paddingTop, scrollContentHeight)
-        )
-      } else {
-        scrollTo(x, y)
+    if (scroller!!.isFinished) {
+      stopNestedScroll(ViewCompat.TYPE_NON_TOUCH)
+      return
+    }
+
+    scroller!!.computeScrollOffset()
+    val x = scroller!!.currX
+    val y = scroller!!.currY
+    var unconsumedX = x - lastScrollerX
+    var unconsumedY = y - lastScrollerY
+    lastScrollerX = x
+    lastScrollerY = y
+
+    // Pre-scroll: let a nested parent take momentum first.
+    scrollConsumed[0] = 0
+    scrollConsumed[1] = 0
+    dispatchNestedPreScroll(unconsumedX, unconsumedY, scrollConsumed, null, ViewCompat.TYPE_NON_TOUCH)
+    unconsumedX -= scrollConsumed[0]
+    unconsumedY -= scrollConsumed[1]
+
+    if (unconsumedX != 0 || unconsumedY != 0) {
+      scrollByClamped(unconsumedX, unconsumedY, scrollConsumed)
+      val scrolledX = scrollConsumed[0]
+      val scrolledY = scrollConsumed[1]
+      unconsumedX -= scrolledX
+      unconsumedY -= scrolledY
+
+      // Pass anything we couldn't take up to a nested parent.
+      scrollConsumed[0] = 0
+      scrollConsumed[1] = 0
+      dispatchNestedScroll(
+        scrolledX, scrolledY, unconsumedX, unconsumedY,
+        null, ViewCompat.TYPE_NON_TOUCH, scrollConsumed
+      )
+      unconsumedX -= scrollConsumed[0]
+      unconsumedY -= scrollConsumed[1]
+    }
+
+    // Truly-unconsumed momentum hits our own edge — absorb into the glow.
+    if (unconsumedX != 0 || unconsumedY != 0) {
+      val v = scroller!!.currVelocity.toInt()
+      if (enableScrollY && unconsumedY != 0) {
+        if (unconsumedY < 0 && edgeGlowTop.isFinished) edgeGlowTop.onAbsorb(v)
+        else if (unconsumedY > 0 && edgeGlowBottom.isFinished) edgeGlowBottom.onAbsorb(v)
       }
-      if (oldX != scrollX || oldY != scrollY) {
-        onScrollChanged(scrollX, scrollY, oldX, oldY)
+      if (enableScrollX && unconsumedX != 0) {
+        if (unconsumedX < 0 && edgeGlowLeft.isFinished) edgeGlowLeft.onAbsorb(v)
+        else if (unconsumedX > 0 && edgeGlowRight.isFinished) edgeGlowRight.onAbsorb(v)
       }
-      postInvalidate()
+      scroller!!.abortAnimation()
+    }
+
+    if (!scroller!!.isFinished) {
+      postInvalidateOnAnimation()
+    } else {
+      stopNestedScroll(ViewCompat.TYPE_NON_TOUCH)
     }
   }
 
@@ -589,9 +752,15 @@ open class TwoDScrollView : FrameLayout {
       MotionEvent.ACTION_DOWN -> {
         lastMotionY = y
         lastMotionX = x
+        nestedXOffset = 0
+        nestedYOffset = 0
         isBeingDragged = !scroller!!.isFinished
+        startNestedScroll(nestedScrollAxes(), ViewCompat.TYPE_TOUCH)
       }
-      MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_UP -> isBeingDragged = false
+      MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_UP -> {
+        isBeingDragged = false
+        stopNestedScroll(ViewCompat.TYPE_TOUCH)
+      }
     }
     return isBeingDragged
   }
@@ -630,16 +799,21 @@ open class TwoDScrollView : FrameLayout {
 
   fun fling(velocityX: Int, velocityY: Int) {
     if (childCount > 0) {
-      val viewportHeight = height - paddingBottom - paddingTop
-      val viewportWidth = width - paddingRight - paddingLeft
-
       val vx = if (enableScrollX) velocityX else 0
       val vy = if (enableScrollY) velocityY else 0
 
+      // Begin a NON_TOUCH nested-scroll pass so the fling can hand off
+      // unconsumed momentum to (or borrow it from) a nested parent.
+      startNestedScroll(nestedScrollAxes(), ViewCompat.TYPE_NON_TOUCH)
+      lastScrollerX = scrollX
+      lastScrollerY = scrollY
+
       scroller!!.fling(
         scrollX, scrollY, vx, vy,
-        0, if (enableScrollX) maxOf(scrollContentWidth - viewportWidth, 0) else 0,
-        0, if (enableScrollY) maxOf(scrollContentHeight - viewportHeight, 0) else 0
+        Int.MIN_VALUE, if (enableScrollX) Int.MAX_VALUE else 0,
+        Int.MIN_VALUE, if (enableScrollY) Int.MAX_VALUE else 0,
+        if (enableScrollX) overflingDistance else 0,
+        if (enableScrollY) overflingDistance else 0
       )
 
       val movingDown = velocityY > 0
@@ -655,8 +829,61 @@ open class TwoDScrollView : FrameLayout {
       }
 
       awakenScrollBars(SCROLL_ANIMATION_DURATION)
-      invalidate()
+      postInvalidateOnAnimation()
     }
+  }
+
+  // Paint the overscroll effects, mirroring framework ScrollView edge drawing.
+  override fun draw(canvas: Canvas) {
+    super.draw(canvas)
+
+    if (!::edgeGlowTop.isInitialized) return
+
+    var needInvalidate = false
+    val sX = scrollX
+    val sY = scrollY
+
+    if (!edgeGlowTop.isFinished) {
+      val restore = canvas.save()
+      val w = width - paddingLeft - paddingRight
+      canvas.translate(paddingLeft.toFloat(), min(0, sY).toFloat())
+      edgeGlowTop.setSize(w, height)
+      if (edgeGlowTop.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (!edgeGlowBottom.isFinished) {
+      val restore = canvas.save()
+      val w = width - paddingLeft - paddingRight
+      val h = height
+      canvas.translate((-w + paddingLeft).toFloat(), (max(getScrollRangeY(), sY) + h).toFloat())
+      canvas.rotate(180f, w.toFloat(), 0f)
+      edgeGlowBottom.setSize(w, h)
+      if (edgeGlowBottom.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (!edgeGlowLeft.isFinished) {
+      val restore = canvas.save()
+      val h = height - paddingTop - paddingBottom
+      canvas.rotate(270f)
+      canvas.translate((-h + paddingTop).toFloat(), min(0, sX).toFloat())
+      edgeGlowLeft.setSize(h, width)
+      if (edgeGlowLeft.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (!edgeGlowRight.isFinished) {
+      val restore = canvas.save()
+      val h = height - paddingTop - paddingBottom
+      canvas.rotate(90f)
+      canvas.translate(-paddingTop.toFloat(), -(max(getScrollRangeX(), sX) + width).toFloat())
+      edgeGlowRight.setSize(h, width)
+      if (edgeGlowRight.draw(canvas)) needInvalidate = true
+      canvas.restoreToCount(restore)
+    }
+
+    if (needInvalidate) postInvalidateOnAnimation()
   }
 
   private fun clamp(n: Int, my: Int, child: Int): Int {
@@ -664,6 +891,141 @@ open class TwoDScrollView : FrameLayout {
     if ((my + n) > child) return child - my
     return n
   }
+
+  // region NestedScrollingChild3 — delegate the full contract to the helper.
+
+  override fun setNestedScrollingEnabled(enabled: Boolean) {
+    childHelper.isNestedScrollingEnabled = enabled
+  }
+
+  override fun isNestedScrollingEnabled(): Boolean = childHelper.isNestedScrollingEnabled
+
+  override fun startNestedScroll(axes: Int): Boolean =
+    childHelper.startNestedScroll(axes)
+
+  override fun startNestedScroll(axes: Int, type: Int): Boolean =
+    childHelper.startNestedScroll(axes, type)
+
+  override fun stopNestedScroll() = childHelper.stopNestedScroll()
+
+  override fun stopNestedScroll(type: Int) = childHelper.stopNestedScroll(type)
+
+  override fun hasNestedScrollingParent(): Boolean = childHelper.hasNestedScrollingParent()
+
+  override fun hasNestedScrollingParent(type: Int): Boolean =
+    childHelper.hasNestedScrollingParent(type)
+
+  override fun dispatchNestedScroll(
+    dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int,
+    offsetInWindow: IntArray?
+  ): Boolean = childHelper.dispatchNestedScroll(
+    dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow
+  )
+
+  override fun dispatchNestedScroll(
+    dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int,
+    offsetInWindow: IntArray?, type: Int
+  ): Boolean = childHelper.dispatchNestedScroll(
+    dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, type
+  )
+
+  // NestedScrollingChild3 — consumed-aware dispatch.
+  override fun dispatchNestedScroll(
+    dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int,
+    offsetInWindow: IntArray?, type: Int, consumed: IntArray
+  ) = childHelper.dispatchNestedScroll(
+    dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, type, consumed
+  )
+
+  override fun dispatchNestedPreScroll(
+    dx: Int, dy: Int, consumed: IntArray?, offsetInWindow: IntArray?
+  ): Boolean = childHelper.dispatchNestedPreScroll(dx, dy, consumed, offsetInWindow)
+
+  override fun dispatchNestedPreScroll(
+    dx: Int, dy: Int, consumed: IntArray?, offsetInWindow: IntArray?, type: Int
+  ): Boolean = childHelper.dispatchNestedPreScroll(dx, dy, consumed, offsetInWindow, type)
+
+  override fun dispatchNestedFling(velocityX: Float, velocityY: Float, consumed: Boolean): Boolean =
+    childHelper.dispatchNestedFling(velocityX, velocityY, consumed)
+
+  override fun dispatchNestedPreFling(velocityX: Float, velocityY: Float): Boolean =
+    childHelper.dispatchNestedPreFling(velocityX, velocityY)
+
+  // endregion
+
+  // region NestedScrollingParent3 — host inner scrolling children.
+
+  override fun onStartNestedScroll(child: View, target: View, axes: Int): Boolean =
+    onStartNestedScroll(child, target, axes, ViewCompat.TYPE_TOUCH)
+
+  override fun onStartNestedScroll(child: View, target: View, axes: Int, type: Int): Boolean =
+    canScroll() && (axes and (ViewCompat.SCROLL_AXIS_HORIZONTAL or ViewCompat.SCROLL_AXIS_VERTICAL)) != 0
+
+  override fun onNestedScrollAccepted(child: View, target: View, axes: Int) =
+    onNestedScrollAccepted(child, target, axes, ViewCompat.TYPE_TOUCH)
+
+  override fun onNestedScrollAccepted(child: View, target: View, axes: Int, type: Int) {
+    parentHelper.onNestedScrollAccepted(child, target, axes, type)
+    // Become a nested child ourselves so the chain continues outward.
+    startNestedScroll(axes, type)
+  }
+
+  override fun onStopNestedScroll(target: View) = onStopNestedScroll(target, ViewCompat.TYPE_TOUCH)
+
+  override fun onStopNestedScroll(target: View, type: Int) {
+    parentHelper.onStopNestedScroll(target, type)
+    stopNestedScroll(type)
+  }
+
+  override fun getNestedScrollAxes(): Int = parentHelper.nestedScrollAxes
+
+  // Pre-scroll as a parent: we don't pre-consume from our child here (the
+  // child scrolls first); just forward the opportunity to our own parent.
+  override fun onNestedPreScroll(target: View, dx: Int, dy: Int, consumed: IntArray, type: Int) {
+    dispatchNestedPreScroll(dx, dy, consumed, null, type)
+  }
+
+  override fun onNestedScroll(
+    target: View, dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int, type: Int
+  ) {
+    // Pre-NestedScrollingParent3 signature — route through the consumed-aware
+    // path with a throwaway buffer.
+    onNestedScroll(target, dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, type, intArrayOf(0, 0))
+  }
+
+  // NestedScrollingParent3 — consume the child's leftover, then bubble up.
+  override fun onNestedScroll(
+    target: View, dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int,
+    type: Int, consumed: IntArray
+  ) {
+    scrollByClamped(dxUnconsumed, dyUnconsumed, scrollConsumed)
+    val myConsumedX = scrollConsumed[0]
+    val myConsumedY = scrollConsumed[1]
+    consumed[0] += myConsumedX
+    consumed[1] += myConsumedY
+    // Forward whatever neither the child nor we could take to our own parent.
+    dispatchNestedScroll(
+      dxConsumed + myConsumedX, dyConsumed + myConsumedY,
+      dxUnconsumed - myConsumedX, dyUnconsumed - myConsumedY,
+      null, type, consumed
+    )
+  }
+
+  override fun onNestedPreFling(target: View, velocityX: Float, velocityY: Float): Boolean =
+    dispatchNestedPreFling(velocityX, velocityY)
+
+  override fun onNestedFling(
+    target: View, velocityX: Float, velocityY: Float, consumed: Boolean
+  ): Boolean {
+    if (!consumed && childCount > 0) {
+      dispatchNestedFling(velocityX, velocityY, true)
+      fling(velocityX.toInt(), velocityY.toInt())
+      return true
+    }
+    return false
+  }
+
+  // endregion
 
   interface ScrollChangeListener {
     fun onScrollChanged(view: View?, x: Int, y: Int, oldx: Int, oldy: Int)

@@ -155,7 +155,7 @@ public class MasonTextArea: MasonTextInput, MasonEventTarget, MasonElement, Maso
 
 		// Initial visual state
 		textColor = UIColor.colorFromARGB(style.resolvedColor)
-		if style.font.uiFont == nil { style.font.loadSync { _ in } }
+		if style.font.uiFont == nil { style.font.loadSync(nil) }
 		if let f = style.font.uiFont { font = f }
 
 		style.setStyleChangeListener(listener: self)
@@ -322,7 +322,7 @@ public class MasonTextArea: MasonTextInput, MasonEventTarget, MasonElement, Maso
 		}
 
 		if fontSize || fontChange {
-			if style.font.uiFont == nil { style.font.loadSync { _ in } }
+			if style.font.uiFont == nil { style.font.loadSync(nil) }
 			if let f = style.font.uiFont { font = f }
 		}
 

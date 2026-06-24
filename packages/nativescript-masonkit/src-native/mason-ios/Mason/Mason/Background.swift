@@ -92,10 +92,12 @@ extension Background {
     }
 
     if layer.shader == nil {
-      let colors = gradient.stops.compactMap {
-        colorMap[$0]?.cgColor ?? UIColor(css: $0)?.cgColor
-      } as CFArray
-      layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors, locations: nil)
+      let (colors, locations) = parseGradientStops(gradient.stops)
+      if locations.isEmpty {
+        layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: nil)
+      } else {
+        layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: locations)
+      }
       layer.shaderWidth = width
       layer.shaderHeight = height
     }
@@ -232,14 +234,14 @@ func drawBackground(
 // MARK: - Gradient Drawing
 func drawGradient(layer: BackgroundLayer, context: CGContext, width: CGFloat, height: CGFloat) {
   guard let gradient = layer.gradient else { return }
-  
+
   if layer.shader == nil {
-    let colors = gradient.stops
-      .compactMap { parseColor($0)?.cgColor } as CFArray
-    
-    layer.shader = CGGradient(colorsSpace: deviceRGB,
-                              colors: colors,
-                              locations: nil)
+    let (colors, locations) = parseGradientStops(gradient.stops)
+    if locations.isEmpty {
+      layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: nil)
+    } else {
+      layer.shader = CGGradient(colorsSpace: deviceRGB, colors: colors as CFArray, locations: locations)
+    }
   }
   
   guard let shader = layer.shader else { return }
@@ -428,6 +430,71 @@ private func drawBitmapLayer(
       py += drawHeight
     }
   }
+}
+
+// MARK: - Gradient Stop Parsing
+/// Parse gradient stop strings (e.g. "transparent 66%", "rgba(0,0,0,0.5)").
+/// Returns parallel arrays of CGColor and CGFloat positions following CSS inference rules.
+func parseGradientStops(_ stops: [String]) -> (colors: [CGColor], locations: [CGFloat]) {
+  var parsedColors: [CGColor?] = []
+  var parsedPositions: [CGFloat?] = []
+  for raw in stops {
+    let trimmed = raw.trimmingCharacters(in: .whitespaces)
+    var depth = 0
+    var lastSpace: String.Index? = nil
+    for idx in trimmed.indices {
+      let ch = trimmed[idx]
+      if ch == "(" { depth += 1 }
+      else if ch == ")" { depth -= 1 }
+      else if ch == " " && depth == 0 { lastSpace = idx }
+    }
+    if let spaceIdx = lastSpace {
+      let colorPart = String(trimmed[trimmed.startIndex..<spaceIdx])
+      let posPart = String(trimmed[trimmed.index(after: spaceIdx)...]).trimmingCharacters(in: .whitespaces)
+      let color = colorMap[colorPart]?.cgColor ?? UIColor(css: colorPart)?.cgColor
+      var position: CGFloat? = nil
+      if posPart.hasSuffix("%"), let val = Double(posPart.dropLast()) {
+        position = CGFloat(val / 100.0)
+      } else if let val = Double(posPart) {
+        position = CGFloat(val <= 1.0 ? val : val / 100.0)
+      }
+      parsedColors.append(color)
+      parsedPositions.append(position)
+    } else {
+      parsedColors.append(colorMap[trimmed]?.cgColor ?? UIColor(css: trimmed)?.cgColor)
+      parsedPositions.append(nil)
+    }
+  }
+  // CSS position inference: unspecified stops distribute evenly between anchored neighbors.
+  let n = parsedPositions.count
+  if n > 0 {
+    if parsedPositions[0] == nil { parsedPositions[0] = 0.0 }
+    if parsedPositions[n - 1] == nil { parsedPositions[n - 1] = 1.0 }
+    // Forward pass: fill runs of nil between anchors by linear interpolation.
+    var i = 0
+    while i < n {
+      if parsedPositions[i] == nil {
+        var j = i + 1
+        while j < n && parsedPositions[j] == nil { j += 1 }
+        let start = parsedPositions[i - 1] ?? 0.0
+        let end = parsedPositions[j < n ? j : n - 1] ?? 1.0
+        let steps = j - i + 1
+        for k in i..<j {
+          parsedPositions[k] = start + (end - start) * CGFloat(k - i + 1) / CGFloat(steps)
+        }
+        i = j
+      } else {
+        i += 1
+      }
+    }
+  }
+  let validPairs = zip(parsedColors, parsedPositions).compactMap { (c, p) -> (CGColor, CGFloat)? in
+    guard let color = c, let pos = p else { return nil }
+    return (color, pos)
+  }
+  let colors = validPairs.map { $0.0 }
+  let locations = validPairs.map { $0.1 }
+  return (colors, locations)
 }
 
 // MARK: - Image Loading

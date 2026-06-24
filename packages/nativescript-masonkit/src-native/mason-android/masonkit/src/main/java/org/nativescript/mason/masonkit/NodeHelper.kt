@@ -16,6 +16,8 @@ import org.nativescript.mason.masonkit.enums.JustifyItems
 import org.nativescript.mason.masonkit.enums.JustifySelf
 import org.nativescript.mason.masonkit.enums.Overflow
 import org.nativescript.mason.masonkit.enums.Position
+import org.nativescript.mason.masonkit.enums.ListStylePosition
+import org.nativescript.mason.masonkit.enums.ListStyleType
 import org.nativescript.mason.masonkit.enums.TextAlign
 import kotlin.math.max
 import kotlin.math.min
@@ -1416,6 +1418,68 @@ class NodeHelper(val mason: Mason) {
     ) {
       val node = mason.nodeForView(view)
       node.style.borderRadius = value
+    }
+
+    fun setTextDecoration(
+      view: android.view.View,
+      value: String
+    ) {
+      // For TextView (text elements like A, Li, etc.), access the node directly
+      // rather than nodeForView() which creates a proxy node unconnected to rendering.
+      val node = when (view) {
+        is TextView -> view.node
+        else -> mason.nodeForView(view)
+      }
+      val line = when (value.trim().lowercase()) {
+        "none" -> Styles.DecorationLine.None
+        "underline" -> Styles.DecorationLine.Underline
+        "overline" -> Styles.DecorationLine.Overline
+        "line-through" -> Styles.DecorationLine.LineThrough
+        "underline line-through", "line-through underline" -> Styles.DecorationLine.UnderlineLineThrough
+        "underline overline", "overline underline" -> Styles.DecorationLine.UnderlineOverline
+        "underline overline line-through", "underline line-through overline",
+        "overline underline line-through", "overline line-through underline",
+        "line-through underline overline", "line-through overline underline" -> Styles.DecorationLine.OverlineUnderlineLineThrough
+        else -> return
+      }
+      node.style.decorationLine = line
+    }
+
+    fun setBorderColor(
+      view: android.view.View,
+      value: String
+    ) {
+      val node = mason.nodeForView(view)
+      parseColor(value)?.let { node.style.setBorderColor(it) }
+    }
+
+    fun setListStyleType(
+      view: android.view.View,
+      value: String
+    ) {
+      val node = mason.nodeForView(view)
+      val type = when (value.trim().lowercase()) {
+        "none" -> ListStyleType.None
+        "disc" -> ListStyleType.Disc
+        "circle" -> ListStyleType.Circle
+        "square" -> ListStyleType.Square
+        "decimal" -> ListStyleType.Decimal
+        else -> return
+      }
+      node.style.listStyleType = type
+    }
+
+    fun setListStylePosition(
+      view: android.view.View,
+      value: String
+    ) {
+      val node = mason.nodeForView(view)
+      val pos = when (value.trim().lowercase()) {
+        "inside" -> ListStylePosition.Inside
+        "outside" -> ListStylePosition.Outside
+        else -> return
+      }
+      node.style.listStylePosition = pos
     }
 
     fun getBackgroundColor(view: android.view.View): String {

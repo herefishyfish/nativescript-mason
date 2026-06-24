@@ -7,7 +7,7 @@
 
 import Foundation
 import UIKit
-
+import FontManager
 
 private func measure(_ node: UnsafeRawPointer?, _ knownDimensionsWidth: Float, _ knownDimensionsHeight: Float, _ availableSpaceWidth: Float, _ availableSpaceHeight: Float) -> Int64 {
   let node: MasonNode = Unmanaged.fromOpaque(node!).takeUnretainedValue()
@@ -16,14 +16,23 @@ private func measure(_ node: UnsafeRawPointer?, _ knownDimensionsWidth: Float, _
   node.style.inMeasure = true
   defer {
     node.style.inMeasure = false
-    // Schedule flush for after Rust releases the read lock.
-    // DispatchQueue.main.async runs on the next run-loop iteration when the lock is no longer held.
+    // If style writes were deferred (pendingMetricsSync), schedule a
+    // re-layout after Rust releases the read lock. Since everything runs
+    // on the main thread, DispatchQueue.main.async defers to the next
+    // run-loop iteration — after the current compute finishes.
     if node.style.pendingMetricsSync {
       DispatchQueue.main.async { [weak node] in
         guard let node = node else { return }
         if node.style.flushPendingMetricsSync() {
           node.markDirty()
-          node.view?.setNeedsLayout()
+          // Trigger a full re-layout so the corrected metrics are picked
+          // up before the next frame commits, rather than waiting for an
+          // unrelated setNeedsLayout that may never come.
+          if let element = node.view as? MasonElement {
+            element.computeWithViewSize(layout: true)
+          } else {
+            node.view?.setNeedsLayout()
+          }
         }
       }
     }
@@ -567,11 +576,12 @@ public class MasonNode: NSObject {
     var attrs: [NSAttributedString.Key: Any] = [:]
     
     if(style.font.font == nil){
-      style.font.loadSync { _ in }
+      style.font.loadSync(nil)
     }
     
     let paragraphStyle = NSMutableParagraphStyle()
-    
+    var fontNaturalLineHeight: CGFloat = 0
+
     var type = MasonTextType.None
     
     if let view = view as? MasonText {
@@ -609,7 +619,7 @@ public class MasonNode: NSObject {
     let fontFace = style.resolvedFontFace
     
     if(fontFace.font == nil){
-      fontFace.loadSync { _ in}
+      fontFace.loadSync(nil)
     }
     
     if let font = fontFace.font {
@@ -618,7 +628,7 @@ public class MasonNode: NSObject {
       let scale = NSCMason.scale
       let weight = style.resolvedFontWeight
       let fontStyle = style.resolvedInternalFontStyle
-      var font = ctFont(from: font, fontSize: CGFloat(fontSize), weight: weight.uiFontWeight, style: fontStyle)
+      var font = ctFont(from: font, fontSize: CGFloat(fontSize), weight: NSCUIFontWeight(weight), style: fontStyle)
 
       // font-variant-numeric: apply AAT feature settings
       let variantNumeric = style.resolvedFontVariantNumeric
@@ -635,8 +645,9 @@ public class MasonNode: NSObject {
       }
 
       attrs[.font] = font
-      attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] = weight.uiFontWeight.rawValue
+      attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] = weight.rawValue
       attrs[NSAttributedString.Key(Constants.FONT_STYLE)] = fontStyle
+      fontNaturalLineHeight = CTFontGetAscent(font) + CTFontGetDescent(font)
     }
     
     
@@ -700,13 +711,24 @@ public class MasonNode: NSObject {
     
     let lineHeightType = style.resolvedLineHeightType
     let lineHeight = style.resolvedLineHeight
+    // Absolute line-height is a dip value (dip == pt on iOS); a unitless one is
+    // em-relative (multiplier * font-size). Either way set a fixed min==max box
+    // so every line advances uniformly (lineHeightMultiple would over-space lines
+    // with taller inline content like <code>).
+    var lineBox: CGFloat = 0
     if(lineHeightType == 1){
-      let height = CGFloat(lineHeight) / CGFloat(NSCMason.scale)
-      paragraphStyle.minimumLineHeight = height
-      paragraphStyle.maximumLineHeight = height
-    }else {
-      if(lineHeight > 0){
-        paragraphStyle.lineHeightMultiple = CGFloat(lineHeight)
+      lineBox = CGFloat(lineHeight)
+    } else if(lineHeight > 0){
+      lineBox = CGFloat(lineHeight) * CGFloat(style.resolvedFontSize)
+    }
+    if lineBox > 0 {
+      paragraphStyle.minimumLineHeight = lineBox
+      paragraphStyle.maximumLineHeight = lineBox
+      // min==max adds all the extra leading ABOVE the glyphs, sinking the text to
+      // the bottom of the box; Android splits it evenly (centred). Raise the
+      // glyphs by half the extra so the text is vertically centred to match.
+      if fontNaturalLineHeight > 0 && lineBox > fontNaturalLineHeight {
+        attrs[.baselineOffset] = (lineBox - fontNaturalLineHeight) / 2.0
       }
     }
     
@@ -852,6 +874,11 @@ extension MasonNode {
       child.parent = self
       NativeHelpers.nativeNodeAddChild(mason, self, child)
       NodeUtils.addView(self, child.view)
+      // A non-text child (e.g. a Br) changes the parent's composed text —
+      // rebuild the inline segment cache when the parent renders text.
+      if let tc = view as? TextContainer {
+        tc.engine.invalidateInlineSegments()
+      }
       // Single pass invalidation of descendants with text styles
       MasonNode.invalidateDescendantTextViews(child, .invalidateText)
       onNodeAttached?()
@@ -871,25 +898,31 @@ extension MasonNode {
     // Create new anonymous container
     let textView = MasonText(mason: mason, isAnonymous: true)
     textView.style.display = .Inline
-    
+
+    // MasonNode.view is WEAK: the view hierarchy is what keeps the anonymous
+    // MasonText alive. Attach it here even when `append` is false — otherwise
+    // the view deallocates the moment this function returns and the caller's
+    // `node.view` is already nil. Callers that position the node themselves
+    // (append=false) only manage the `children`/native bookkeeping below.
+    if !(view is TextContainer) {
+      suppressChildOperations {
+        view?.addSubview(textView)
+      }
+    }
+
     if(append){
       // Add container to this node
       children.append(textView.node)
-      
+
       textView.node.parent = self
-      
-      
-      if(append && !(view is TextContainer)){
-        view?.addSubview(textView)
-      }
-      
+
       // Add to native layout tree
       if let containerPtr = textView.node.nativePtr {
         mason_node_add_child(mason.nativePtr, nativePtr, containerPtr)
       }
-      
+
     }
-    
+
     return textView.node
   }
   
@@ -1133,7 +1166,13 @@ extension MasonNode {
     reference.parent = nil
     NodeUtils.removeView(self, reference.view)
     NodeUtils.addView(self, child.view)
-    
+
+    // Swapping a non-text child changes the parent's composed text —
+    // rebuild the inline segment cache when the parent renders text.
+    if let tc = view as? TextContainer {
+      tc.engine.invalidateInlineSegments()
+    }
+
     // Single pass invalidation of descendants with text styles
     MasonNode.invalidateDescendantTextViews(child, .invalidateText)
     
@@ -1154,9 +1193,9 @@ extension MasonNode {
       appendChild(child)
       return
     }
-    
+
     let authorChildren = getChildren()
-    
+
     // if index is past end, fallback to append behavior
     if index >= authorChildren.count {
       appendChild(child)
@@ -1188,8 +1227,9 @@ extension MasonNode {
         }
       }
       
-      // Create an anonymous text container
-      let container = getOrCreateAnonymousTextContainer(checkLast: false)
+      // Create an anonymous text container (append=false: we position it
+      // ourselves below — appending here would leave a duplicate entry).
+      let container = getOrCreateAnonymousTextContainer(false, checkLast: false)
       container.children.removeAll()
       container.children.append(textChild)
       textChild.parent = container
@@ -1255,7 +1295,9 @@ extension MasonNode {
         // after container
         var afterContainer: MasonNode? = nil
         if !rightSlice.isEmpty {
-          afterContainer = getOrCreateAnonymousTextContainer(checkLast: false)
+          // append=false: the split logic inserts the container at the right
+          // position itself — appending here would leave a duplicate entry.
+          afterContainer = getOrCreateAnonymousTextContainer(false, checkLast: false)
           afterContainer?.children.removeAll()
           for n in rightSlice {
             afterContainer?.children.append(n)
@@ -1323,16 +1365,23 @@ extension MasonNode {
     let pos = max(0, min(children.count, insertIndex))
     children.insert(child, at: pos)
     child.parent = self
-    
+
     if child.nativePtr != nil {
       NativeHelpers.nativeNodeAddChild(mason, self, child)
-    } else {
-      NodeUtils.addView(self, child.view)
     }
-    
+    // Attach the platform view as well (matches appendChild); NodeUtils.addView
+    // is a no-op for nil views and TextContainer parents.
+    NodeUtils.addView(self, child.view)
+
+    // A non-text child (e.g. a Br) changes the parent's composed text —
+    // rebuild the inline segment cache when the parent renders text.
+    if let tc = view as? TextContainer {
+      tc.engine.invalidateInlineSegments()
+    }
+
     // Single pass invalidation of descendants with text styles
     MasonNode.invalidateDescendantTextViews(child, StateKeys.invalidateText)
-    
+
     NodeUtils.syncNode(self, children)
     if !style.inBatch { (view as? MasonElement)?.invalidateLayout() }
   }
@@ -1362,7 +1411,18 @@ extension MasonNode {
       }
     } else {
       NodeUtils.removeView(self, removed.view)
+      // Detach from the Rust layout tree as well (matches Android) — without
+      // this the layout engine keeps measuring the removed child.
+      if let ptr = nativePtr, let childPtr = removed.nativePtr {
+        mason_node_remove_child(mason.nativePtr, ptr, childPtr)
+      }
       removed.parent = nil
+      // Removing a non-text child (e.g. a Br) changes the parent's composed
+      // text — rebuild the inline segment cache when the parent renders text.
+      if let tc = view as? TextContainer {
+        tc.engine.invalidateInlineSegments()
+      }
+      NodeUtils.invalidateLayout(self)
     }
     return removed
   }

@@ -86,10 +86,13 @@ export class View extends ViewBase {
         // layout cascade and just sync NativeScript's internal bounds tracking.
         const childNode = (child as any).ios?.node;
         if (childNode?.isLayoutValid) {
-          childNode.isLayoutValid = false;
           // Still call layout() to keep NativeScript's bounds state in sync,
           // but with setFrame=false so we don't redundantly set the native frame.
           (child as any).layout(x, y, x + w, y + h, false);
+          // Clear isLayoutValid AFTER layout() completes so a re-entrant
+          // layoutSubviews during layout() can't see a stale false value
+          // and fall through to the non-Mason path.
+          childNode.isLayoutValid = false;
           i++;
           continue;
         }
@@ -174,8 +177,11 @@ export class View extends ViewBase {
     const nativeView = this._view;
     if (nativeView && (child.nativeViewProtected || child.ios)) {
       child._hasNativeView = true;
+      const jsIndex = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
+      // Map the JS index onto the native children list (views attach lazily,
+      // so the raw index can run ahead of native state).
+      const index = jsIndex <= -1 ? jsIndex : (this as any)._nativeIndexFor(jsIndex);
       child._isMasonChild = true;
-      const index = atIndex <= -1 ? this._children.indexOf(child) : atIndex;
       if (child[isPlaceholder_]) {
         // @ts-ignore
         nativeView.mason_addChildAtElement(child.ios, index);
@@ -191,6 +197,14 @@ export class View extends ViewBase {
   // @ts-ignore
   public _removeViewFromNativeVisualTree(view: MasonChild): void {
     view[isMasonView_] = false;
+    // Clear the attach flag; `_nativeIndexFor` counts it, so a stale `true` misindexes inserts.
+    view._isMasonChild = false;
+    // Inverse of `_addViewToNativeVisualTree` — unlink the mason node so removal detaches
+    // the Rust node + native view instead of orphaning it (super only does removeFromSuperview).
+    const nativeView = this._view as any;
+    if (nativeView && view.nativeViewProtected && typeof nativeView.removeView === 'function') {
+      nativeView.removeView(view.nativeViewProtected);
+    }
     // @ts-ignore
     super._removeViewFromNativeVisualTree(view);
   }

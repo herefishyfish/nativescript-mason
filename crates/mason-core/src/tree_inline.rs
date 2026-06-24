@@ -28,7 +28,6 @@ enum LineItem {
         margin_bottom: f32,
         baseline: f32,
         vertical_align: VerticalAlignValue,
-        is_virtual: bool,
         is_replaced: bool,
     },
     /// Block-level child that breaks the flow
@@ -37,7 +36,6 @@ enum LineItem {
         height: f32,
         width: f32,
         margin_left: f32,
-        margin_right: f32,
         margin_top: f32,
         margin_bottom: f32,
         is_virtual: bool,
@@ -130,7 +128,6 @@ impl Line {
                 margin_bottom,
                 baseline,
                 vertical_align,
-                is_virtual,
                 is_replaced,
             });
             self.width += margin_left + margin_right;
@@ -154,7 +151,6 @@ impl Line {
             margin_bottom: effective_margin_bottom,
             baseline,
             vertical_align,
-            is_virtual,
             is_replaced,
         });
 
@@ -278,7 +274,7 @@ impl Line {
         width: f32,
         height: f32,
         margin_left: f32,
-        margin_right: f32,
+        _margin_right: f32,
         margin_top: f32,
         margin_bottom: f32,
         is_virtual: bool,
@@ -288,7 +284,6 @@ impl Line {
             width,
             height,
             margin_left,
-            margin_right,
             margin_top,
             margin_bottom,
             is_virtual,
@@ -527,7 +522,6 @@ impl InlineFormattingContext {
                 // If available width is non-positive after update, append remaining as-is.
                 if !self.available_width.is_finite() || self.available_width <= 0.0 {
                     self.current_line.add_text(remaining, ascent, descent);
-                    remaining = 0.0;
                     break;
                 }
 
@@ -680,7 +674,7 @@ impl InlineFormattingContext {
         let mut y_offset = self.content_box_top;
         let mut placements: Vec<(Id, f32, f32)> = Vec::new();
 
-        for (li, line) in self.lines.iter().enumerate() {
+        for (_, line) in self.lines.iter().enumerate() {
             // Compute a conservative text-derived ascent/descent baseline
             // to avoid runaway contributions from oversized inline children.
             let mut text_ascent = 0.0f32;
@@ -757,14 +751,13 @@ impl InlineFormattingContext {
 
             // Compute line height using the sanitized metrics, but still allow
             // top/bottom aligned items to expand the line if necessary (capped).
-            let mut line_height = (sanitized_max_ascent + sanitized_max_descent)
+            let line_height = (sanitized_max_ascent + sanitized_max_descent)
                 .max(line.max_top_height)
                 .max(line.max_bottom_height);
 
             #[cfg(test)]
             {
                 let _ = (
-                    li,
                     line.items.len(),
                     line.width,
                     line.total_width(),
@@ -849,7 +842,6 @@ impl InlineFormattingContext {
                             margin_bottom,
                             baseline,
                             vertical_align,
-                            is_virtual,
                             is_replaced: _,
                         } => {
                             // For 0x0 elements, place at top of line (y_offset)
@@ -1032,11 +1024,6 @@ impl Tree {
         // if the node is not an inline container or there are no inline
         // segments, or the explicit baseline is a positive value.
         let display_mode = style.display_mode();
-        let has_inline_segments = self
-            .node_data()
-            .get(child_id)
-            .map(|d| !d.inline_segments().is_empty())
-            .unwrap_or(false);
 
         if let Some(baseline) = style.first_baseline() {
             if baseline > 0.0 {
@@ -1359,7 +1346,7 @@ impl Tree {
 
             // debug prints removed
 
-            let mut layout = self.compute_child_layout(child_node_id, measure_inputs);
+            let layout = self.compute_child_layout(child_node_id, measure_inputs);
 
             if let Some(child) = self.nodes_mut().get_mut(child_id) {
                 let padding = child
@@ -1469,7 +1456,7 @@ impl Tree {
                 adjusted_style.set_size(size);
             }
 
-            let mut layout = compute_leaf_layout(
+            let layout = compute_leaf_layout(
                 inputs,
                 &adjusted_style,
                 |_val, _basis| 0.0,
@@ -2070,10 +2057,10 @@ impl Tree {
             let child_size = child_style
                 .size()
                 .maybe_resolve(Size { width: Some(cb_width), height: Some(cb_height) }, |_v, _b| 0.0);
-            let child_min_size = child_style
+            let _child_min_size = child_style
                 .min_size()
                 .maybe_resolve(Size { width: Some(cb_width), height: Some(cb_height) }, |_v, _b| 0.0);
-            let child_max_size = child_style
+            let _child_max_size = child_style
                 .max_size()
                 .maybe_resolve(Size { width: Some(cb_width), height: Some(cb_height) }, |_v, _b| 0.0);
             let child_margin = child_style
@@ -2200,13 +2187,12 @@ impl Tree {
             }
         }
 
-        let (style, is_text_container, has_measure, type_) = {
+        let (style, is_text_container, has_measure) = {
             let node = &self.nodes()[id];
             (
                 node.style().clone(),
                 node.is_text_container(),
                 node.has_measure,
-                node.type_,
             )
         };
 
@@ -2459,6 +2445,11 @@ impl Tree {
                     }
 
                     for &child_id in &flow_child_ids {
+                        // A line-break node (<br>) forces a new line.
+                        if self.nodes()[child_id].is_line_container() {
+                            prepared_items.push(PreparedItem::LineBreak);
+                            continue;
+                        }
                         let (
                             size,
                             margin,
@@ -2713,6 +2704,11 @@ impl Tree {
             }
         } else {
             for &child_id in &flow_child_ids {
+                // A line-break node (<br>) forces a new line.
+                if self.nodes()[child_id].is_line_container() {
+                    prepared_items.push(PreparedItem::LineBreak);
+                    continue;
+                }
                 let (
                     size,
                     margin,
@@ -2746,24 +2742,6 @@ impl Tree {
                         is_replaced,
                     });
                 }
-            }
-        }
-
-        for pi in &prepared_items {
-            match pi {
-                PreparedItem::InlineChild {
-                    id: cid,
-                    width,
-                    height,
-                    baseline,
-                    ..
-                } => {}
-                PreparedItem::Text {
-                    width,
-                    ascent,
-                    descent,
-                } => {}
-                _ => {}
             }
         }
 

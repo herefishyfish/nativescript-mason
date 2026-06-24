@@ -304,7 +304,7 @@ public class CSSFilters {
     
     func resizeLayerIfNeeded() {
       guard let view = view else { return }
-      let scale = view.window?.screen.scale ?? UIScreen.main.scale
+      let scale = CGFloat(NSCMason.scale)
       
       var padLeft: CGFloat = 0, padRight: CGFloat = 0
       var padTop: CGFloat = 0, padBottom: CGFloat = 0
@@ -461,7 +461,7 @@ public class CSSFilters {
         setupSublayerObservation(for: view)
         self.view = view
       }
-      let scale = view.window?.screen.scale ?? UIScreen.main.scale
+      let scale = CGFloat(NSCMason.scale)
       
       var hasVisualFilters = false
       for filter in filters {
@@ -904,7 +904,7 @@ public class CSSFilters {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     if trimmed.hasSuffix("px") {
       let px = CGFloat(Double(trimmed.dropLast(2)) ?? Double(defaultValue))
-      return px / CGFloat(UIScreen.main.scale)
+      return px / CGFloat(NSCMason.scale)
     } else if trimmed.hasSuffix("%") {
       return CGFloat((Double(trimmed.dropLast()) ?? Double(defaultValue)) / 100.0)
     } else {

@@ -51,25 +51,33 @@ fi
 PLATFORM_NAME="${PLATFORM_NAME:-iphoneos}"
 CURRENT_ARCH="${CURRENT_ARCH}"
 
+# visionOS (xrOS) is a tier-3 Rust target (no prebuilt std) — built with nightly
+# `-Z build-std`. PLATFORM_NAME is "xros" (device) / "xrsimulator" (simulator).
+IS_VISIONOS=false
+if [[ "$PLATFORM_NAME" == "xros" || "$PLATFORM_NAME" == "xrsimulator" ]]; then
+  IS_VISIONOS=true
+fi
+
+if [[ "$PLATFORM_NAME" == *"simulator"* ]]; then
+    IS_SIMULATOR=true
+fi
+
 if [ -z "$CURRENT_ARCH" ] || [ "$CURRENT_ARCH" == "undefined_arch" ]; then
     # Xcode 10 beta sets CURRENT_ARCH to "undefined_arch", this leads to incorrect linker arg.
     # it's better to rely on platform name as fallback because architecture differs between simulator and device
-
-    if [[ "$PLATFORM_NAME" == *"simulator"* ]]; then
-        CURRENT_ARCH="arm64"
-        IS_SIMULATOR=true
-    else
-        CURRENT_ARCH="arm64"
-    fi
+    CURRENT_ARCH="arm64"
 fi
 
 
-if [[ $CURRENT_ARCH == x86_64 ]]; then
+if $IS_VISIONOS; then
+  if $IS_SIMULATOR; then
+    RUST_BUILD_TARGET="aarch64-apple-visionos-sim"
+  else
+    RUST_BUILD_TARGET="aarch64-apple-visionos"
+  fi
+elif [[ $CURRENT_ARCH == x86_64 ]]; then
   RUST_BUILD_TARGET="x86_64-apple-ios"
-fi
-
-
-if [[ $CURRENT_ARCH == arm64 ]]; then
+elif [[ $CURRENT_ARCH == arm64 ]]; then
   if [[ $IS_SIMULATOR == false ]]; then
     RUST_BUILD_TARGET="aarch64-apple-ios"
   else
@@ -86,11 +94,15 @@ cbindgen --config "$CWD/mason-c/cbindgen.toml"  "$CWD/mason-c/src/lib.rs" -l c >
 cbindgen --config "$CWD/mason-ios/cbindgen.toml"  "$CWD/mason-ios/src/lib.rs" -l c >"$SRCROOT/Mason/include/mason_ios.h"
 
 
-if $IS_RELEASE; then
+if $IS_VISIONOS; then
+  # Tier-3 target: build std from source. Requires the `rust-src` component and a
+  # nightly toolchain (rustup component add rust-src; rustup toolchain install nightly).
+  cargo +nightly build -Z build-std=std,panic_abort --manifest-path Cargo.toml --target $RUST_BUILD_TARGET $RUST_BUILD_TYPE -p mason-ios
+elif $IS_RELEASE; then
   # export RUSTFLAGS="-Zlocation-detail=none -C panic=abort -Zfmt-debug=none -Zunstable-options -Cpanic=immediate-abort"
   cargo build  --manifest-path Cargo.toml --target $RUST_BUILD_TARGET $RUST_BUILD_TYPE -p mason-ios
 
-else 
+else
   cargo build --manifest-path Cargo.toml --target $RUST_BUILD_TARGET $RUST_BUILD_TYPE -p mason-ios
 fi
 

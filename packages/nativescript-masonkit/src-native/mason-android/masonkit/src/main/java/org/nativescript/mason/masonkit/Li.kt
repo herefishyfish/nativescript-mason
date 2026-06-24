@@ -50,10 +50,11 @@ class Li @JvmOverloads constructor(
   }
 
   override fun dispatchDraw(canvas: Canvas) {
-    // Draw children's outset box shadows first at parent level
-    ViewUtils.drawChildrenOutsetShadows(this, canvas)
-
-    ViewUtils.dispatchDraw(this, canvas, style) {
+    // Draw children's outset box shadows at parent level, after this view's own
+    // background/border so an opaque parent background can't paint over them.
+    ViewUtils.dispatchDraw(this, canvas, style, beforeChildren = { c ->
+      ViewUtils.drawChildrenOutsetShadows(this, c)
+    }) {
       drawMarker(it)
       // Call ViewGroup.dispatchDraw directly to draw children, avoiding
       // View's dispatchDraw which would double-wrap with ViewUtils.

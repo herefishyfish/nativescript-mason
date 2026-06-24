@@ -364,9 +364,18 @@ public class TextEngine: NSObject {
       }
     }
     
-    // Create framesetter
-    let framesetter = CTFramesetterCreateWithAttributedString(text)
-  
+    // Reuse cached CTFramesetter when the attributed string hasn't changed.
+    // Creating a framesetter is expensive: it triggers glyph lookup, font
+    // fallback resolution, bidi analysis, and line-breaking table setup.
+    let framesetter: CTFramesetter
+    if let cached = engine.cachedFramesetter,
+       engine.framesetterStringVersion == engine.segmentsInvalidateVersion {
+      framesetter = cached
+    } else {
+      framesetter = CTFramesetterCreateWithAttributedString(text)
+      engine.cachedFramesetter = framesetter
+      engine.framesetterStringVersion = engine.segmentsInvalidateVersion
+    }
 
     var constraintSize = CGSize(width: maxWidth, height: maxHeight)
     // Avoid passing infinite height to CoreText framesetter — use a large finite fallback.
@@ -378,62 +387,100 @@ public class TextEngine: NSObject {
       }
     }
 
-    // First get the suggested size from CoreText using our constraints so we can build
-    // the exclusion path with the same height CT will actually use. This prevents
-    // mismatch where measurement used a huge outer rect while draw used a tight height.
-    var suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-      framesetter,
-      CFRangeMake(0, text.length),
-      nil,
-      constraintSize,
-      nil
-    )
-    if !suggested.height.isFinite || suggested.height <= 0 {
-      // Fallback to provided constraint or a reasonable default
-      suggested.height = min(constraintSize.height, 10000.0)
-    }
-
     let scale = CGFloat(NSCMason.scale)
-    // Build exclusion path including floated native views returned by the engine
-    // Use a frame-local outer rect (origin at zero) so rects from the engine (top-based)
-    // can be appended directly without an extra flip.
-    let outerRect = CGRect(origin: .zero, size: CGSize(width: constraintSize.width, height: suggested.height))
-    let bezier = UIBezierPath(rect: outerRect)
-    bezier.usesEvenOddFillRule = true
+
+    // Fetch floats now so we know whether we need the suggested-size pre-pass.
     let containerNode = engine.node.parent ?? engine.node
     let floatEntries = NativeHelpers.nativeNodeGetFloatRectsWithNodes(engine.node.mason, containerNode)
-    // Compute this text view's origin in container coordinates (points)
     let textViewOffset = CGPoint(x: CGFloat(engine.node.computedLayout.x) / scale, y: CGFloat(engine.node.computedLayout.y) / scale)
-    if floatEntries.count > 0 {
+
+    // When there are floats we need to size the exclusion path correctly, which
+    // requires knowing the actual text height first — so we call SuggestFrameSize.
+    // When there are no floats the simple outer rect is sufficient and we can skip
+    // the suggest call entirely, computing height from the frame afterwards instead.
+    //
+    // `suggestedSize` is set only for the float path; for the no-float path it
+    // stays nil and the size is derived from the frame's line origins instead.
+    var suggestedSize: CGSize? = nil
+    let pathHeight: CGFloat
+    if floatEntries.isEmpty {
+      pathHeight = constraintSize.height  // tall rect; real height computed from frame
+    } else {
+      var s = CTFramesetterSuggestFrameSizeWithConstraints(
+        framesetter,
+        CFRangeMake(0, text.length),
+        nil,
+        constraintSize,
+        nil
+      )
+      if !s.height.isFinite || s.height <= 0 {
+        s.height = min(constraintSize.height, 10000.0)
+      }
+      suggestedSize = s
+      pathHeight = s.height
+    }
+
+    // Build exclusion path (outer rect ± float cutouts)
+    let outerRect = CGRect(origin: .zero, size: CGSize(width: constraintSize.width, height: pathHeight))
+    let bezier = UIBezierPath(rect: outerRect)
+    bezier.usesEvenOddFillRule = true
+    if !floatEntries.isEmpty {
       for (_, rectLogical) in floatEntries {
-        // Convert engine px -> points. Engine Y is top-based; use it directly in
-        // the frame-local coordinates so the exclusion rect aligns with the native view.
         let rectW = rectLogical.width / scale
         let rectH = rectLogical.height / scale
         let rectX = rectLogical.origin.x / scale
         let rectY = rectLogical.origin.y / scale
-        // Convert from container-local points to this text-view-local coordinates
         let rectForPath = CGRect(x: rectX - textViewOffset.x, y: rectY - textViewOffset.y, width: rectW, height: rectH)
         bezier.append(UIBezierPath(rect: rectForPath))
       }
     }
     let path = bezier.cgPath
 
-    // Create final frame using the path built with the CT-suggested height
     let frame = CTFramesetterCreateFrame(framesetter, CFRangeMake(0, text.length), path, nil)
 
-    // Now calculate the size (use suggested which matches the path height)
-    var size = suggested
-    
+    // Compute the measured size.
+    //
+    // No-float path: derive size from the frame's line origins — one CT pass total.
+    // In CoreText's Y-up coordinate space, lineOrigin.y is the baseline distance
+    // from the BOTTOM of the frame rect:
+    //   textTop    = firstLineOrigin.y + firstAscent
+    //   textBottom = lastLineOrigin.y  - lastDescent
+    //   height     = textTop - textBottom
+    //
+    // Float path: SuggestFrameSize already ran above, reuse its result.
+    var size: CGSize
+    if let s = suggestedSize {
+      size = s  // float path: already have the correct size
+    } else {
+      let lines = CTFrameGetLines(frame) as? [CTLine] ?? []
+      if lines.isEmpty {
+        size = .zero
+      } else {
+        let count = lines.count
+        var lineOrigins = [CGPoint](repeating: .zero, count: count)
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, 0), &lineOrigins)
+
+        var firstAscent: CGFloat = 0
+        CTLineGetTypographicBounds(lines[0], &firstAscent, nil, nil)
+        var lastDescent: CGFloat = 0
+        CTLineGetTypographicBounds(lines[count - 1], nil, &lastDescent, nil)
+        let measuredHeight = (lineOrigins[0].y + firstAscent) - (lineOrigins[count - 1].y - lastDescent)
+
+        var measuredWidth: CGFloat = 0
+        for line in lines {
+          let lw = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+          if lw > measuredWidth { measuredWidth = lw }
+        }
+        size = CGSize(width: measuredWidth, height: max(measuredHeight, 0))
+      }
+    }
+
     if text.length > 0 && size.width <= 0 {
       let line = CTLineCreateWithAttributedString(text)
       var ascent: CGFloat = 0
       var descent: CGFloat = 0
       let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
-      
-      if lineWidth > 0 {
-        size.width = lineWidth
-      }
+      if lineWidth > 0 { size.width = lineWidth }
     }
     
     
@@ -451,8 +498,35 @@ public class TextEngine: NSObject {
     }
     
     
+    // CoreText single-line bounds are tight (~1.0× font size); CSS `line-height:
+    // normal` expects ~1.2×. Floor to that so a single line matches the web/Android
+    // box. Multi-line already exceeds 1.2×, so max() leaves it untouched.
+    if !isInLine && size.height > 0,
+       let fv = engine.node.getDefaultAttributes()[.font],
+       CFGetTypeID(fv as CFTypeRef) == CTFontGetTypeID() {
+      let normalLineHeight = CTFontGetSize(fv as! CTFont) * 1.2
+      if normalLineHeight > size.height { size.height = normalLineHeight }
+    }
+
+    // A line-height tighter than the font's natural line box makes CoreText clamp
+    // each line's ascent/descent, so the measured height (≈ lines × line-height)
+    // is short of the glyph ink, which then clips at the edges. Reserve the
+    // shortfall once so the first line's full ascent and last line's full descent
+    // fit; the draw path re-anchors the baselines into that reserved space.
+    if allowWrap, size.height > 0,
+       let paragraph = text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle,
+       paragraph.maximumLineHeight > 0,
+       let fv = engine.node.getDefaultAttributes()[.font],
+       CFGetTypeID(fv as CFTypeRef) == CTFontGetTypeID() {
+      let font = fv as! CTFont
+      let naturalLineHeight = CTFontGetAscent(font) + CTFontGetDescent(font)
+      if paragraph.maximumLineHeight < naturalLineHeight {
+        size.height += naturalLineHeight - paragraph.maximumLineHeight
+      }
+    }
+
     size.height = (size.height * scale).rounded(.up)
-    
+
     if let known = known {
       if !known.width.isNaN && known.width >= 0 {
         size.width = known.width
@@ -472,7 +546,13 @@ public class TextEngine: NSObject {
   
   private var isBuilding = false
   internal var cachedAttributedString: NSAttributedString?
-  
+
+  // Cached CTFramesetter — expensive to create (glyph shaping, font fallback, bidi
+  // analysis). Valid while the attributed string hasn't changed. Keyed by
+  // segmentsInvalidateVersion so it is automatically stale after any invalidation.
+  private var cachedFramesetter: CTFramesetter?
+  private var framesetterStringVersion: UInt64 = UInt64.max
+
   // monotonically increasing version for invalidation; cachedAttributedString is valid when
   // attributedStringVersion == segmentsInvalidateVersion
   private var segmentsInvalidateVersion: UInt64 = 0
@@ -504,12 +584,21 @@ public class TextEngine: NSObject {
   
   
   
-  /// Mark segments as needing rebuild
+  /// Mark segments as needing rebuild.
+  /// Propagates upward to any parent TextContainer so flattened ancestors also
+  /// discard their cached attributed strings and don't return stale content.
   func invalidateInlineSegments(_ markDirty: Bool = true) {
     segmentsInvalidateVersion &+= 1
     cachedAttributedString = nil
-    if(markDirty){
+    cachedFramesetter = nil  // framesetter derives from the attributed string
+    if markDirty {
       node.markDirty()
+    }
+    // Propagate to parent TextContainer: when this node is flattened into its
+    // parent's attributed string the parent's cache embeds our old content.
+    // Bump the parent version so its next buildAttributedString() rebuilds.
+    if let parentNode = node.parent, let parentContainer = parentNode.view as? TextContainer {
+      parentContainer.engine.invalidateInlineSegments(markDirty)
     }
   }
   
@@ -656,13 +745,41 @@ public class TextEngine: NSObject {
     return bounds.height - baselineY
   }
 
+  /// Baseline (top-origin) that vertically centres a single line in `drawBounds`.
+  /// We centre the visible cap-height block (cap-top → baseline) rather than the
+  /// full ascent+descent box: the ascent's internal leading and the (usually
+  /// empty) descent make full-box centring read as slightly high. This matches how
+  /// Android's text lands. `capHeight <= 0` falls back to centring the glyph box.
+  ///
+  /// `baselineOffset` is the value getDefaultAttributes() puts on the run for loose
+  /// line-heights — CoreText raises the glyphs by it at draw time, so we add it
+  /// back to the baseline to cancel it out. Without this, fonts whose natural line
+  /// box is much smaller than the CSS line-height render visibly high. A guard
+  /// keeps the ascenders from clipping above the content top in short boxes.
+  internal func singleLineBaselineFromTop(ascent: CGFloat, descent: CGFloat, capHeight: CGFloat, baselineOffset: CGFloat, in drawBounds: CGRect) -> CGFloat {
+    let centred: CGFloat
+    if capHeight > 0 {
+      centred = drawBounds.midY + capHeight / 2
+    } else {
+      let extra = max(0, drawBounds.height - (ascent + descent))
+      centred = drawBounds.minY + extra / 2 + ascent
+    }
+    let ascenderGuard = drawBounds.minY + ascent
+    return max(centred, ascenderGuard) + baselineOffset
+  }
+
   private func singleLineBaselineY(ascent: CGFloat, descent: CGFloat, in drawBounds: CGRect, bounds: CGRect) -> CGFloat {
     let topBaselineY: CGFloat
     if let provider = container as? SingleLineTextBaselineProviding {
       topBaselineY = provider.singleLineTextBaselineY(ascent: ascent, descent: descent, in: drawBounds)
     } else {
-      // Default text containers stay top-aligned to preserve block text behavior.
-      topBaselineY = drawBounds.minY + ascent
+      let attrs = node.getDefaultAttributes()
+      let baselineOffset = (attrs[.baselineOffset] as? CGFloat) ?? 0
+      let capHeight: CGFloat = {
+        if let fv = attrs[.font], CFGetTypeID(fv as CFTypeRef) == CTFontGetTypeID() { return CTFontGetCapHeight(fv as! CTFont) }
+        return 0
+      }()
+      topBaselineY = singleLineBaselineFromTop(ascent: ascent, descent: descent, capHeight: capHeight, baselineOffset: baselineOffset, in: drawBounds)
     }
 
     return Self.coreTextSingleLineBaselineY(fromTop: topBaselineY, in: bounds)
@@ -764,7 +881,9 @@ public class TextEngine: NSObject {
         let symbolicTraits = CTFontGetSymbolicTraits(font)
         let isBold = symbolicTraits.contains(.traitBold)
         let weight = attrs[NSAttributedString.Key(Constants.FONT_WEIGHT)] as? CGFloat ?? traits?[kCTFontWeightTrait as CFString] as? CGFloat ?? 0
-        if !isBold && weight >= 0.4 {
+        // Fake-bold only when a bold weight is requested but no real bold face
+        // exists. `weight` is the CSS weight (100–900), so threshold is 600.
+        if !isBold && weight >= 600 {
           drawRunWithFakeBold(run, in: context, at: baselineOrigin)
         } else {
           CTRunDraw(run, context, CFRange(location: 0, length: 0))
@@ -1004,6 +1123,33 @@ public class TextEngine: NSObject {
     var origins = Array(repeating: CGPoint.zero, count: linesCount)
     CTFrameGetLineOrigins(frame, CFRangeMake(0, 0), &origins)
 
+    // Re-anchor the vertical baseline using the font's true metrics rather than
+    // CoreText's frame positioning, which is driven by the (possibly clamped)
+    // line-height and leaves the glyph box off-centre or clipped.
+    //   • A single line is centred within the content box — same rule as
+    //     drawSingleLine — so padded inline-blocks (links, buttons, pills) sit in
+    //     the middle instead of riding high/low from font ascent/descent asymmetry.
+    //   • A tight multi-line block (line-height < the font's natural line box) has
+    //     its first baseline pinned to the full font ascent so the first line's
+    //     ascenders and the last line's descenders stay inside the reserved box.
+    var textBaseY = layoutBounds.origin.y
+    if text.length > 0,
+       let fontValue = node.getDefaultAttributes()[.font],
+       CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID() {
+      let font = fontValue as! CTFont
+      let fontAscent = CTFontGetAscent(font)
+      let naturalLineHeight = fontAscent + CTFontGetDescent(font)
+      let paragraph = text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+      let maxLineHeight = paragraph?.maximumLineHeight ?? 0
+      if linesCount == 1 {
+        let baselineOffset = (text.attribute(.baselineOffset, at: 0, effectiveRange: nil) as? CGFloat) ?? 0
+        let baselineFromTop = singleLineBaselineFromTop(ascent: fontAscent, descent: naturalLineHeight - fontAscent, capHeight: CTFontGetCapHeight(font), baselineOffset: baselineOffset, in: drawBounds)
+        textBaseY = bounds.height - origins[0].y - baselineFromTop
+      } else if maxLineHeight > 0 && maxLineHeight < naturalLineHeight {
+        textBaseY = bounds.height - drawBounds.origin.y - fontAscent - origins[0].y
+      }
+    }
+
     // Draw text shadows if any
     if !style.textShadows.isEmpty {
       for shadow in style.textShadows {
@@ -1021,7 +1167,7 @@ public class TextEngine: NSObject {
           case .Left, .Auto, .Start, .Justify:
             horizontalOffset = 0
           }
-          let textPos = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y)
+          let textPos = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY)
           context.saveGState()
           context.setShadow(offset: CGSize(width: shadow.offsetX, height: -shadow.offsetY), blur: shadow.blurRadius, color: shadow.color.cgColor)
           
@@ -1055,7 +1201,7 @@ public class TextEngine: NSObject {
       case .Left, .Auto, .Start, .Justify:
         horizontalOffset = 0
       }
-      context.textPosition = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y)
+      context.textPosition = CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY)
       let runsCF = CTLineGetGlyphRuns(line)
       let runCount = CFArrayGetCount(runsCF)
       for j in 0..<runCount {
@@ -1070,8 +1216,10 @@ public class TextEngine: NSObject {
           let symbolicTraits = CTFontGetSymbolicTraits(font)
           let isBold = symbolicTraits.contains(.traitBold)
           let weight = attributes[NSAttributedString.Key(Constants.FONT_WEIGHT)] as? CGFloat ?? traits?[kCTFontWeightTrait as CFString] as? CGFloat ?? 0
-          if !isBold && weight >= 0.4 {
-              drawRunWithFakeBold(run, in: context, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y))
+          // Fake-bold only when a bold weight is requested but no real bold face
+          // exists. `weight` is the CSS weight (100–900), so threshold is 600.
+          if !isBold && weight >= 600 {
+              drawRunWithFakeBold(run, in: context, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY))
             } else {
             CTRunDraw(run, context, CFRange(location: 0, length: 0))
           }
@@ -1081,7 +1229,7 @@ public class TextEngine: NSObject {
       }
 
       // Draw text decorations (underline, strikethrough) for this line
-      drawTextDecorations(for: line, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + layoutBounds.origin.y), in: context)
+      drawTextDecorations(for: line, at: CGPoint(x: layoutBounds.origin.x + lineOrigin.x + horizontalOffset, y: lineOrigin.y + textBaseY), in: context)
     }
 
     context.restoreGState()
@@ -1090,7 +1238,7 @@ public class TextEngine: NSObject {
 
     for i in 0..<linesCount {
       let line = unsafeBitCast(CFArrayGetValueAtIndex(linesCF, i), to: CTLine.self)
-      let lineOrigin = origins[i]
+      let lineOrigin = CGPoint(x: origins[i].x, y: origins[i].y + (textBaseY - layoutBounds.origin.y))
       drawInlineAttachments(for: line, origin: lineOrigin, frameBounds: layoutBounds, clipRect: drawBounds, in: context, bounds: bounds)
     }
 
@@ -1157,6 +1305,13 @@ public class TextEngine: NSObject {
   
   
   func drawText(context: CGContext, rect: CGRect){
+    // When this TextContainer is flattened into a parent TextContainer, the parent's
+    // text layer renders our content. Drawing here would produce duplicate text.
+    if let parentNode = node.parent, let parentContainer = parentNode.view as? TextContainer,
+       parentContainer.engine.shouldFlattenTextContainer(container) {
+      drawState = .idle
+      return
+    }
     drawState = .drawing
     // Build attributed string for drawing (uses cache if valid)
     let text = buildAttributedString(forMeasurement: false)
@@ -1167,7 +1322,7 @@ public class TextEngine: NSObject {
     
     // Check if text contains explicit line breaks (from <br> tags)
     let hasExplicitLineBreaks = text.string.contains("\n")
-    
+
     // Handle nowrap case - but still respect explicit line breaks from <br>
     if style.textWrap == .NoWrap && !hasExplicitLineBreaks {
       drawSingleLine(text: text, in: context, bounds: rect)

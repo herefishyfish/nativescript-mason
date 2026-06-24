@@ -37,11 +37,10 @@ export class Tree {
     this._base = base ?? NSCMason.new();
   }
 
-  static {
-    this._tree = new Tree(NSCMason.shared);
-  }
-
   static get instance() {
+    if (!Tree._tree) {
+      Tree._tree = new Tree(NSCMason.shared);
+    }
     return Tree._tree;
   }
 

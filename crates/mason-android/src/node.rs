@@ -1317,7 +1317,7 @@ pub extern "system" fn NodeNativeSetSegmentsPacked(
 
                 1 => {
                     let idraw = *lvec.get(i).unwrap_or(&0);
-                    let baseline = *fvec.get(i.checked_mul(3).unwrap_or(0)).unwrap_or(&0.0);
+                    let baseline = *fvec.get(i.checked_mul(4).unwrap_or(0)).unwrap_or(&0.0);
                     let mut child_id: Option<Id> = None;
                     if idraw != 0 {
                         let node_ptr = &*(idraw as *mut NodeRef);

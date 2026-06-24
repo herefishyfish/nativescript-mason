@@ -24,7 +24,7 @@ private let cssNames = [
 ]
 
 private let lengthPercentageRegex = try! NSRegularExpression(
-    pattern: "^(-?(?:\\d*\\.\\d+|\\d+\\.\\d*|\\d+))(px|%|dip|em)?;?$",
+    pattern: "^(-?(?:\\d*\\.\\d+|\\d+\\.\\d*|\\d+)(?:[eE][+-]?\\d+)?)(px|%|dip|em)?;?$",
     options: []
 )
 
@@ -36,17 +36,20 @@ func parseLengthPercentage(_ value: String, scale: Float = NSCMason.scale) -> Ma
   }
   let ns = v as NSString
   let parsed = Double(ns.substring(with: match.range(at: 1)))
-  let num = Float(parsed ?? 0)
+  // Clamp values that exceed a practical maximum (e.g. Float.MAX_VALUE from
+  // calc(infinity*1px) evaluated by NS's CSS parser) to avoid overflow.
+  let rawNum = Float(parsed ?? 0)
+  let num = max(-9999, min(9999, rawNum))
 
   let unitRange = match.range(at: 2)
   let unit: String? =
       unitRange.location != NSNotFound
       ? String(v[Range(unitRange, in: v)!])
       : nil
-  
+
   switch unit {
   case "px": return .Points(num * scale)
-  case "%": return .Percent(num / 100)
+  case "%": return .Percent(rawNum / 100)  // percentages don't overflow so use rawNum
   case "dip": return .Points(num * scale)
   default: do {
     if(parsed != nil){
