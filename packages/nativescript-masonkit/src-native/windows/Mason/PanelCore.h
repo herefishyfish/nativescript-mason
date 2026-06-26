@@ -31,10 +31,6 @@ namespace mason_panel
         return winrt::get_abi(unk);
     }
 
-    // A panel is the LAYOUT ROOT iff no ancestor in the framework tree is itself a Mason element. The
-    // root owns the single holistic Taffy compute; nested panels only mirror + read. (FrameworkElement.
-    // Parent is the logical parent, set as soon as an element joins a Panel's Children — reliable
-    // before realization.)
     inline bool HasMasonAncestor(mux::UIElement const& element)
     {
         auto fe = element.try_as<mux::FrameworkElement>();
@@ -50,28 +46,20 @@ namespace mason_panel
         return false;
     }
 
-    // Layout is computed once on the topmost Mason view. A nested element's own InvalidateMeasure
-    // therefore does NOT make the root recompute, so a nested change (added child, text data, or a
-    // STYLE change like width/height/background on a reactively-added box) silently keeps its old
-    // (often 0x0 / unstyled) layout. This walks to the topmost Mason element, marks its node dirty +
-    // invalidates it, forcing a from-scratch whole-tree recompute that picks up the nested change.
     inline void InvalidateLayoutRoot(mux::UIElement const& element)
     {
-        mux::FrameworkElement root{ nullptr };
         auto cur = element.try_as<mux::FrameworkElement>();
         while (cur)
         {
-            if (cur.try_as<nsm::IMasonElement>()) root = cur;
+            if (auto el = cur.try_as<nsm::IMasonElement>())
+            {
+                if (auto node = el.Node()) node.MarkDirty();
+                cur.InvalidateMeasure();
+                cur.InvalidateArrange();
+            }
             auto parent = cur.Parent();
             cur = parent ? parent.try_as<mux::FrameworkElement>() : nullptr;
         }
-        if (!root) return;
-        if (auto el = root.try_as<nsm::IMasonElement>())
-        {
-            if (auto node = el.Node()) node.MarkDirty();
-        }
-        root.InvalidateMeasure();
-        root.InvalidateArrange();
     }
 
     inline std::vector<mux::UIElement> SyncChildren(
@@ -135,14 +123,10 @@ namespace mason_panel
         muxc::UIElementCollection const& children, std::unordered_map<void*, nsm::Node>& leaves,
         winrt::Windows::Foundation::Size const& available)
     {
-        // Always mirror this level's children into the Mason node tree (cheap, idempotent). XAML
-        // measures top-down, so by the time the root runs ComputeSize below, every descendant panel's
-        // MeasureOverride has already run this same SyncChildren and the whole tree is current.
+    
         auto visible = SyncChildren(engine, node, children, leaves);
         for (auto const& c : visible) c.Measure(available);
 
-        // Only the topmost Mason view computes — one holistic compute for the entire subtree. Nested
-        // panels skip ComputeSize and read their layout (set by the root's compute) in Arrange.
         const bool isRoot = !HasMasonAncestor(self);
         if (isRoot)
         {
@@ -161,11 +145,6 @@ namespace mason_panel
         nsm::Node const& node, muxc::UIElementCollection const& children,
         winrt::Windows::Foundation::Size const& finalSize)
     {
-        // Do NOT recompute here. ComputeSize re-invokes the leaf measure callbacks, which call
-        // UIElement.Measure() on the children — calling Measure() during the Arrange pass makes XAML
-        // flag a layout invalidation, which re-runs Measure -> Arrange -> ComputeSize -> Measure...
-        // forever (LayoutCycleException). MeasureOverride already ran ComputeSize this pass (XAML
-        // always measures before it arranges), so the node's layout is cached; just read it.
         auto layout = node.GetLayout();
         auto childLayouts = layout.Children();
         uint32_t count = childLayouts.Size();

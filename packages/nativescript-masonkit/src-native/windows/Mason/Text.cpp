@@ -8,6 +8,11 @@
 #include <winrt/NativeScript.Mason.h>
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Microsoft.UI.Xaml.Documents.h>
+#include <winrt/Microsoft.UI.Xaml.Media.h>
+#include <winrt/NativeScript.FontManager.h>
+#include <string>
+#include <vector>
+#include <cwctype>
 #include "LeafCommon.h"
 #include "VisualApply.h"
 #include "BufferUtil.h"
@@ -31,9 +36,12 @@ namespace
         return std::numeric_limits<float>::infinity();
     }
 
-    inline float ResolveWidth(float known)
+    // Width for a Taffy measure request: definite known width, else 0 for MinContent (-1), else infinity.
+    inline float ResolveWidth(float known, float available)
     {
-        return (known > 0.0f && std::isfinite(known)) ? known : std::numeric_limits<float>::infinity();
+        if (known > 0.0f && std::isfinite(known)) return known;
+        if (available < 0.0f && available > -1.5f) return 0.0f; // MinContent
+        return std::numeric_limits<float>::infinity();
     }
 
     winrt::Windows::UI::Color ColorFromArgb(uint32_t argb)
@@ -43,6 +51,87 @@ namespace
             static_cast<uint8_t>((argb >> 16) & 0xFF),
             static_cast<uint8_t>((argb >> 8) & 0xFF),
             static_cast<uint8_t>(argb & 0xFF) };
+    }
+
+    std::wstring ToLower(std::wstring_view s)
+    {
+        std::wstring out;
+        out.reserve(s.size());
+        for (wchar_t c : s) out += static_cast<wchar_t>(std::towlower(c));
+        return out;
+    }
+
+    // Trim whitespace and surrounding quotes from a CSS font-family token.
+    std::wstring CleanToken(std::wstring_view t)
+    {
+        size_t b = 0, e = t.size();
+        while (b < e && iswspace(t[b])) ++b;
+        while (e > b && iswspace(t[e - 1])) --e;
+        if (e - b >= 2 && (t[b] == L'\'' || t[b] == L'"') && t[e - 1] == t[b]) { ++b; --e; }
+        return std::wstring(t.substr(b, e - b));
+    }
+
+    // Map a CSS generic family to a concrete Windows font; named families pass through unchanged.
+    std::wstring MapGenericFamily(std::wstring const& family)
+    {
+        const std::wstring lower = ToLower(family);
+        if (lower == L"monospace" || lower == L"ui-monospace") return L"Consolas";
+        if (lower == L"serif" || lower == L"ui-serif") return L"Georgia";
+        if (lower == L"sans-serif" || lower == L"system-ui" || lower == L"ui-sans-serif" || lower == L"-apple-system") return L"Segoe UI";
+        if (lower == L"cursive") return L"Segoe Script";
+        if (lower == L"fantasy") return L"Impact";
+        return family;
+    }
+
+    // Family names of fonts loaded in FontManager's FontFaceSet; empty if FontManager isn't available.
+    std::vector<std::wstring> LoadedFontFamilies()
+    {
+        std::vector<std::wstring> out;
+        try
+        {
+            auto set = winrt::NativeScript::FontManager::FontFaceSet::Instance();
+            if (!set) return out;
+            auto faces = set.GetArray();
+            if (!faces) return out;
+            for (auto const& face : faces)
+            {
+                if (face) out.push_back(ToLower(std::wstring_view(face.Family())));
+            }
+        }
+        catch (...) {}
+        return out;
+    }
+
+    // Resolve a CSS font-family list to one Windows family name: a loaded custom font wins, else the
+    // first token mapped through MapGenericFamily. Empty input yields "".
+    std::wstring ResolveFamily(std::wstring_view list)
+    {
+        std::vector<std::wstring> tokens;
+        size_t pos = 0;
+        while (pos <= list.size())
+        {
+            size_t comma = list.find(L',', pos);
+            std::wstring_view raw = list.substr(pos, comma == std::wstring_view::npos ? std::wstring_view::npos : comma - pos);
+            std::wstring tok = CleanToken(raw);
+            if (!tok.empty()) tokens.push_back(tok);
+            if (comma == std::wstring_view::npos) break;
+            pos = comma + 1;
+        }
+        if (tokens.empty()) return L"";
+
+        const auto loaded = LoadedFontFamilies();
+        if (!loaded.empty())
+        {
+            for (auto const& tok : tokens)
+            {
+                const std::wstring lower = ToLower(tok);
+                for (auto const& fam : loaded)
+                {
+                    if (fam == lower) return tok;
+                }
+            }
+        }
+        return MapGenericFamily(tokens.front());
     }
 }
 
@@ -65,7 +154,7 @@ namespace winrt::NativeScript::Mason::implementation
         {
             auto t = weak.get();
             if (!t) return mason_leaf::PackMeasure(0.0f, 0.0f);
-            t.Measure(Size{ ResolveWidth(kw), ResolveAxis(kh, ah) });
+            t.Measure(Size{ ResolveWidth(kw, aw), ResolveAxis(kh, ah) });
             auto d = t.DesiredSize();
             return mason_leaf::PackMeasure(d.Width, d.Height);
         };
@@ -98,6 +187,17 @@ namespace winrt::NativeScript::Mason::implementation
 
     double Text::FontSize() const { return m_fontSize; }
     void Text::FontSize(double value) { if (value > 0.0) { m_fontSize = value; if (m_text) m_text.FontSize(value); RebuildInlines(); } }
+
+    void Text::SetFontFamily(hstring const& families)
+    {
+        const std::wstring resolved = ResolveFamily(std::wstring_view(families));
+        m_fontFamily = winrt::hstring{ resolved };
+        if (m_text)
+        {
+            m_text.FontFamily(muxm::FontFamily(resolved.empty() ? winrt::hstring{ L"Segoe UI" } : m_fontFamily));
+        }
+        RebuildInlines();
+    }
 
     void Text::SetRun(nsm::TextNode const& run, int32_t index)
     {
@@ -214,7 +314,8 @@ namespace winrt::NativeScript::Mason::implementation
             }
             muxd::Run run;
             run.Text(impl->RunText());
-           
+
+            if (m_text) run.FontFamily(m_text.FontFamily());
             run.Foreground(muxm::SolidColorBrush(ColorFromArgb(impl->HasColor() ? impl->RunColor() : containerColor)));
             const double fs = impl->HasFontSize() ? impl->RunFontSize() : containerFs;
             if (fs > 0.0) run.FontSize(fs);
@@ -231,23 +332,17 @@ namespace winrt::NativeScript::Mason::implementation
 
     void Text::InvalidateLayoutRootFromHere()
     {
-        
-        mux::FrameworkElement root{ nullptr };
         auto cur = get_strong().try_as<mux::FrameworkElement>();
         while (cur)
         {
-            if (cur.try_as<nsm::IMasonElement>()) root = cur;
-            auto parent = cur.Parent();
-            cur = parent ? parent.try_as<mux::FrameworkElement>() : nullptr;
-        }
-        if (root)
-        {
-            if (auto el = root.try_as<nsm::IMasonElement>())
+            if (auto el = cur.try_as<nsm::IMasonElement>())
             {
                 if (auto node = el.Node()) node.MarkDirty();
+                cur.InvalidateMeasure();
+                cur.InvalidateArrange();
             }
-            root.InvalidateMeasure();
-            root.InvalidateArrange();
+            auto parent = cur.Parent();
+            cur = parent ? parent.try_as<mux::FrameworkElement>() : nullptr;
         }
     }
 

@@ -20,6 +20,7 @@
 #include <string_view>
 #include <vector>
 #include "BufferUtil.h"
+#include "Decoration.h"
 
 using namespace winrt;
 
@@ -216,7 +217,7 @@ namespace winrt::NativeScript::Mason::implementation
             auto sprite = comp.CreateSpriteVisual();
             sprite.Size({ w, h });
             sprite.Shadow(shadow);
-            hosting::ElementCompositionPreview::SetElementChildVisual(element, sprite);
+            mason_deco::SetLayer(element, L"mason-shadow", sprite);
         }
     }
 
@@ -236,7 +237,7 @@ namespace winrt::NativeScript::Mason::implementation
     void Css::ClearShadow(mux::UIElement const& element)
     {
         if (!element) return;
-        hosting::ElementCompositionPreview::SetElementChildVisual(element, nullptr);
+        mason_deco::SetLayer(element, L"mason-shadow", nullptr);
     }
 
     void Css::ApplyBackground(mux::UIElement const& element, uint32_t argb)

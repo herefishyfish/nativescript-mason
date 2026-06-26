@@ -1,0 +1,14 @@
+namespace NativeScript.Mason
+{
+    // A XAML brush whose paint is an externally-supplied Composition brush. VisualApply uses it to
+    // paint a *rounded* solid background (a CompositionMaskBrush: solid color masked by a rounded
+    // rectangle) directly as the element's Panel.Background. Unlike a rounded Composition Visual.Clip,
+    // this does NOT push the element's subtree into an offscreen surface, so TextBlocks inside keep
+    // ClearType subpixel antialiasing instead of falling back to grayscale AA (which makes opaque
+    // white text read as gray on dark backgrounds). Internal-only; never projected to the JS layer.
+    runtimeclass RoundedColorBrush : Microsoft.UI.Xaml.Media.XamlCompositionBrushBase
+    {
+        RoundedColorBrush();
+        void SetCompositionBrush(Microsoft.UI.Composition.CompositionBrush brush);
+    }
+}

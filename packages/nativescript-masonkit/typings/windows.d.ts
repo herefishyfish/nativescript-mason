@@ -230,6 +230,8 @@ declare namespace NativeScript.Mason {
     readonly Style: Style;
     Content: string;
     FontSize: number;
+    // CSS font-family list.
+    SetFontFamily(families: string): void;
     // Inline-run management: runs are TextNode descriptors composed into the TextBlock's Inlines.
     // All text styling is read from the live style buffer on SyncStyle (no per-property setters).
     SetRun(run: TextNode, index: number): void;
