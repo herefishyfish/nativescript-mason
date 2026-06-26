@@ -12,6 +12,9 @@ namespace NativeScript.Mason
         String Content;
         Double FontSize;
 
+        // CSS font-family list; empty resets to the default.
+        void SetFontFamily(String families);
+
         // Inline-run management: runs are TextNode descriptors composed into the TextBlock's Inlines.
         void SetRun(TextNode run, Int32 index);
         void RemoveRun(TextNode run);

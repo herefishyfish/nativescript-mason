@@ -116,6 +116,7 @@
     <ClInclude Include="BufferUtil.h" />
     <ClInclude Include="CssImageResult.h" />
     <ClInclude Include="Css.h" />
+    <ClInclude Include="RoundedColorBrush.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -137,6 +138,7 @@
     <ClCompile Include="TextArea.cpp" />
     <ClCompile Include="Input.cpp" />
     <ClCompile Include="Css.cpp" />
+    <ClCompile Include="RoundedColorBrush.cpp" />
     <ClCompile Include="exports.cpp" />
     <!-- cppwinrt generates module.g.cpp (DllGetActivationFactory / DllCanUnloadNow) under
          "Generated Files\"; a hand-authored project must compile it explicitly. NotUsing: it is
@@ -164,6 +166,7 @@
     <Midl Include="Input.idl" />
     <Midl Include="CssImageResult.idl" />
     <Midl Include="Css.idl" />
+    <Midl Include="RoundedColorBrush.idl" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,6 +3,7 @@
 import { AddChildFromBuilder, CustomLayoutView, View as NSView, ViewBase as NSViewBase, getViewById, Property, widthProperty, heightProperty, View, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength, marginLeftProperty, marginRightProperty, marginTopProperty, marginBottomProperty, minWidthProperty, minHeightProperty, fontSizeProperty, fontWeightProperty, fontStyleProperty, colorProperty, Color, lineHeightProperty, letterSpacingProperty, textAlignmentProperty, textDecorationProperty, borderLeftWidthProperty, borderTopWidthProperty, borderRightWidthProperty, borderBottomWidthProperty, backgroundColorProperty, paddingLeftProperty, paddingRightProperty, paddingTopProperty, paddingBottomProperty, zIndexProperty, PseudoClassHandler } from '@nativescript/core';
 import { Display, Gap, GridAutoFlow, JustifyItems, JustifySelf, Length, LengthAuto, Overflow, Position, BoxSizing, VerticalAlign, FlexDirection, Float, Clear } from '.';
 import { alignItemsProperty, alignSelfProperty, flexDirectionProperty, flexGrowProperty, flexShrinkProperty, flexWrapProperty, justifyContentProperty } from '@nativescript/core/ui/layouts/flexbox-layout';
+import { fontInternalProperty } from '@nativescript/core/ui/styling/style-properties';
 import { _forceStyleUpdate, _setGridAutoRows } from './utils';
 import { Style as MasonStyle, Style } from './style';
 import {
@@ -1455,6 +1456,11 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     } else if (__APPLE__) {
       // @ts-ignore
       (this.nativeView as any).style.setBorderColor(String(value));
+    } else if (__WINDOWS__) {
+      // @ts-ignore
+      const style = this._styleHelper;
+      // @ts-ignore
+      if (style) style.setBorderColor(String(value));
     }
   }
 
@@ -1600,10 +1606,8 @@ export class ViewBase extends CustomLayoutView implements AddChildFromBuilder {
     }
   }
 
-  // Windows: push a font/text property to the native Text container, which applies it to its
-  // TextBlock (the default for all inline runs). Font props otherwise only land in the style buffer,
-  // which the TextBlock-backed text doesn't read — so size/weight/line-height/letter-spacing
-  // wouldn't change visually. No-op on a container that isn't a Text.
+  // Font props only land in the style buffer, which the TextBlock-backed text doesn't read, so they
+  // must be forwarded to the native Text control to take visual effect. No-op off a Text container.
   private _applyTextRunProp(method: string, arg: number) {
     if (!__WINDOWS__) return;
     try {
@@ -2348,6 +2352,17 @@ textProperty.register(ViewBase);
 
 export class TextBase extends ViewBase {
   textContent: string;
+
+  [fontInternalProperty.setNative](value: any) {
+    if (!__WINDOWS__) return;
+    // @ts-ignore
+    const view = (this as any)._view;
+    if (!view || typeof view.SetFontFamily !== 'function') return;
+    const family = value && typeof value === 'object' ? (value.fontFamily ?? '') : '';
+    try {
+      view.SetFontFamily(String(family ?? ''));
+    } catch (_) {}
+  }
 
   [textWrapProperty.setNative](value) {
     // @ts-ignore

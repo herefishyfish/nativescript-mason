@@ -18,6 +18,7 @@ namespace winrt::NativeScript::Mason::implementation
         void Content(hstring const& value);
         double FontSize() const;
         void FontSize(double value);
+        void SetFontFamily(hstring const& families);
 
         void SetRun(winrt::NativeScript::Mason::TextNode const& run, int32_t index);
         void RemoveRun(winrt::NativeScript::Mason::TextNode const& run);
@@ -45,6 +46,7 @@ namespace winrt::NativeScript::Mason::implementation
         int32_t m_fontWeight{ 0 };
         double m_lineHeightMultiplier{ 0.0 };
         double m_letterSpacingPx{ 0.0 };
+        winrt::hstring m_fontFamily{};
     };
 }
 

@@ -614,6 +614,83 @@ function parseBorderRadiusShorthand(value: string): { tl: number; tr: number; br
   }
 }
 
+// Split on top-level whitespace, keeping parenthesised groups (e.g. `rgba(0,0,0,.5)`) intact.
+function splitTopLevelSpaces(value: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (depth === 0 && /\s/.test(ch)) {
+      if (cur.length) {
+        out.push(cur);
+        cur = '';
+      }
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+// Parse a `border` / `border-<side>` shorthand (`<width> <style> <color>`, any order) into px width,
+// border-style enum and argb color; each is null when absent.
+function parseBorderShorthand(value: string): { width: number | null; style: number | null; color: number | null } {
+  let width: number | null = null;
+  let style: number | null = null;
+  let color: number | null = null;
+  for (const tok of splitTopLevelSpaces(String(value ?? '').trim())) {
+    const s = borderStyleToEnum(tok);
+    if (s !== -1) {
+      style = s;
+      continue;
+    }
+    const lower = tok.toLowerCase();
+    if (lower === 'thin') {
+      width = 1;
+      continue;
+    }
+    if (lower === 'medium') {
+      width = 3;
+      continue;
+    }
+    if (lower === 'thick') {
+      width = 5;
+      continue;
+    }
+    if (/^-?\d*\.?\d+(px|dip|dp|rem|em|pt)?$/i.test(tok)) {
+      const n = parseFloat(tok);
+      if (!isNaN(n)) {
+        width = n;
+        continue;
+      }
+    }
+    const c = normalizeColorValue(tok);
+    if (c != null) color = c;
+  }
+  return { width, style, color };
+}
+
+// Parse a 1-4 token `border-color` shorthand into per-side argb (CSS order top/right/bottom/left).
+function parseSidesColorShorthand(value: string): { t: number | null; r: number | null; b: number | null; l: number | null } {
+  const cols = splitTopLevelSpaces(String(value ?? '').trim()).map((t) => normalizeColorValue(t));
+  switch (cols.length) {
+    case 0:
+      return { t: null, r: null, b: null, l: null };
+    case 1:
+      return { t: cols[0], r: cols[0], b: cols[0], l: cols[0] };
+    case 2:
+      return { t: cols[0], r: cols[1], b: cols[0], l: cols[1] };
+    case 3:
+      return { t: cols[0], r: cols[1], b: cols[2], l: cols[1] };
+    default:
+      return { t: cols[0], r: cols[1], b: cols[2], l: cols[3] };
+  }
+}
+
 const i8Buffer = new Int8Array(4);
 
 const f32Buffer = new Uint8Array(Float32Array.BYTES_PER_ELEMENT * 4);
@@ -979,7 +1056,56 @@ export class Style {
       setUint8(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_X_TYPE, 0);
       setUint8(this.style_view, StyleKeys.BORDER_RADIUS_BOTTOM_LEFT_Y_TYPE, 0);
       this.commitState(StateKeys.BORDER_RADIUS);
+      return;
     }
+
+    if (name === 'border' || name === 'border-top' || name === 'border-right' || name === 'border-bottom' || name === 'border-left') {
+      const p = parseBorderShorthand(value);
+      let style = p.style;
+      if (style == null && (p.width != null || p.color != null)) style = 4; // solid
+      const sides: ('left' | 'right' | 'top' | 'bottom')[] = name === 'border' ? ['left', 'right', 'top', 'bottom'] : name === 'border-left' ? ['left'] : name === 'border-right' ? ['right'] : name === 'border-top' ? ['top'] : ['bottom'];
+      for (const s of sides) this.writeBorderSide(s, p.width, style, p.color);
+      this.commitState(StateKeys.BORDER);
+      this.commitState(StateKeys.BORDER_STYLE);
+      this.commitState(StateKeys.BORDER_COLOR);
+      return;
+    }
+
+    if (name === 'border-color') {
+      const c = parseSidesColorShorthand(value);
+      this.writeBorderSide('top', null, null, c.t);
+      this.writeBorderSide('right', null, null, c.r);
+      this.writeBorderSide('bottom', null, null, c.b);
+      this.writeBorderSide('left', null, null, c.l);
+      this.commitState(StateKeys.BORDER_COLOR);
+      return;
+    }
+  }
+
+  // Write one side's border width/style/color into the style buffer; null components are skipped.
+  private writeBorderSide(side: 'left' | 'right' | 'top' | 'bottom', width: number | null, style: number | null, color: number | null) {
+    if (!this.style_view) return;
+    const W = side === 'left' ? StyleKeys.BORDER_LEFT_VALUE : side === 'right' ? StyleKeys.BORDER_RIGHT_VALUE : side === 'top' ? StyleKeys.BORDER_TOP_VALUE : StyleKeys.BORDER_BOTTOM_VALUE;
+    const T = side === 'left' ? StyleKeys.BORDER_LEFT_TYPE : side === 'right' ? StyleKeys.BORDER_RIGHT_TYPE : side === 'top' ? StyleKeys.BORDER_TOP_TYPE : StyleKeys.BORDER_BOTTOM_TYPE;
+    const S = side === 'left' ? StyleKeys.BORDER_LEFT_STYLE : side === 'right' ? StyleKeys.BORDER_RIGHT_STYLE : side === 'top' ? StyleKeys.BORDER_TOP_STYLE : StyleKeys.BORDER_BOTTOM_STYLE;
+    const C = side === 'left' ? StyleKeys.BORDER_LEFT_COLOR : side === 'right' ? StyleKeys.BORDER_RIGHT_COLOR : side === 'top' ? StyleKeys.BORDER_TOP_COLOR : StyleKeys.BORDER_BOTTOM_COLOR;
+    this.prepareMut();
+    if (width != null) {
+      setInt8(this.style_view, T, 0);
+      setFloat32(this.style_view, W, width);
+    }
+    if (style != null) setInt8(this.style_view, S, style);
+    if (color != null) setUint32(this.style_view, C, color >>> 0);
+  }
+
+  setBorderColor(value: string) {
+    if (!__WINDOWS__ || !this.style_view) return;
+    const c = parseSidesColorShorthand(String(value ?? ''));
+    this.writeBorderSide('top', null, null, c.t);
+    this.writeBorderSide('right', null, null, c.r);
+    this.writeBorderSide('bottom', null, null, c.b);
+    this.writeBorderSide('left', null, null, c.l);
+    this.commitState(StateKeys.BORDER_COLOR);
   }
 
   resetState() {
