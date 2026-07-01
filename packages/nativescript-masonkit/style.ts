@@ -1600,6 +1600,38 @@ export class Style {
     }
   }
 
+  get direction() {
+    switch (getInt8(this.style_view, StyleKeys.DIRECTION)) {
+      case 0:
+        return 'inherit';
+      case 1:
+        return 'ltr';
+      case 2:
+        return 'rtl';
+    }
+    return 'inherit';
+  }
+
+  set direction(value: 'inherit' | 'ltr' | 'rtl') {
+    let direction = -1;
+    switch (value) {
+      case 'inherit':
+        direction = 0;
+        break;
+      case 'ltr':
+        direction = 1;
+        break;
+      case 'rtl':
+        direction = 2;
+        break;
+    }
+    if (direction != -1) {
+      this.prepareMut();
+      setInt8(this.style_view, StyleKeys.DIRECTION, direction);
+      this.commitState(StateKeys.DIRECTION);
+    }
+  }
+
   get flexDirection() {
     switch (getInt8(this.style_view, StyleKeys.FLEX_DIRECTION)) {
       case 0:

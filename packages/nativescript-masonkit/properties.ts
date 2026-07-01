@@ -1,5 +1,5 @@
 import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, textTransformProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
-import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
+import { Display, Direction, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
 import type { Style as MasonStyle } from './style';
@@ -267,6 +267,28 @@ flexDirectionProperty.overrideHandlers({
         // Revert to old value if newValue is invalid
         // @ts-ignore
         target.flexDirection = oldValue as never;
+      }
+    }
+  },
+});
+
+export const directionProperty = new CssProperty<Style, Direction>({
+  name: 'direction',
+  cssName: 'direction',
+});
+
+directionProperty.overrideHandlers({
+  name: 'direction',
+  cssName: 'direction',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      if (newValue) {
+        view.direction = newValue as never;
+      } else {
+        // Revert to old value if newValue is invalid
+        // @ts-ignore
+        target.direction = oldValue as never;
       }
     }
   },
@@ -1418,6 +1440,8 @@ rowGapProperty.register(Style);
 columnGapProperty.register(Style);
 
 scrollBarWidthProperty.register(Style);
+
+directionProperty.register(Style);
 
 marginProperty.register(Style);
 

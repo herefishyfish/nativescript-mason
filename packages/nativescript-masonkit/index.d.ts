@@ -47,11 +47,14 @@ export type Float = 'left' | 'right' | 'none';
 
 export type Clear = 'left' | 'right' | 'both' | 'none';
 
+export type Direction = 'inherit' | 'ltr' | 'rtl';
+
 declare module '@nativescript/core/ui/styling/style' {
   interface Style {
     boxSizing: BoxSizing;
     display: Display;
     position: Position;
+    direction: Direction;
     flexDirection: FlexDirection;
     flexWrap: FlexWrap;
     flex: string | 'auto' | 'none' | number | 'initial';
@@ -128,6 +131,7 @@ interface Style {
   boxSizing: BoxSizing;
   display: Display;
   position: Position;
+  direction: Direction;
   flexDirection: FlexDirection;
   flexWrap: FlexWrap;
   flex: string | 'auto' | 'none' | number | 'initial';
