@@ -4,7 +4,7 @@ use crate::Style;
 pub use grid::*;
 use style_atoms::Atom;
 use taffy::{
-    AlignContent, AlignItems, AlignSelf, BoxSizing, Clear, Display, FlexDirection,
+    AlignContent, AlignItems, AlignSelf, BoxSizing, Clear, Direction, Display, FlexDirection,
     FlexWrap, Float, GridAutoFlow, GridPlacement, GridTemplateArea, JustifyContent, Line, Position,
     TextAlign,
     AlignContentKeyword,
@@ -528,6 +528,21 @@ pub const fn object_to_enum(value: ObjectFit) -> i8 {
         ObjectFit::Fill => 2,
         ObjectFit::None => 3,
         ObjectFit::ScaleDown => 4,
+    }
+}
+
+pub const fn direction_from_enum(value: i8) -> Option<Direction> {
+    match value {
+        1 => Some(Direction::Ltr),
+        2 => Some(Direction::Rtl),
+        _ => None,
+    }
+}
+
+pub const fn direction_to_enum(value: Direction) -> i8 {
+    match value {
+        Direction::Ltr => 1,
+        Direction::Rtl => 2,
     }
 }
 

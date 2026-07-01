@@ -2170,7 +2170,6 @@ class Style internal constructor(@Transient internal var node: Node) {
       setOrAppendState(StateKeys.POSITION)
     }
 
-  // TODO
   var direction: Direction
     get() {
       val base = Direction.from(values.get(StyleKeys.DIRECTION))
@@ -4087,6 +4086,18 @@ class Style internal constructor(@Transient internal var node: Node) {
 
     updateTextStyle()
 
+    val stateKeys = StateKeys(isDirty, isDirtyHigh)
+    val directionDirty = stateKeys.hasFlag(StateKeys.DIRECTION)
+    if (directionDirty) {
+      val androidView = node.view as? android.view.View
+      val resolvedLayoutDirection = when (direction) {
+        Direction.LTR -> android.view.View.LAYOUT_DIRECTION_LTR
+        Direction.RTL -> android.view.View.LAYOUT_DIRECTION_RTL
+        Direction.Inherit -> android.view.View.LAYOUT_DIRECTION_INHERIT
+      }
+      androidView?.layoutDirection = resolvedLayoutDirection
+    }
+
     val borderState = (isDirty and StateKeys.BORDER.low) or (isDirtyHigh and StateKeys.BORDER.high)
     val borderRadius =
       (isDirty and StateKeys.BORDER_RADIUS.low) or (isDirtyHigh and StateKeys.BORDER_RADIUS.high)
@@ -4101,13 +4112,13 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
     // Dispatch caret-color to input views
-    val caretColorDirty = StateKeys(isDirty, isDirtyHigh).hasFlag(StateKeys.CARET_COLOR)
+    val caretColorDirty = stateKeys.hasFlag(StateKeys.CARET_COLOR)
     if (caretColorDirty) {
       notifyTextStyleChanged(StateKeys.CARET_COLOR)
     }
 
     // Dispatch object-position to image views
-    val objectPositionDirty = StateKeys(isDirty, isDirtyHigh).hasFlag(StateKeys.OBJECT_POSITION)
+    val objectPositionDirty = stateKeys.hasFlag(StateKeys.OBJECT_POSITION)
     if (objectPositionDirty) {
       (node.view as? android.widget.ImageView)?.invalidate()
     }

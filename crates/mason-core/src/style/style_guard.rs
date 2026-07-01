@@ -5,7 +5,7 @@ use std::ops::Deref;
 use style_atoms::Atom;
 use taffy::{
     AbsoluteAxis, AbstractAxis, AlignContent, AlignItems, AlignSelf, BlockContainerStyle,
-    BlockItemStyle, BoxGenerationMode, BoxSizing, Clear, CoreStyle, Dimension, Display,
+    BlockItemStyle, BoxGenerationMode, BoxSizing, Clear, CoreStyle, Direction, Dimension, Display,
     FlexDirection, FlexWrap, FlexboxContainerStyle, FlexboxItemStyle, Float,
     GenericGridTemplateComponent, GridAutoFlow, GridContainerStyle, GridItemStyle, GridPlacement,
     GridTemplateArea, GridTemplateComponent, GridTemplateRepetition, JustifyContent,
@@ -45,6 +45,11 @@ impl<'a> CoreStyle for StyleGuard<'a> {
     #[inline(always)]
     fn box_sizing(&self) -> BoxSizing {
         self.get_box_sizing()
+    }
+
+    #[inline(always)]
+    fn direction(&self) -> Direction {
+        self.get_direction()
     }
 
     #[inline(always)]
