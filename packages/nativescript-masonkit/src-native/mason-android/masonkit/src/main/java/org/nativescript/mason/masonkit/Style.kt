@@ -4112,6 +4112,13 @@ class Style internal constructor(@Transient internal var node: Node) {
       (node.view as? android.widget.ImageView)?.invalidate()
     }
 
+    // Dispatch object-fit to image views (paint-only: box size is unchanged,
+    // only how the image is scaled/positioned within it, so a redraw suffices)
+    val objectFitDirty = StateKeys(isDirty, isDirtyHigh).hasFlag(StateKeys.OBJECT_FIT)
+    if (objectFitDirty) {
+      (node.view as? android.widget.ImageView)?.invalidate()
+    }
+
     if (isSlowDirty) {
       if (isDirtyEmpty()) {
         nativeNonBufferData(

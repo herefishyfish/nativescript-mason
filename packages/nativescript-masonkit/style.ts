@@ -4739,6 +4739,57 @@ export class Style {
     return this.objectPosition;
   }
 
+  get objectFit(): 'fill' | 'contain' | 'cover' | 'none' | 'scale-down' {
+    if (!this.style_view) return 'fill';
+    switch (getUint8(this.style_view, StyleKeys.OBJECT_FIT)) {
+      case 0:
+        return 'contain';
+      case 1:
+        return 'cover';
+      case 2:
+        return 'fill';
+      case 3:
+        return 'none';
+      case 4:
+        return 'scale-down';
+      default:
+        return 'fill';
+    }
+  }
+
+  set objectFit(value: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down') {
+    let v = -1;
+    switch (value) {
+      case 'contain':
+        v = 0;
+        break;
+      case 'cover':
+        v = 1;
+        break;
+      case 'fill':
+        v = 2;
+        break;
+      case 'none':
+        v = 3;
+        break;
+      case 'scale-down':
+        v = 4;
+        break;
+    }
+    if (v === -1) return;
+    this.prepareMut();
+    setUint8(this.style_view, StyleKeys.OBJECT_FIT, v);
+    this.commitState(StateKeys.OBJECT_FIT);
+  }
+
+  set 'object-fit'(value: 'fill' | 'contain' | 'cover' | 'none' | 'scale-down') {
+    this.objectFit = value;
+  }
+
+  get 'object-fit'() {
+    return this.objectFit;
+  }
+
   get borderLeftStyle(): string {
     return borderStyleFromEnum(getInt8(this.style_view, StyleKeys.BORDER_LEFT_STYLE));
   }

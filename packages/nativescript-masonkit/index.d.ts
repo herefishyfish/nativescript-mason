@@ -49,6 +49,8 @@ export type Clear = 'left' | 'right' | 'both' | 'none';
 
 export type Direction = 'inherit' | 'ltr' | 'rtl';
 
+export type ObjectFit = 'fill' | 'contain' | 'cover' | 'none' | 'scale-down';
+
 declare module '@nativescript/core/ui/styling/style' {
   interface Style {
     boxSizing: BoxSizing;
@@ -110,6 +112,7 @@ declare module '@nativescript/core/ui/styling/style' {
     cornerShapeBottomRight: string;
     cornerShapeBottomLeft: string;
     objectPosition: string;
+    objectFit: ObjectFit;
     borderStyle: string;
     borderLeftStyle: string;
     borderRightStyle: string;
@@ -187,6 +190,7 @@ interface Style {
   cornerShapeBottomRight: string;
   cornerShapeBottomLeft: string;
   objectPosition: string;
+  objectFit: ObjectFit;
   borderStyle: string;
   borderLeftStyle: string;
   borderRightStyle: string;
@@ -261,6 +265,7 @@ interface IViewBase {
   cornerShapeBottomRight: string;
   cornerShapeBottomLeft: string;
   objectPosition: string;
+  objectFit: ObjectFit;
   borderStyle: string;
   borderLeftStyle: string;
   borderRightStyle: string;

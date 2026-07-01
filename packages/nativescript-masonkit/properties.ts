@@ -1,5 +1,5 @@
 import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, textTransformProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
-import { Display, Direction, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
+import { Display, Direction, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear, ObjectFit } from '.';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
 import type { Style as MasonStyle } from './style';
@@ -1472,6 +1472,18 @@ export const objectPositionProperty = new CssProperty<Style, string>({
   defaultValue: '50% 50%',
 });
 
+export const objectFitProperty = new CssProperty<Style, ObjectFit>({
+  name: 'objectFit',
+  cssName: 'object-fit',
+  defaultValue: 'fill',
+  valueChanged(target, oldValue, newValue) {
+    const view = getViewStyle(target.viewRef);
+    if (view) {
+      view.objectFit = newValue;
+    }
+  },
+});
+
 export const borderStyleProperty = new CssProperty<Style, string>({
   name: 'borderStyle',
   cssName: 'border-style',
@@ -1531,6 +1543,7 @@ export const caretColorProperty = new CssProperty<Style, string>({
 });
 
 objectPositionProperty.register(Style);
+objectFitProperty.register(Style);
 borderStyleProperty.register(Style);
 borderImageProperty.register(Style);
 fontStretchProperty.register(Style);
