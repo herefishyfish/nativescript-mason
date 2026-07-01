@@ -8,11 +8,11 @@ use crate::style::utils::{
 use crate::utils::{
     align_content_from_enum, align_content_to_enum, align_items_from_enum, align_items_to_enum,
     align_self_from_enum, align_self_to_enum, boxing_size_from_enum, boxing_size_to_enum,
-    clear_from_enum, clear_to_enum, display_from_enum, display_mode_from_enum,
-    display_mode_to_enum, display_to_enum, flex_direction_from_enum, flex_direction_to_enum,
-    flex_wrap_from_enum, flex_wrap_to_enum, float_from_enum, float_to_enum,
-    grid_auto_flow_from_enum, grid_auto_flow_to_enum, object_to_enum, overflow_from_enum,
-    overflow_to_enum, position_from_enum, position_to_enum, text_align_from_enum,
+    clear_from_enum, clear_to_enum, direction_from_enum, direction_to_enum, display_from_enum,
+    display_mode_from_enum, display_mode_to_enum, display_to_enum, flex_direction_from_enum,
+    flex_direction_to_enum, flex_wrap_from_enum, flex_wrap_to_enum, float_from_enum,
+    float_to_enum, grid_auto_flow_from_enum, grid_auto_flow_to_enum, object_to_enum,
+    overflow_from_enum, overflow_to_enum, position_from_enum, position_to_enum, text_align_from_enum,
     text_align_to_enum,
 };
 #[cfg(target_os = "android")]
@@ -31,7 +31,7 @@ use std::sync::Arc;
 use style_atoms::Atom;
 use taffy::{
     AbsoluteAxis, AbstractAxis, AlignContent, AlignItems, AlignSelf, BlockContainerStyle,
-    BlockItemStyle, BoxGenerationMode, BoxSizing, Clear, CoreStyle, Dimension, Display,
+    BlockItemStyle, BoxGenerationMode, BoxSizing, Clear, CoreStyle, Direction, Dimension, Display,
     FlexDirection, FlexWrap, FlexboxContainerStyle, FlexboxItemStyle, Float,
     GenericGridTemplateComponent, GridAutoFlow, GridContainerStyle, GridItemStyle, GridPlacement,
     GridTemplateArea, GridTemplateComponent, GridTemplateRepetition, JustifyContent, JustifyItems,
@@ -2337,6 +2337,15 @@ impl Style {
     pub fn set_text_align(&mut self, value: TextAlign) {
         self.prepare_mut();
         set_style_data_i8(self.data_mut(), StyleKeys::ALIGN, text_align_to_enum(value))
+    }
+
+    pub fn get_direction(&self) -> Direction {
+        direction_from_enum(get_style_data_i8(self.data(), StyleKeys::DIRECTION)).unwrap_or(Direction::Ltr)
+    }
+
+    pub fn set_direction(&mut self, value: Direction) {
+        self.prepare_mut();
+        set_style_data_i8(self.data_mut(), StyleKeys::DIRECTION, direction_to_enum(value))
     }
 
     pub fn get_flex_direction(&self) -> FlexDirection {

@@ -73,6 +73,12 @@ class DirectionActivity : AppCompatActivity() {
       ViewGroup.LayoutParams.WRAP_CONTENT
     )
 
+    val toggleRowDirection = Button(this)
+    toggleRowDirection.layoutParams = org.nativescript.mason.masonkit.View.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT
+    )
+
     val demoRow = mason.createView(this)
     demoRow.setBackgroundColor(Color.WHITE)
     demoRow.style.display = Display.Flex
@@ -83,8 +89,8 @@ class DirectionActivity : AppCompatActivity() {
     demoRow.setGap(10f, 0f)
     demoRow.setPadding(12f, 12f, 12f, 12f)
 
-    val colors = listOf("#EF4444", "#3B82F6", "#10B981")
-    val labels = listOf("A", "B", "C")
+    val colors = listOf("#EF4444", "#3B82F6", "#10B981", "#F59E0B")
+    val labels = listOf("A", "B", "C", "D")
 
     for (i in labels.indices) {
       val card = mason.createView(this)
@@ -105,16 +111,19 @@ class DirectionActivity : AppCompatActivity() {
     }
 
     var isRtl = false
+    var isRowReverse = false
 
     fun applyDirection() {
       val direction = if (isRtl) Direction.RTL else Direction.LTR
+      val rowDirection = if (isRowReverse) FlexDirection.RowReverse else FlexDirection.Row
       Log.d(tag, "applyDirection start isRtl=$isRtl direction=$direction")
       root.direction = direction
       demoRow.direction = direction
-      demoRow.flexDirection = if (isRtl) FlexDirection.RowReverse else FlexDirection.Row
+      demoRow.flexDirection = rowDirection
       root.setBackgroundColor(if (isRtl) Color.parseColor("#FFF7ED") else Color.parseColor("#F5F5F5"))
-      status.textContent = "Current direction: ${if (isRtl) "RTL" else "LTR"}"
+      status.textContent = "Current direction: ${if (isRtl) "RTL" else "LTR"}, row: ${if (isRowReverse) "Row-Reverse" else "Row"}"
       toggle.text = if (isRtl) "Switch to LTR" else "Switch to RTL"
+      toggleRowDirection.text = if (isRowReverse) "Switch to Row" else "Switch to Row-Reverse"
       Log.d(
         tag,
         "applyDirection end rootLayoutDirection=${root.layoutDirection} demoRowLayoutDirection=${demoRow.layoutDirection} demoRowFlexDirection=${demoRow.flexDirection}"
@@ -127,10 +136,17 @@ class DirectionActivity : AppCompatActivity() {
       applyDirection()
     }
 
+    toggleRowDirection.setOnClickListener {
+      Log.d(tag, "toggle row clicked current isRowReverse=$isRowReverse")
+      isRowReverse = !isRowReverse
+      applyDirection()
+    }
+
     root.addView(title)
     root.addView(subtitle)
     root.addView(status)
     root.addView(toggle)
+    root.addView(toggleRowDirection)
     root.addView(demoRow)
 
     applyDirection()

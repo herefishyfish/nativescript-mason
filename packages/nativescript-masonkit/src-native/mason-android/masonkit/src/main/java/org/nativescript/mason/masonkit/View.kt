@@ -1176,6 +1176,13 @@ open class View @JvmOverloads constructor(
       }
     }
 
+    if (configuration.layoutDirection == LAYOUT_DIRECTION_RTL) {
+      borderLeft = borderRight.also { borderRight = borderLeft }
+      marginLeft = marginRight.also { marginRight = marginLeft }
+      paddingLeft = paddingRight.also { paddingRight = paddingLeft }
+      insetLeft = insetRight.also { insetRight = insetLeft }
+    }
+
     node.style.borderWidth = Rect(borderLeft, borderRight, borderTop, borderBottom)
 
     node.style.margin = Rect(marginLeft, marginRight, marginTop, marginBottom)

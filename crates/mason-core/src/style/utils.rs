@@ -1,7 +1,8 @@
 use crate::utils::{
     align_content_from_enum, align_items_from_enum, align_self_from_enum, box_sizing_from_enum,
-    display_from_enum, flex_direction_from_enum, flex_wrap_from_enum, grid_auto_flow_from_enum,
-    justify_content_from_enum, overflow_from_enum, position_from_enum, text_align_from_enum,
+    direction_from_enum, display_from_enum, flex_direction_from_enum, flex_wrap_from_enum,
+    grid_auto_flow_from_enum, justify_content_from_enum, overflow_from_enum, position_from_enum,
+    text_align_from_enum,
 };
 use taffy::geometry::Point;
 
@@ -235,7 +236,7 @@ pub fn update_from_ffi(
     style: &mut Style,
     display: i8,
     position: i8,
-    _direction: i8,
+    direction: i8,
     flex_direction: i8,
     flex_wrap: i8,
     _overflow: i8,
@@ -323,6 +324,10 @@ pub fn update_from_ffi(
 
     if let Some(position) = position_from_enum(position) {
         style.set_position(position);
+    }
+
+    if let Some(direction) = direction_from_enum(direction) {
+        style.set_direction(direction);
     }
 
     if let Some(flex_direction) = flex_direction_from_enum(flex_direction) {
