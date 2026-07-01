@@ -595,9 +595,6 @@ open class View @JvmOverloads constructor(
     layoutParameters: LayoutParams, node: Node, view: android.view.View
   ) {
     val configuration = view.resources.configuration
-    if (configuration.layoutDirection == LAYOUT_DIRECTION_RTL) {
-      // TODO support direction
-    }
     val background = view.background
     if (background != null) {
       val backgroundPadding = android.graphics.Rect()
@@ -694,7 +691,6 @@ open class View @JvmOverloads constructor(
         }
 
         R.styleable.mason_mason_direction -> {
-          // TODO handle direction
           node.style.direction = Direction.from(value.roundToInt().toByte())
         }
 
@@ -1212,13 +1208,13 @@ open class View @JvmOverloads constructor(
       checkAndUpdateStyle()
     }
 
-  // TODO
   var direction: Direction
     get() {
       return style.direction
     }
     set(value) {
       style.direction = value
+      checkAndUpdateStyle()
     }
 
   var flexDirection: FlexDirection

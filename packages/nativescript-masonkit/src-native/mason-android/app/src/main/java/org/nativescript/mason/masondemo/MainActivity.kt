@@ -135,6 +135,11 @@ class MainActivity : AppCompatActivity() {
       startActivity(intent)
     }
 
+    binding.btnDirection.setOnClickListener {
+      val intent = Intent(this, DirectionActivity::class.java)
+      startActivity(intent)
+    }
+
     binding.minimalRepro.setOnClickListener {
       val intent = Intent(this, MinimalReproActivity::class.java)
       startActivity(intent)

@@ -105,6 +105,9 @@
     <activity
       android:name=".TransformActivity"
       android:exported="true" />
+    <activity
+      android:name=".DirectionActivity"
+      android:exported="false" />
   </application>
 
 </manifest>
