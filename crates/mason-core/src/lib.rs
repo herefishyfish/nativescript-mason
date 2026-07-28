@@ -1711,4 +1711,44 @@ mod tests {
             expected
         );
     }
+
+    /// Regression test for ANDROID-FIXES.md 1.1: the per-node state buffer is
+    /// handed to platform code as a raw pointer (a direct ByteBuffer on
+    /// Android) which is cached indefinitely, so its address must stay stable
+    /// when the tree's SlotMap reallocates on growth (initial capacity 128).
+    #[test]
+    fn node_state_buffer_stable_across_tree_growth() {
+        use crate::node::{NodeStateKeys, NODE_STATE_BUFFER_SIZE};
+
+        let mut mason = Mason::new();
+        let first = mason.create_node();
+        let first_id = first.id();
+
+        let (ptr_before, len) = mason.node_state_data_raw_mut(first_id);
+        assert!(!ptr_before.is_null());
+        assert_eq!(len, NODE_STATE_BUFFER_SIZE);
+
+        // Write a sentinel through the raw pointer, as platform code would.
+        // (Read it back through the pointer too: Node::is_virtual goes through
+        // the separately-buggy get_style_data_i8_raw, see ANDROID-FIXES 1.4.)
+        unsafe {
+            *ptr_before.add(NodeStateKeys::IS_VIRTUAL as usize) = 1;
+        }
+
+        // Grow the tree far past the SlotMap's initial capacity, forcing
+        // reallocations that move every Node value stored inline in it.
+        let mut nodes = Vec::new();
+        for _ in 0..4096 {
+            nodes.push(mason.create_node());
+        }
+
+        let (ptr_after, len_after) = mason.node_state_data_raw(first_id);
+        assert_eq!(len_after, NODE_STATE_BUFFER_SIZE);
+        assert_eq!(
+            ptr_before, ptr_after as *mut u8,
+            "state buffer address changed after tree growth"
+        );
+        let sentinel = unsafe { *ptr_after.add(NodeStateKeys::IS_VIRTUAL as usize) };
+        assert_eq!(sentinel, 1, "state buffer contents lost after tree growth");
+    }
 }
