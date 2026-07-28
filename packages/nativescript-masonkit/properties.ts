@@ -1,5 +1,6 @@
-import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, Length as CoreLength, fontSizeProperty, textAlignmentProperty, textTransformProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
+import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, fontSizeProperty, textAlignmentProperty, textTransformProperty, PercentLength as CorePercentLength, Trace, CoreTypes, unsetValue, verticalAlignmentProperty, textShadowProperty, Font, Property, makeParser, makeValidator, marginTopProperty } from '@nativescript/core';
 import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
+import { parseCSSShadow } from '@nativescript/core/ui/styling/css-shadow';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
 import type { Style as MasonStyle } from './style';
@@ -383,7 +384,7 @@ export const rowGapProperty = new CssProperty<Style, Length>({
   cssName: 'row-gap',
   defaultValue: 0,
   valueConverter(value) {
-    const parsed = CoreLength.parse(value);
+    const parsed = CorePercentLength.parse(value);
     if (typeof parsed === 'string') {
       return 0;
     }
@@ -402,7 +403,7 @@ export const columnGapProperty = new CssProperty<Style, Length>({
   cssName: 'column-gap',
   defaultValue: 0,
   valueConverter(value) {
-    const parsed = CoreLength.parse(value);
+    const parsed = CorePercentLength.parse(value);
     if (typeof parsed === 'string') {
       return 0;
     }
@@ -562,14 +563,6 @@ textTransformProperty.overrideHandlers({
   },
 });
 
-function masonLengthParse(value) {
-  try {
-    return CoreLength.parse(value);
-  } catch (e) {
-    return undefined;
-  }
-}
-
 function masonLengthPercentParse(value) {
   try {
     return CorePercentLength.parse(value);
@@ -583,9 +576,9 @@ export const maxWidthProperty = new CssProperty<Style, LengthAuto>({
   cssName: 'max-width',
   defaultValue: 'auto',
   // @ts-ignore
-  equalityComparer: CoreLength.equals,
+  equalityComparer: CorePercentLength.equals,
   // @ts-ignore
-  valueConverter: masonLengthParse,
+  valueConverter: masonLengthPercentParse,
   valueChanged: (target, oldValue, newValue) => {
     const view = getViewStyle(target.viewRef);
     if (view) {
@@ -601,9 +594,9 @@ export const maxHeightProperty = new CssProperty<Style, LengthAuto>({
   cssName: 'max-height',
   defaultValue: 'auto',
   // @ts-ignore
-  equalityComparer: CoreLength.equals,
+  equalityComparer: CorePercentLength.equals,
   // @ts-ignore
-  valueConverter: masonLengthParse,
+  valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
     if (view) {
@@ -935,14 +928,16 @@ justifyContentProperty.overrideHandlers({
   },
 });
 
+// flex-basis accepts percentages, so it parses through PercentLength. Length
+// has no percentage unit and would turn '50%' into 50dip via parseFloat.
 export const flexBasisProperty = new CssProperty<Style, LengthAuto>({
   name: 'flexBasis',
   cssName: 'flex-basis',
   defaultValue: 'auto',
   // @ts-ignore
-  equalityComparer: CoreLength.equals,
+  equalityComparer: CorePercentLength.equals,
   // @ts-ignore
-  valueConverter: masonLengthParse,
+  valueConverter: masonLengthPercentParse,
   valueChanged(target, oldValue, newValue) {
     const view = getViewStyle(target.viewRef);
     if (view) {
@@ -1151,7 +1146,7 @@ const flexFlowProperty = new ShorthandProperty({
         if (values.length >= 1) {
           properties.push([flexDirectionProperty, values[0]]);
         }
-        if (value.length >= 2) {
+        if (values.length >= 2) {
           properties.push([flexWrapProperty, values[1]]);
         }
       }
@@ -1160,7 +1155,15 @@ const flexFlowProperty = new ShorthandProperty({
   },
 });
 
-// flex: inital | auto | none | <flex-grow> <flex-shrink> || <flex-basis>
+function isBareNumber(value: string): boolean {
+  return value !== '' && !isNaN(Number(value));
+}
+
+// flex: initial | auto | none | <flex-grow> [<flex-shrink> || <flex-basis>]
+//
+// Per CSS Flexbox §7.1.1 an omitted flex-basis in the shorthand is 0%, not auto.
+const OMITTED_BASIS = '0%';
+
 const flexProperty = new ShorthandProperty({
   name: 'flex',
   cssName: 'flex',
@@ -1169,48 +1172,46 @@ const flexProperty = new ShorthandProperty({
   },
   converter: function (value) {
     const properties = [];
-    if (value === unsetValue) {
-      properties.push([flexGrowProperty, value]);
-      properties.push([flexShrinkProperty, value]);
-    } else if (typeof value === 'number') {
-      properties.push([flexGrowProperty, value]);
-      properties.push([flexShrinkProperty, 1]);
-      properties.push([flexBasisProperty, 'auto']);
-    } else {
-      const trimmed = value && value.trim();
-      if (trimmed) {
-        const values = trimmed.split(/\s+/);
-        if (values.length === 1) {
-          switch (values[0]) {
-            case 'inital':
-              properties.push([flexGrowProperty, 0]);
-              properties.push([flexShrinkProperty, 1]);
-              properties.push([flexBasisProperty, 'auto']);
-              break;
-            case 'auto':
-              properties.push([flexGrowProperty, 1]);
-              properties.push([flexShrinkProperty, 1]);
-              properties.push([flexBasisProperty, 'auto']);
-              break;
-            case 'none':
-              properties.push([flexGrowProperty, 0]);
-              properties.push([flexShrinkProperty, 0]);
-              properties.push([flexBasisProperty, 'auto']);
-              break;
-            default:
-              properties.push([flexGrowProperty, values[0]]);
-              properties.push([flexShrinkProperty, 1]);
-              properties.push([flexBasisProperty, 'auto']);
-          }
-        }
-        if (values.length >= 2) {
-          properties.push([flexGrowProperty, values[0]]);
-          properties.push([flexShrinkProperty, values[1]]);
-        }
+    const push = (grow, shrink, basis) => {
+      properties.push([flexGrowProperty, grow]);
+      properties.push([flexShrinkProperty, shrink]);
+      properties.push([flexBasisProperty, basis]);
+    };
 
-        if (value.length >= 3) {
-          properties.push({ property: flexBasisProperty, value: values[2] });
+    if (value === unsetValue) {
+      push(value, value, value);
+    } else if (typeof value === 'number') {
+      push(value, 1, OMITTED_BASIS);
+    } else {
+      const values = String(value ?? '')
+        .trim()
+        .split(/\s+/)
+        .filter((token) => token !== '');
+
+      if (values.length === 1) {
+        switch (values[0]) {
+          case 'initial':
+            push(0, 1, 'auto');
+            break;
+          case 'auto':
+            push(1, 1, 'auto');
+            break;
+          case 'none':
+            push(0, 0, 'auto');
+            break;
+          default:
+            push(values[0], 1, OMITTED_BASIS);
         }
+      } else if (values.length === 2) {
+        // The second value is a shrink factor only when it is a bare number,
+        // otherwise it is a flex-basis.
+        if (isBareNumber(values[1])) {
+          push(values[0], values[1], OMITTED_BASIS);
+        } else {
+          push(values[0], 1, values[1]);
+        }
+      } else if (values.length >= 3) {
+        push(values[0], values[1], values[2]);
       }
     }
 
@@ -1275,16 +1276,21 @@ textShadowProperty.overrideHandlers({
   name: 'textShadow',
   cssName: 'text-shadow',
   valueConverter: function (value) {
-    return value as never;
+    // Mason views consume the raw CSS string; every other view still needs the
+    // parsed object core's setNative expects.
+    if (isMasonViewOrChild(this as never)) {
+      return value as never;
+    }
+    return parseCSSShadow(value) as never;
   },
-  valueChanged(target, oldValue, newValue) {
+  valueChanged(target, _oldValue, newValue) {
+    if (!isMasonViewOrChild(target as never)) {
+      // Leave core's own setNative to apply it.
+      return;
+    }
     const view = getViewStyle(target.viewRef);
     if (view) {
       view.textShadow = newValue as never;
-    } else {
-      // Revert to old value if newValue is invalid
-      // @ts-ignore
-      target.textShadow = oldValue;
     }
   },
 });

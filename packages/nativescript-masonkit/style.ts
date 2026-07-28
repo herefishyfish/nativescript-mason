@@ -2775,10 +2775,26 @@ export class Style {
 
   set flexBasis(value: LengthAuto) {
     switch (typeof value) {
-      case 'string':
+      case 'string': {
+        // Strings arrive from direct assignment, bypassing the CSS converter.
+        // The old stub dropped every one of them to auto.
         this.prepareMut();
-        setInt8(this.style_view, StyleKeys.FLEX_BASIS_TYPE, 0);
+        const t = (value as string).trim();
+        if (t === '' || t === 'auto') {
+          setInt8(this.style_view, StyleKeys.FLEX_BASIS_TYPE, 0);
+          setFloat32(this.style_view, StyleKeys.FLEX_BASIS_VALUE, 0);
+        } else if (t.endsWith('%')) {
+          // The buffer stores percentages as a 0-1 fraction, matching what
+          // PercentLength hands the object branch below.
+          setInt8(this.style_view, StyleKeys.FLEX_BASIS_TYPE, 2);
+          setFloat32(this.style_view, StyleKeys.FLEX_BASIS_VALUE, (parseFloat(t) || 0) / 100);
+        } else {
+          const n = parseFloat(t) || 0;
+          setInt8(this.style_view, StyleKeys.FLEX_BASIS_TYPE, 1);
+          setFloat32(this.style_view, StyleKeys.FLEX_BASIS_VALUE, t.endsWith('px') ? n : layout.toDevicePixels(n));
+        }
         break;
+      }
       case 'number':
         this.prepareMut();
         setInt8(this.style_view, StyleKeys.FLEX_BASIS_TYPE, 1);

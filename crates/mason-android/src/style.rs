@@ -368,6 +368,8 @@ pub extern "system" fn nativeGetStyleBuffer(
             return -1;
         }
 
+        let handle = mason.style_handle(node.id());
+
         unsafe {
             match env.new_direct_byte_buffer(ptr as _, len) {
                 Ok(buffer) => match mason_core::JVM_CACHE.get() {
@@ -386,7 +388,13 @@ pub extern "system" fn nativeGetStyleBuffer(
                         };
 
                         match result {
-                            Ok(result) => result.i().unwrap_or(-1),
+                            Ok(result) => {
+                                let ret = result.i().unwrap_or(-1);
+                                if ret >= 0 && handle >= 0 {
+                                    mason.set_handle_buffer(handle as u32, ret);
+                                }
+                                ret
+                            }
                             Err(_) => -1,
                         }
                     }
@@ -425,6 +433,8 @@ pub extern "system" fn nativePrepareMut(
             return -1;
         }
 
+        let handle = mason.style_handle(node.id());
+
         unsafe {
             match env.new_direct_byte_buffer(ptr as _, len) {
                 Ok(buffer) => match mason_core::JVM_CACHE.get() {
@@ -443,7 +453,13 @@ pub extern "system" fn nativePrepareMut(
                         };
 
                         match result {
-                            Ok(result) => result.i().unwrap_or(-1),
+                            Ok(result) => {
+                                let ret = result.i().unwrap_or(-1);
+                                if ret >= 0 && handle >= 0 {
+                                    mason.set_handle_buffer(handle as u32, ret);
+                                }
+                                ret
+                            }
                             Err(_) => -1,
                         }
                     }
