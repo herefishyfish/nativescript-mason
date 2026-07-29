@@ -1,6 +1,6 @@
 use mason_core::*;
 use mason_core::style::DisplayMode;
-use mason_core::style::Float;
+use taffy::style::Float;
 use taffy::style::Display;
 use std::ffi::{c_float, c_longlong, c_void};
 
@@ -52,7 +52,7 @@ fn flow_root_zero_width_not_intersect_floats() {
     mason.with_style_mut(fid, |s| {
         s.set_display(taffy::style::Display::Block);
         s.set_display_mode(DisplayMode::Box);
-        s.set_overflow(taffy::style::Overflow { x: taffy::Overflow::Auto, y: taffy::Overflow::Auto });
+        s.set_overflow(mason_core::Point { x: mason_core::style::Overflow::Auto, y: mason_core::style::Overflow::Auto });
         s.set_size(taffy::geometry::Size { width: taffy::style::Dimension::length(0.0), height: taffy::style::Dimension::length(200.0) });
     });
 
@@ -64,7 +64,7 @@ fn flow_root_zero_width_not_intersect_floats() {
     let floats = mason.get_float_rects_with_nodes(rid);
 
     // Ensure no float rect intersects the flow-root rect horizontally
-    for (node, left_f, _top, right_f, _bottom) in floats.iter() {
+    for &(node, left_f, _top, right_f, _bottom) in floats.iter() {
         let flow_left = flow_layout.location.x;
         let flow_right = flow_left + flow_layout.size.width;
         assert!(right_f <= flow_left || left_f >= flow_right, "flow-root should not intersect float {:?} (float L={} R={} flow L={} R={})", node, left_f, right_f, flow_left, flow_right);

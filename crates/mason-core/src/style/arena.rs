@@ -7,7 +7,7 @@ use crate::PREFLIGHT_ENABLED;
 use objc2_foundation::NSMutableData;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use taffy::Display;
 
 // always keep aligned 4
@@ -67,7 +67,7 @@ struct StyleBuffer {
     /// direct ByteBuffer on Android, a raw pointer on Windows. Exposed slots
     /// are retired, never recycled, so stale platform writes can't corrupt a
     /// new node's style. Set only via [`StyleArena::mark_exposed`].
-    exposed: bool,
+    exposed: AtomicBool,
     pub(crate) ref_count: u32,
 }
 
@@ -78,7 +78,7 @@ impl StyleBuffer {
         StyleBuffer {
             ref_count: 0,
             buffer,
-            exposed: false,
+            exposed: AtomicBool::new(false),
         }
     }
 
@@ -109,7 +109,7 @@ impl StyleBuffer {
             data,
             ref_count: 0,
             buffer: -1,
-            exposed: false,
+            exposed: AtomicBool::new(false),
         }
     }
 
@@ -119,7 +119,7 @@ impl StyleBuffer {
         StyleBuffer {
             data,
             ref_count: 0,
-            exposed: false,
+            exposed: AtomicBool::new(false),
         }
     }
 
@@ -386,22 +386,22 @@ impl StyleArena {
             // any time, and reusing the slot would let those writes corrupt an
             // unrelated node's style.
             // Stale writes now land in a zeroed, out-of-circulation buffer.
-            if !buf.exposed {
+            if !buf.exposed.load(Ordering::Acquire) {
                 self.free_list.push(idx as u32);
             }
         }
     }
 
     /// Mark a slot as handed to platform code. See [`StyleBuffer::exposed`].
-    pub(crate) fn mark_exposed(&mut self, handle: StyleHandle) {
-        if let Some(buf) = self.buffers.get_mut(handle.index()) {
-            buf.exposed = true;
+    pub(crate) fn mark_exposed(&self, handle: StyleHandle) {
+        if let Some(buf) = self.buffers.get(handle.index()) {
+            buf.exposed.store(true, Ordering::Release);
         }
     }
 
     #[cfg(test)]
     pub(crate) fn is_exposed(&self, handle: StyleHandle) -> bool {
-        self.buffers[handle.index()].exposed
+        self.buffers[handle.index()].exposed.load(Ordering::Acquire)
     }
 
     #[cfg(test)]
@@ -581,14 +581,14 @@ impl StyleArena {
     /// Hands the slot's `NSMutableData` to platform code, so the slot is marked
     /// exposed and will never be recycled.
     #[track_caller]
-    pub fn buffer(&mut self, handle: StyleHandle) -> objc2::rc::Retained<NSMutableData> {
+    pub fn buffer(&self, handle: StyleHandle) -> objc2::rc::Retained<NSMutableData> {
         self.mark_exposed(handle);
         self.buffers[handle.index()].buffer()
     }
 
     #[track_caller]
     pub fn buffer_opt(
-        &mut self,
+        &self,
         handle: StyleHandle,
     ) -> Option<objc2::rc::Retained<NSMutableData>> {
         self.mark_exposed(handle);
@@ -603,7 +603,7 @@ impl StyleArena {
             buf.ref_count = 1;
             // Free slots only ever contain unexposed buffers (exposed ones are
             // retired in `release`); reset defensively so the invariant is local.
-            buf.exposed = false;
+            buf.exposed.store(false, Ordering::Release);
             buf.buffer.set_bytes(data);
             set_style_data_u32(buf.mut_bytes(), StyleKeys::REF_COUNT, 1);
             free_idx
@@ -631,7 +631,7 @@ impl StyleArena {
                 // an exposed slot may be written at any time without going
                 // through `prepare_mut`, which would corrupt every other node
                 // sharing it. Exposed slots stay exclusively owned.
-                if buf.exposed {
+                if buf.exposed.load(Ordering::Acquire) {
                     continue;
                 }
                 if buf.ref_count > 0 && buf.bytes() == data {
@@ -732,7 +732,7 @@ impl StyleArena {
             buf.ref_count = 1;
             // Free slots only ever contain unexposed buffers (exposed ones are
             // retired in `release`); reset defensively so the invariant is local.
-            buf.exposed = false;
+            buf.exposed.store(false, Ordering::Release);
             set_style_data_u32(buf.data.as_mut_slice(), StyleKeys::REF_COUNT, 1);
             free_idx
         } else {
@@ -755,9 +755,11 @@ impl StyleArena {
         if let Some(indices) = self.hash_index.get(&hash) {
             for &idx in indices {
                 let buf = &mut self.buffers[idx as usize];
-                // See the non-Apple `intern`: an exposed slot is never shared,
-                // because platform code can write through it without a COW.
-                if buf.exposed {
+                // Never share a slot that platform code holds a pointer into:
+                // an exposed slot may be written at any time without going
+                // through `prepare_mut`, which would corrupt every other node
+                // sharing it. Exposed slots stay exclusively owned.
+                if buf.exposed.load(Ordering::Acquire) {
                     continue;
                 }
                 if buf.ref_count > 0 && buf.data.as_ref() == data {
@@ -991,7 +993,7 @@ mod tests {
     /// handles arrive from platform code.
     #[test]
     fn mark_exposed_ignores_unknown_handles() {
-        let mut arena = StyleArena::new(&[0u8; STYLE_BUFFER_SIZE]);
+        let arena = StyleArena::new(&[0u8; STYLE_BUFFER_SIZE]);
         arena.mark_exposed(StyleHandle::from_raw(9999));
     }
 }

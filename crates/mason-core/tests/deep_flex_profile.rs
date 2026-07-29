@@ -75,10 +75,19 @@ fn profile_deep_nested_comment_flex_layout() {
         MEASURES.store(0, Ordering::Relaxed);
         let started = Instant::now();
         mason.compute_wh(root, 1080.0, -2.0);
+        let n = MEASURES.load(Ordering::Relaxed);
         eprintln!(
             "depth={depth} elapsed_us={} measure_calls={}",
             started.elapsed().as_micros(),
-            MEASURES.load(Ordering::Relaxed)
+            n
+        );
+        // Linear with the LayoutCache: 31 native measures per nesting level.
+        // Taffy's old 9-slot cache re-measured compounding amounts per level
+        // (47,387 callbacks at depth 8 on the HN-shaped tree — see
+        // layout_cache.rs), so a cache regression exceeds this bound.
+        assert!(
+            n <= 31 * depth,
+            "depth {depth}: {n} measure callbacks exceeds 31*depth — LayoutCache regression"
         );
     }
 }

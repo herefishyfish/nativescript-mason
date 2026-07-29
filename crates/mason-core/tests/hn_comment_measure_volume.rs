@@ -175,6 +175,13 @@ fn build(depth: usize, extra_roots: usize) -> (Mason, Id) {
 
 #[test]
 fn profile_hn_comment_thread_measure_volume() {
+    // Upper bounds: native measure callbacks per depth observed with the
+    // LayoutCache, for correct and zeroed text intrinsics. Taffy's old 9-slot
+    // cache evicted max-content/definite entries against each other and issued
+    // 47,387 callbacks for this tree shape at depth 8 (see layout_cache.rs) —
+    // a regression back toward that blows through these bounds.
+    let bound_correct = [192usize, 240, 320, 392, 464, 536];
+    let bound_zero = [112usize, 140, 196, 252, 308, 364];
     for zero in [0usize, 1] {
         ZERO_INTRINSICS.store(zero, Ordering::Relaxed);
         eprintln!(
@@ -183,12 +190,17 @@ fn profile_hn_comment_thread_measure_volume() {
         );
         eprintln!("depth  measures   delta");
         let mut prev = 0usize;
-        for depth in [1usize, 2, 4, 6, 8, 10] {
+        for (i, &depth) in [1usize, 2, 4, 6, 8, 10].iter().enumerate() {
             let (mut mason, root) = build(depth, 3);
             MEASURES.store(0, Ordering::Relaxed);
             mason.compute_wh(root, SCREEN_W, -2.0);
             let n = MEASURES.load(Ordering::Relaxed);
             eprintln!("{depth:>5}  {n:>8}   {}", n.saturating_sub(prev));
+            let bound = if zero == 1 { bound_zero[i] } else { bound_correct[i] };
+            assert!(
+                n <= bound,
+                "depth {depth} (zero_intrinsics={zero}): {n} measure callbacks exceeds {bound} — LayoutCache regression"
+            );
             prev = n;
         }
     }

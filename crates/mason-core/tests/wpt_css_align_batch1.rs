@@ -60,7 +60,7 @@ fn baseline_of_scrollable_1a() {
     mason.with_style_mut(cid, |s| {
         s.set_display(Display::Block);
         s.set_display_mode(DisplayMode::Box);
-        s.set_overflow(taffy::style::Overflow { x: taffy::Overflow::Scroll, y: taffy::Overflow::Scroll });
+        s.set_overflow(mason_core::Point { x: mason_core::style::Overflow::Scroll, y: mason_core::style::Overflow::Scroll });
     });
 
     mason.set_segments(pid, vec![InlineSegment::InlineChild { id: Some(cid), baseline: 0.0 }]);
@@ -97,7 +97,7 @@ fn baseline_of_scrollable_1b() {
     mason.with_style_mut(cid, |s| {
         s.set_display(Display::Block);
         s.set_display_mode(DisplayMode::Box);
-        s.set_overflow(taffy::style::Overflow { x: taffy::Overflow::Auto, y: taffy::Overflow::Auto });
+        s.set_overflow(mason_core::Point { x: mason_core::style::Overflow::Auto, y: mason_core::style::Overflow::Auto });
     });
 
     mason.set_segments(pid, vec![InlineSegment::InlineChild { id: Some(cid), baseline: 0.0 }]);
@@ -143,7 +143,7 @@ fn baseline_of_scrollable_2() {
     mason.with_style_mut(cid, |s| {
         s.set_display(Display::Block);
         s.set_display_mode(DisplayMode::Box);
-        s.set_overflow(taffy::style::Overflow { x: taffy::Overflow::Scroll, y: taffy::Overflow::Scroll });
+        s.set_overflow(mason_core::Point { x: mason_core::style::Overflow::Scroll, y: mason_core::style::Overflow::Scroll });
     });
 
     mason.set_segments(pid, vec![

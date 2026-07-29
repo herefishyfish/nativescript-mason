@@ -968,9 +968,12 @@ pub extern "C" fn mason_style_prepare_style_for_mut(mason: *mut CMason, node: *m
 #[no_mangle]
 pub extern "C" fn mason_style_release_style_buffer(buffer: *mut CMasonBuffer) {
     if buffer.is_null() {
-        unsafe {
-            let _ = Box::from_raw(buffer);
-        }
+        return;
+    }
+
+    // Only the struct is boxed; `data` points into the arena and is not owned here.
+    unsafe {
+        let _ = Box::from_raw(buffer);
     }
 }
 

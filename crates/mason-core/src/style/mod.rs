@@ -2,8 +2,8 @@ use crate::style::utils::{
     dimension_from_type_value, dimension_to_type_value, get_style_data_bool, get_style_data_f32,
     get_style_data_i8, get_style_data_u8, length_percentage_auto_from_type_value,
     length_percentage_auto_to_type_value, length_percentage_from_type_value,
-    length_percentage_to_type_value, set_style_data_bool, set_style_data_f32, set_style_data_i32,
-    set_style_data_i8, set_style_data_u32, set_style_data_u8,
+    length_percentage_to_type_value, sanitize, set_style_data_bool, set_style_data_f32,
+    set_style_data_i32, set_style_data_i8, set_style_data_u32, set_style_data_u8,
 };
 use crate::utils::{
     align_content_from_enum, align_content_to_enum, align_items_from_enum, align_items_to_enum,
@@ -1295,7 +1295,10 @@ impl Style {
         let data = self.data();
         VerticalAlignValue {
             align,
-            offset: get_style_data_f32(data, StyleKeys::VERTICAL_ALIGN_OFFSET_OFFSET),
+            offset: sanitize(get_style_data_f32(
+                data,
+                StyleKeys::VERTICAL_ALIGN_OFFSET_OFFSET,
+            )),
             is_percent: get_style_data_bool(data, StyleKeys::VERTICAL_ALIGN_IS_PERCENT_OFFSET),
         }
     }
@@ -1627,7 +1630,7 @@ impl Style {
     }
 
     pub fn get_scrollbar_width(&self) -> f32 {
-        get_style_data_f32(self.data(), StyleKeys::SCROLLBAR_WIDTH)
+        sanitize(get_style_data_f32(self.data(), StyleKeys::SCROLLBAR_WIDTH))
     }
 
     pub fn set_scrollbar_width(&mut self, value: f32) {
@@ -2384,7 +2387,7 @@ impl Style {
     }
 
     pub fn get_flex_grow(&self) -> f32 {
-        get_style_data_f32(self.data(), StyleKeys::FLEX_GROW)
+        sanitize(get_style_data_f32(self.data(), StyleKeys::FLEX_GROW))
     }
 
     pub fn set_flex_grow(&mut self, value: f32) {
@@ -2393,7 +2396,7 @@ impl Style {
     }
 
     pub fn get_flex_shrink(&self) -> f32 {
-        get_style_data_f32(self.data(), StyleKeys::FLEX_SHRINK)
+        sanitize(get_style_data_f32(self.data(), StyleKeys::FLEX_SHRINK))
     }
 
     pub fn set_flex_shrink(&mut self, value: f32) {
@@ -2750,7 +2753,7 @@ impl Style {
     #[cfg(target_vendor = "apple")]
     #[track_caller]
     pub fn buffer(&self) -> Retained<NSMutableData> {
-        let area = unsafe { &mut *self.arena };
+        let area = unsafe { &*self.arena };
         area.buffer(self.handle)
     }
 
@@ -2768,7 +2771,7 @@ impl Style {
         if self.arena.is_null() {
             return;
         }
-        let area = unsafe { &mut *self.arena };
+        let area = unsafe { &*self.arena };
         area.mark_exposed(self.handle);
     }
 

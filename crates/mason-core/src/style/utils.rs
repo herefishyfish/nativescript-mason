@@ -21,7 +21,7 @@ use taffy::{CompactLength, Dimension, MaxTrackSizingFunction, Rect, Size};
 /// falls back to the meaning of tag `0` (what a zeroed buffer decodes to) and
 /// `NaN` values are clamped. Infinities are kept — taffy uses them as sentinels.
 #[inline(always)]
-fn sanitize(value: f32) -> f32 {
+pub(crate) fn sanitize(value: f32) -> f32 {
     if value.is_nan() {
         0.0
     } else {

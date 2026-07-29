@@ -398,6 +398,12 @@ pub extern "system" fn nativeGetStyleBuffer(
                             )
                         };
 
+                        // Thrown Java exception leaves the returned id undefined;
+                        // skip persisting and let it propagate to the JVM caller.
+                        if env.exception_check().unwrap_or(true) {
+                            return -1;
+                        }
+
                         match result {
                             Ok(result) => {
                                 let ret = result.i().unwrap_or(-1);
@@ -462,6 +468,12 @@ pub extern "system" fn nativePrepareMut(
                                 }],
                             )
                         };
+
+                        // Thrown Java exception leaves the returned id undefined;
+                        // skip persisting and let it propagate to the JVM caller.
+                        if env.exception_check().unwrap_or(true) {
+                            return -1;
+                        }
 
                         match result {
                             Ok(result) => {

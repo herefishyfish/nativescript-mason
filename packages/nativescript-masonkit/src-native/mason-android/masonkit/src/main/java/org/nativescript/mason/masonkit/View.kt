@@ -588,7 +588,17 @@ open class View @JvmOverloads constructor(
       if (childNode.parent == node) {
         // node.removeChild also detaches the platform view, so the next child
         // shifts into `start`.
-        node.removeChild(childNode)
+        val removedNode = node.removeChild(childNode)
+        if (removedNode == null) {
+          // removeChild found nothing to unlink (child absent from getChildren()
+          // or layoutParent mismatch) — detach the platform view directly so
+          // the loop still makes progress.
+          if (inLayout) {
+            super.removeViewsInLayout(start, 1)
+          } else {
+            super.removeViews(start, 1)
+          }
+        }
       } else if (inLayout) {
         super.removeViewsInLayout(start, 1)
       } else {

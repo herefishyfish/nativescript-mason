@@ -387,7 +387,7 @@ impl Mason {
     /// Needed by JNI code that persists ByteBuffer ids against the handle.
     #[cfg(target_os = "android")]
     #[track_caller]
-    pub fn style_handle(&mut self, node: Id) -> i32 {
+    pub fn style_handle(&self, node: Id) -> i32 {
         self.0
             .nodes()
             .get(node)

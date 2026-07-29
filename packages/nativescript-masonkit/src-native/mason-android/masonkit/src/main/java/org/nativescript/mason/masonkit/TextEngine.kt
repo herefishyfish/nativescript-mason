@@ -388,104 +388,13 @@ class TextEngine(val container: TextContainer) {
       return null
     }
 
-    // Determine the width constraint for StaticLayout.
-    // For inline elements, we want to measure to content, not fill available
-    // width — `isInline` is resolved once by the caller and shared with the
-    // cache-key computation.
-    var widthConstraint = Int.MAX_VALUE
+    // Width constraint comes from the shared helper (max-width / floated-parent
+    // clamps included) so the measure cache keys on the exact measured width.
+    var widthConstraint = resolveWidthConstraint(knownWidth, knownHeight, availableWidth, isInline)
     var heightConstraint = Int.MAX_VALUE
-
-    if (knownWidth > 0 && knownHeight != Float.MIN_VALUE) {
-      widthConstraint = knownWidth.toInt()
-    }
 
     if (knownHeight > 0 && knownHeight != Float.MIN_VALUE) {
       heightConstraint = knownHeight.toInt()
-    }
-
-    if (isInline) {
-      widthConstraint = Int.MAX_VALUE
-    }
-
-    // The available space from the layout engine (Taffy's compute_leaf_layout)
-    // is already content-box (padding+border subtracted). Do NOT subtract
-    // padding again here — that would double-count it.
-    if (widthConstraint == Int.MAX_VALUE && availableWidth.isFinite() && availableWidth > 0f) {
-      widthConstraint = availableWidth.toInt()
-    }
-
-    var allowWrap = true
-    if (node.style.isValueInitialized) {
-      val ws = node.style.whiteSpace
-      // No wrap for pre / nowrap
-      if (ws == Styles.WhiteSpace.Pre || ws == Styles.WhiteSpace.NoWrap) {
-        allowWrap = false
-      }
-      // Explicit override
-      if (node.style.textWrap == TextWrap.NoWrap) {
-        allowWrap = false
-      }
-    }
-
-    if (allowWrap && availableWidth > 0 && availableWidth != Float.MIN_VALUE) {
-      widthConstraint = availableWidth.toInt()
-    }
-
-    // Respect style `max-width` when present (Points only). Clamp the
-    // width constraint so StaticLayout won't measure wider than the author
-    // intended. Percent/Auto cases require context-dependent resolution
-    // and are not handled here.
-    //
-    // Skip this during the min-content pass (availableWidth == -1): min-content
-    // is the widest unbreakable word and is NOT reduced by `max-width`. Clamping
-    // here forces widthConstraint to the max-width, so the min-content branch
-    // below returns the wrapped line width (~max-width) instead of the widest
-    // word. A grid item then reports a min-content as large as its max-width,
-    // which becomes an `auto` track's base size — the track can no longer shrink
-    // to its container and overflows (e.g. a heading with `max-w-*` never wraps).
-    if (availableWidth != -1f) when (val msw = style.maxSize.width) {
-      is Dimension.Points -> {
-        val resolvedMax = msw.points.toInt()
-        if (resolvedMax > 0) {
-          widthConstraint = if (widthConstraint == Int.MAX_VALUE) resolvedMax
-          else kotlin.math.min(widthConstraint, resolvedMax)
-        }
-      }
-
-      else -> {}
-    }
-    // If this node's parent is floated, try to honor the parent's
-    // resolved content-box width as an additional constraint during
-    // measurement. Floated parents may reduce available inline width and
-    // cause wrapping to behave differently; clamp the widthConstraint to
-    // the parent's content-box when possible.
-
-    val p = node.parent
-    if (p != null) {
-      val pFloat = try {
-        p.style.float
-      } catch (_: Throwable) {
-        null
-      }
-      if (pFloat != null && pFloat != org.nativescript.mason.masonkit.enums.Float.None) {
-        val pWidth = p.computedWidth
-        val pPadL = try {
-          p.computedPaddingLeft
-        } catch (_: Throwable) {
-          0f
-        }
-        val pPadR = try {
-          p.computedPaddingRight
-        } catch (_: Throwable) {
-          0f
-        }
-        val pContent = pWidth - pPadL - pPadR
-        if (pContent > 0f) {
-          val pCW = pContent.toInt()
-          widthConstraint = if (widthConstraint == Int.MAX_VALUE) pCW
-          else kotlin.math.min(widthConstraint, pCW)
-        }
-      }
     }
 
     // A StaticLayout built at Int.MAX_VALUE used to be measured for its line
@@ -678,10 +587,111 @@ class TextEngine(val container: TextContainer) {
     }
   }
 
+  /**
+   * Resolve the integer width constraint a measure will use: the raw probe
+   * width with the style `max-width` and floated-parent clamps applied.
+   * Shared by [measureCacheKey] so constraint changes produce cache misses
+   * instead of stale hits.
+   *
+   * The available space from the layout engine (Taffy's compute_leaf_layout)
+   * is already content-box (padding+border subtracted). Do NOT subtract
+   * padding again here — that would double-count it.
+   */
+  private fun resolveWidthConstraint(
+    knownWidth: Float,
+    knownHeight: Float,
+    availableWidth: Float,
+    isInline: Boolean
+  ): Int {
+    var widthConstraint = Int.MAX_VALUE
+
+    if (knownWidth > 0 && knownHeight != Float.MIN_VALUE) {
+      widthConstraint = knownWidth.toInt()
+    }
+
+    // Inline elements measure to content, not to the available width.
+    if (isInline) {
+      widthConstraint = Int.MAX_VALUE
+    }
+
+    if (widthConstraint == Int.MAX_VALUE && availableWidth.isFinite() && availableWidth > 0f) {
+      widthConstraint = availableWidth.toInt()
+    }
+
+    var allowWrap = true
+    if (node.style.isValueInitialized) {
+      val ws = node.style.whiteSpace
+      // No wrap for pre / nowrap
+      if (ws == Styles.WhiteSpace.Pre || ws == Styles.WhiteSpace.NoWrap) {
+        allowWrap = false
+      }
+      // Explicit override
+      if (node.style.textWrap == TextWrap.NoWrap) {
+        allowWrap = false
+      }
+    }
+
+    if (allowWrap && availableWidth > 0 && availableWidth != Float.MIN_VALUE) {
+      widthConstraint = availableWidth.toInt()
+    }
+
+    // Respect style `max-width` (Points only; Percent/Auto need context-
+    // dependent resolution and are not handled here).
+    //
+    // Skip this during the min-content pass (availableWidth == -1): min-content
+    // is the widest unbreakable word and is NOT reduced by `max-width`. Clamping
+    // would report a min-content as large as the max-width, which becomes a grid
+    // `auto` track's base size — the track could no longer shrink to its
+    // container and would overflow.
+    if (availableWidth != -1f) when (val msw = style.maxSize.width) {
+      is Dimension.Points -> {
+        val resolvedMax = msw.points.toInt()
+        if (resolvedMax > 0) {
+          widthConstraint = if (widthConstraint == Int.MAX_VALUE) resolvedMax
+          else kotlin.math.min(widthConstraint, resolvedMax)
+        }
+      }
+
+      else -> {}
+    }
+
+    // A floated parent's resolved content-box width also clamps the measure.
+    val p = node.parent
+    if (p != null) {
+      val pFloat = try {
+        p.style.float
+      } catch (_: Throwable) {
+        null
+      }
+      if (pFloat != null && pFloat != org.nativescript.mason.masonkit.enums.Float.None) {
+        val pWidth = p.computedWidth
+        val pPadL = try {
+          p.computedPaddingLeft
+        } catch (_: Throwable) {
+          0f
+        }
+        val pPadR = try {
+          p.computedPaddingRight
+        } catch (_: Throwable) {
+          0f
+        }
+        val pContent = pWidth - pPadL - pPadR
+        if (pContent > 0f) {
+          val pCW = pContent.toInt()
+          widthConstraint = if (widthConstraint == Int.MAX_VALUE) pCW
+          else kotlin.math.min(widthConstraint, pCW)
+        }
+      }
+    }
+
+    return widthConstraint
+  }
+
   private fun measureCacheKey(
     knownWidth: Float,
     knownHeight: Float,
     availableWidth: Float,
+    effectiveWidth: Int,
     isInline: Boolean,
   ): Long {
     // Text layout consumes integer pixel widths. Height is not part of the key:
@@ -697,17 +707,17 @@ class TextEngine(val container: TextContainer) {
       } else {
         0
       }
-    val normalizedAvailableWidth =
-      when {
-        availableWidth == -1f -> -1 // min-content
-        availableWidth == -2f -> -2 // max-content
-        availableWidth.isFinite() && availableWidth > 0f ->
-          availableWidth.toInt().coerceAtLeast(1)
-        else -> 0
-      }
+    // Probe kinds must never share entries: min/max probes at the same
+    // constraint still resolve different intrinsic widths.
+    val probeKind = when (availableWidth) {
+      -1f -> 1L // min-content
+      -2f -> 2L // max-content
+      else -> 0L
+    }
 
-    return (normalizedKnownWidth.toLong() shl 32) or
-      (normalizedAvailableWidth.toLong() and 0xffffffffL)
+    return (probeKind shl 62) or
+      (normalizedKnownWidth.toLong() shl 31) or
+      (effectiveWidth.toLong() and 0x7fffffffL)
   }
 
   fun measure(
@@ -724,7 +734,8 @@ class TextEngine(val container: TextContainer) {
     val segmentsReady =
       cachedAttributedString != null && attributedStringVersion == segmentsInvalidateVersion
     val isInline = NodeUtils.isInlineLike(node)
-    val cacheKey = measureCacheKey(knownWidth, knownHeight, availableWidth, isInline)
+    val effectiveWidth = resolveWidthConstraint(knownWidth, knownHeight, availableWidth, isInline)
+    val cacheKey = measureCacheKey(knownWidth, knownHeight, availableWidth, effectiveWidth, isInline)
     if (cacheable && !style.fontDirty) {
       measureCache[cacheKey]?.let { cached ->
         if (container is TextView) {
@@ -782,7 +793,10 @@ class TextEngine(val container: TextContainer) {
       val finalHeight = measuredHeight?.coerceAtLeast(minLineHeight) ?: height
 
       val output = MeasureOutput.make(width, finalHeight)
-      if (cacheable && segmentsReady && !pendingInvalidate) {
+      // nativePtr check: never cache when the segment push was skipped —
+      // collectAndCacheSegments still aligns attributedStringVersion in that
+      // case, so segmentsReady alone would wrongly pass.
+      if (cacheable && segmentsReady && !pendingInvalidate && node.nativePtr != 0L) {
         measureCache[cacheKey] = MeasureCacheEntry(
           output,
           (container as? TextView)?.cachedStaticLayout,
