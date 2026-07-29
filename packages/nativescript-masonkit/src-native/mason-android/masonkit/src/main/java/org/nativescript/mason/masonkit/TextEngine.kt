@@ -725,12 +725,6 @@ class TextEngine(val container: TextContainer) {
       cachedAttributedString != null && attributedStringVersion == segmentsInvalidateVersion
     val isInline = NodeUtils.isInlineLike(node)
     val cacheKey = measureCacheKey(knownWidth, knownHeight, availableWidth, isInline)
-    if (MasonPerf.enabled) {
-      MasonPerf.onMeasure(
-        node.nativePtr, availableWidth, cacheKey,
-        "${container.javaClass.simpleName}/${if (isInline) "inline" else "block"}"
-      )
-    }
     if (cacheable && !style.fontDirty) {
       measureCache[cacheKey]?.let { cached ->
         if (container is TextView) {

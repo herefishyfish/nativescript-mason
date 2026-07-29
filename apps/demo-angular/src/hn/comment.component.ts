@@ -26,18 +26,21 @@ export class CommentComponent {
   }
 
   get replyCount(): number {
+    const visits = { count: 0 };
     let total = this.comment.kids.length;
     for (const kid of this.comment.kids) {
-      total += countDescendants(kid);
+      visits.count++;
+      total += countDescendants(kid, visits);
     }
     return total;
   }
 }
 
-function countDescendants(comment: Comment): number {
+function countDescendants(comment: Comment, visits: { count: number }): number {
   let total = comment.kids.length;
   for (const kid of comment.kids) {
-    total += countDescendants(kid);
+    visits.count++;
+    total += countDescendants(kid, visits);
   }
   return total;
 }

@@ -1,4 +1,5 @@
 import { bootstrapApplication, provideNativeScriptRouter, runNativeScriptAngularApp } from '@nativescript/angular';
+import '@nativescript/font-manager';
 import { installMasonKit } from '@triniwiz/nativescript-masonkit/angular';
 
 import { AppComponent } from './app.component';

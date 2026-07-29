@@ -217,7 +217,6 @@ interface Element : EventTarget {
     }
 
     mason.inCompute = true
-    val perfStart = MasonPerf.beginPass()
     try {
       val layout = NativeHelpers.nativeNodeComputeWithSizeAndLayout(
         mason.nativePtr,
@@ -230,7 +229,6 @@ interface Element : EventTarget {
       }
       node.layoutTree.fromFloatArray(layout)
     } finally {
-      MasonPerf.endPass("computeAndLayout(${width}x${height})", perfStart)
       mason.inCompute = false
       node.computeCache = SizeF(width, height)
       node.computeCacheDirty = false // compute just ran — cache is clean

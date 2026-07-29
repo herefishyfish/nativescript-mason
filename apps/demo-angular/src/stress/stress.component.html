@@ -59,7 +59,7 @@
 
       <View class="chip-row">
         @for (n of hostBoxes; track n) {
-          <stress-chip class="chip chip-accent" [label]="'host ' + n"></stress-chip>
+          <stress-chip class="chip" [style]="'background-color:' + n" [label]="'host ' + n" />
         }
       </View>
     </View>

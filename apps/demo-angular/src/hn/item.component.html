@@ -10,9 +10,10 @@
         <span class="story-domain">{{ s.domain }}</span>
         <div class="meta-row">
           <span class="meta-score">{{ s.score }} points</span>
-          <span class="meta-dim"
-            >by <b>{{ s.by }}</b></span
-          >
+          <span class="meta-dim">
+            <p>by</p>
+            <b> {{ story.by }}</b>
+          </span>
           <span class="meta-dim">{{ s.agoHours }}h ago</span>
         </div>
       </header>

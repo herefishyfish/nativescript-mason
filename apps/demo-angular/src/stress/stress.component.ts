@@ -31,7 +31,7 @@ export class StressComponent {
   showMiddle = true;
 
   /** Case 4: hosts styled entirely from the host element. */
-  hostBoxes = [1, 2, 3];
+  hostBoxes = ['red', 'green', 'blue'];
 
   /** Case 6: component hosts placed as grid cells. */
   gridCells = [1, 2, 3, 4, 5, 6];
