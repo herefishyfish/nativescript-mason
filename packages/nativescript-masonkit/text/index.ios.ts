@@ -308,10 +308,19 @@ export class Text extends TextBase {
     return false;
   }
 
-  _removeViewFromNativeVisualTree(view: ViewBase): void {
+  // @ts-ignore
+  _removeViewFromNativeVisualTree(view: MasonChild): void {
     view[isTextChild_] = false;
-    // todo
-    //  super._removeViewFromNativeVisualTree(view);
+    view._isMasonChild = false;
+    // super only does removeFromSuperview; unlink the mason node first so the
+    // Rust node + native view detach instead of orphaning.
+    const nativeView = this._view as any;
+    const childView = view.nativeViewProtected;
+    if (nativeView && childView && typeof nativeView.removeView === 'function') {
+      nativeView.removeView(childView);
+    }
+    // @ts-ignore
+    super._removeViewFromNativeVisualTree(view);
   }
 }
 

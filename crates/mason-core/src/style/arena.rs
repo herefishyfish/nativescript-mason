@@ -627,6 +627,13 @@ impl StyleArena {
         if let Some(indices) = self.hash_index.get(&hash) {
             for &idx in indices {
                 let buf = &mut self.buffers[idx as usize];
+                // Never share a slot that platform code holds a pointer into:
+                // an exposed slot may be written at any time without going
+                // through `prepare_mut`, which would corrupt every other node
+                // sharing it. Exposed slots stay exclusively owned.
+                if buf.exposed {
+                    continue;
+                }
                 if buf.ref_count > 0 && buf.bytes() == data {
                     buf.ref_count += 1;
                     let ref_count = buf.ref_count;
@@ -748,6 +755,11 @@ impl StyleArena {
         if let Some(indices) = self.hash_index.get(&hash) {
             for &idx in indices {
                 let buf = &mut self.buffers[idx as usize];
+                // See the non-Apple `intern`: an exposed slot is never shared,
+                // because platform code can write through it without a COW.
+                if buf.exposed {
+                    continue;
+                }
                 if buf.ref_count > 0 && buf.data.as_ref() == data {
                     buf.ref_count += 1;
                     set_style_data_u32(buf.data.as_mut_slice(), StyleKeys::REF_COUNT, buf.ref_count);
@@ -880,6 +892,66 @@ mod tests {
         // must not land on A's retired address.
         let d = arena.alloc(&[4u8; STYLE_BUFFER_SIZE]);
         assert_ne!(arena.get_ptr(d), ptr_a);
+    }
+
+    /// An exposed slot must never be handed back by `intern`.
+    ///
+    /// Platform code writes *through* an exposed buffer without going via
+    /// `prepare_mut`, so sharing one means a write for node A silently rewrites
+    /// node B's style. Observed on device as ~40 structurally unrelated nodes
+    /// all reading `display:flex; flex-direction:column; align-items:center`
+    /// out of a single DEFAULT_* slot with 197 refs.
+    /// Build buffer bytes that survive a round-trip through `alloc`, which
+    /// stamps REF_COUNT=1 into the buffer — data whose REF_COUNT field differs
+    /// can never compare equal, so `intern` would always allocate and the test
+    /// would pass vacuously.
+    #[cfg(test)]
+    fn internable(fill: u8) -> [u8; STYLE_BUFFER_SIZE] {
+        let mut data = [fill; STYLE_BUFFER_SIZE];
+        set_style_data_u32(&mut data, StyleKeys::REF_COUNT, 1);
+        data
+    }
+
+    #[test]
+    fn intern_never_shares_an_exposed_slot() {
+        let mut arena = StyleArena::new(&[0u8; STYLE_BUFFER_SIZE]);
+        let data = internable(7);
+
+        // Guard: the fixture must actually be dedupable, or this proves nothing.
+        {
+            let mut probe = StyleArena::new(&[0u8; STYLE_BUFFER_SIZE]);
+            let x = probe.intern(&data);
+            let y = probe.intern(&data);
+            assert_eq!(x.index(), y.index(), "fixture is not internable");
+        }
+
+        let a = arena.intern(&data);
+        arena.mark_exposed(a);
+
+        // Same bytes: without the exposed check this returns `a` and bumps its
+        // ref count, aliasing two nodes onto one platform-writable buffer.
+        let b = arena.intern(&data);
+
+        assert_ne!(
+            a.index(),
+            b.index(),
+            "intern handed back an exposed slot — a platform write through it \
+             would corrupt every node sharing it"
+        );
+        assert_ne!(arena.get_ptr(a), arena.get_ptr(b));
+    }
+
+    /// Interning must still dedup normally when no slot is exposed, otherwise
+    /// the fix above silently disables the arena's memory savings.
+    #[test]
+    fn intern_still_dedups_unexposed_slots() {
+        let mut arena = StyleArena::new(&[0u8; STYLE_BUFFER_SIZE]);
+        let data = internable(9);
+
+        let a = arena.intern(&data);
+        let b = arena.intern(&data);
+
+        assert_eq!(a.index(), b.index(), "identical unexposed styles should share");
     }
 
     /// The recycle path still works for buffers that were never exposed —

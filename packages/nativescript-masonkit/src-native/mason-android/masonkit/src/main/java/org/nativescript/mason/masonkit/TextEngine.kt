@@ -14,6 +14,7 @@ import android.text.style.AbsoluteSizeSpan
 import android.text.style.AlignmentSpan
 import android.text.style.CharacterStyle
 import android.text.style.ForegroundColorSpan
+import android.text.style.MetricAffectingSpan
 import android.text.style.ReplacementSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.UpdateLayout
@@ -49,12 +50,11 @@ private fun maxWordWidth(text: CharSequence, paint: TextPaint, useLayout: Boolea
     val isWs = i < len && text[i].isWhitespace()
     if (i == len || isWs) {
       if (i > start) {
-        val sub = text.subSequence(start, i)
-        val w = if (useLayout) Layout.getDesiredWidth(sub, paint) else paint.measureText(
-          sub,
-          0,
-          sub.length
-        )
+        // Measure the range in place. subSequence() on a SpannableStringBuilder
+        // copies both characters and spans, which is a per-word allocation on a
+        // path flex/grid probes constantly.
+        val w = if (useLayout) Layout.getDesiredWidth(text, start, i, paint)
+        else paint.measureText(text, start, i)
         if (w > maxW) maxW = w
       }
       start = i + 1
@@ -65,6 +65,75 @@ private fun maxWordWidth(text: CharSequence, paint: TextPaint, useLayout: Boolea
 }
 
 class TextEngine(val container: TextContainer) {
+
+  private data class MeasureCacheEntry(
+    val output: Long,
+    val staticLayout: StaticLayout?,
+    val staticLayoutWidth: Int,
+  )
+
+  /**
+   * Flex/grid intrinsic sizing commonly probes a text leaf several times with
+   * constraints that differ as floats but resolve to the same integer-pixel
+   * text width. Keep a small allocation-free cache per text node.
+   */
+  private class MeasureCache {
+    private val keys = LongArray(16)
+    private val entries = arrayOfNulls<MeasureCacheEntry>(16)
+    private var size = 0
+    private var nextReplacement = 0
+
+    operator fun get(key: Long): MeasureCacheEntry? {
+      for (index in 0 until size) {
+        if (keys[index] == key) return entries[index]
+      }
+      return null
+    }
+
+    operator fun set(key: Long, entry: MeasureCacheEntry) {
+      for (index in 0 until size) {
+        if (keys[index] == key) {
+          entries[index] = entry
+          return
+        }
+      }
+
+      val index =
+        if (size < entries.size) {
+          size++
+          size - 1
+        } else {
+          val replacement = nextReplacement
+          nextReplacement = (nextReplacement + 1) % entries.size
+          replacement
+        }
+      keys[index] = key
+      entries[index] = entry
+    }
+
+    fun clear() {
+      entries.fill(null)
+      size = 0
+      nextReplacement = 0
+    }
+  }
+
+  private val measureCache = MeasureCache()
+
+  // Scratch objects reused across measures. Paint.getFontMetrics() and
+  // TextPaint(other) both allocate, and measure runs per text node per layout
+  // pass — these are read immediately and never retained, so reuse is safe.
+  private val scratchFontMetrics = Paint.FontMetrics()
+  private val scratchFontMetricsInt = Paint.FontMetricsInt()
+  private var scratchRunPaint: TextPaint? = null
+
+  // Scratch for ViewSpan.getSize/draw — the no-arg Paint.getFontMetricsInt()
+  // allocates a new FontMetricsInt on every call, and those run per inline
+  // placeholder per layout/draw pass. Read immediately, never retained.
+  private val scratchSpanFontMetricsInt = Paint.FontMetricsInt()
+
+  /** Version of the attributed string most recently assigned to TextView. */
+  private var appliedTextVersion = -1
 
   val node: Node
     get() {
@@ -78,13 +147,13 @@ class TextEngine(val container: TextContainer) {
 
   var textContent: String
     get() {
-      var result = ""
+      val result = StringBuilder()
       for (child in node.children) {
         if (child is TextNode) {
-          result += child.data
+          result.append(child.data)
         }
       }
-      return result
+      return result.toString()
     }
     set(value) {
       // Remove all existing children
@@ -122,6 +191,7 @@ class TextEngine(val container: TextContainer) {
     }
     set(value) {
       mIncludePadding = value
+      measureCache.clear()
       (container.node.view as? Element)?.invalidateLayout()
     }
 
@@ -226,6 +296,7 @@ class TextEngine(val container: TextContainer) {
         // Visual-only change (color, decoration, shadow): rebuild spans and redraw,
         // but do NOT call invalidateInlineSegments which would set root.computeCacheDirty
         // and trigger a spurious full layout recompute that shifts sibling views.
+        measureCache.clear()
         updateStyleOnTextNodes()
         (node.view as? View)?.invalidate()
       }
@@ -280,7 +351,8 @@ class TextEngine(val container: TextContainer) {
     knownWidth: Float,
     knownHeight: Float,
     availableWidth: Float,
-    availableHeight: Float
+    availableHeight: Float,
+    isInline: Boolean
   ): Layout? {
     val spannable = try {
       buildAttributedString()
@@ -302,23 +374,24 @@ class TextEngine(val container: TextContainer) {
       }
     }
     // skip setText to avoid wiping externally-set text.
-    if (node.children.isNotEmpty()) {
+    if (node.children.isNotEmpty() && appliedTextVersion != attributedStringVersion) {
       try {
         container.setText(spannable, BufferType.SPANNABLE)
       } catch (_: Exception) {
         // As a last resort, set plain text to avoid leaving the view blank
         container.setText(spannable.toString(), BufferType.NORMAL)
       }
+      appliedTextVersion = attributedStringVersion
     }
 
     if (spannable.isEmpty() && node.children.isEmpty()) {
       return null
     }
 
-    // Determine the width constraint for StaticLayout
-    // For inline elements, we want to measure to content, not fill available width
-    val isInline = NodeUtils.isInlineLike(node)
-
+    // Determine the width constraint for StaticLayout.
+    // For inline elements, we want to measure to content, not fill available
+    // width — `isInline` is resolved once by the caller and shared with the
+    // cache-key computation.
     var widthConstraint = Int.MAX_VALUE
     var heightConstraint = Int.MAX_VALUE
 
@@ -409,17 +482,35 @@ class TextEngine(val container: TextContainer) {
         val pContent = pWidth - pPadL - pPadR
         if (pContent > 0f) {
           val pCW = pContent.toInt()
-          val before = widthConstraint
           widthConstraint = if (widthConstraint == Int.MAX_VALUE) pCW
           else kotlin.math.min(widthConstraint, pCW)
         }
       }
     }
 
+    // A StaticLayout built at Int.MAX_VALUE used to be measured for its line
+    // widths and then immediately rebuilt at that width — two layouts per
+    // probe. Resolve the intrinsic width first so min/max-content probes and
+    // indefinite-space measures (e.g. inside horizontal scrollers) need only
+    // one StaticLayout.
+    val intrinsicMeasuredWidth =
+      if (widthConstraint == Int.MAX_VALUE) {
+        when (availableWidth) {
+          -1f -> maxWordWidth(spannable, paint, useLayout = isInline)
+          else -> ceil(Layout.getDesiredWidth(spannable, paint))
+        }
+      } else {
+        null
+      }
+    if (intrinsicMeasuredWidth != null) {
+      // Match the old second-pass behaviour, which converted measuredWidth
+      // with toInt() before constructing StaticLayout.
+      widthConstraint = intrinsicMeasuredWidth.toInt().coerceAtLeast(1)
+    }
+
     val alignment = getLayoutAlignment()  // Use the alignment from textAlign property
 
-    var layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-
+    val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
       val heuristic = getTextDirectionHeuristic()
 
       var builder = StaticLayout.Builder.obtain(
@@ -428,7 +519,7 @@ class TextEngine(val container: TextContainer) {
         .setAlignment(alignment)
         .setLineSpacing(0f, 1f)
         .setIncludePad(includePadding)
-        .setTextDirection(heuristic as  android.text.TextDirectionHeuristic)
+        .setTextDirection(heuristic)
 
 
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -455,56 +546,22 @@ class TextEngine(val container: TextContainer) {
     // Get the ACTUAL measured width from the layout, not the constraint
     var measuredWidth = 0f
 
-    if (isInline) {
+    if (intrinsicMeasuredWidth != null) {
+      measuredWidth = intrinsicMeasuredWidth
+    } else {
+      // Use actual text width (max line width), NOT the constraint.
+      // StaticLayout.getWidth() returns the constraint passed to the
+      // constructor which would cancel out padding growth — Taffy adds
+      // padding back on top of what we return here, so returning the
+      // constraint keeps the total size unchanged as padding increases.
+      //
+      // Every unconstrained probe resolves intrinsicMeasuredWidth above, so
+      // reaching this branch implies widthConstraint was pinned to a real width.
       for (i in 0 until layout.lineCount) {
         val lineWidth = ceil(layout.getLineWidth(i))
         if (lineWidth > measuredWidth) {
           measuredWidth = lineWidth
         }
-      }
-
-      if (widthConstraint == Int.MAX_VALUE) {
-        if (availableWidth == -1f) {
-          // Min-content: widest word. Single-pass avoids split() allocation.
-          measuredWidth = maxWordWidth(spannable, paint, useLayout = true)
-        }
-
-        if (availableWidth == -2f) {
-          val desiredWidth = android.text.Layout.getDesiredWidth(spannable, paint)
-          measuredWidth = maxOf(measuredWidth, desiredWidth)
-        }
-      }
-    } else {
-      measuredWidth = if (widthConstraint == Int.MAX_VALUE) {
-        when (availableWidth) {
-          -1f -> {
-            // Min-content: widest word. Single-pass avoids split() allocation.
-            maxWordWidth(spannable, paint, useLayout = false)
-          }
-
-          -2f -> {
-            val desiredWidth = Layout.getDesiredWidth(spannable, paint)
-            maxOf(measuredWidth, desiredWidth)
-          }
-
-          else -> {
-            0f
-          }
-        }
-      } else {
-        // Use actual text width (max line width), NOT the constraint.
-        // StaticLayout.getWidth() returns the constraint passed to the
-        // constructor which would cancel out padding growth — Taffy adds
-        // padding back on top of what we return here, so returning the
-        // constraint keeps the total size unchanged as padding increases.
-        var maxLineWidth = 0f
-        for (i in 0 until layout.lineCount) {
-          val lineWidth = ceil(layout.getLineWidth(i))
-          if (lineWidth > maxLineWidth) {
-            maxLineWidth = lineWidth
-          }
-        }
-        maxLineWidth
       }
     }
 
@@ -538,50 +595,24 @@ class TextEngine(val container: TextContainer) {
       }
     }
 
-    if (widthConstraint == Int.MAX_VALUE) {
-      // rebuild static layout with the measuredWidth
-      layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-
-        val heuristic = getTextDirectionHeuristic()
-
-        var builder = StaticLayout.Builder.obtain(
-          spannable, 0, spannable.length, paint, measuredWidth.toInt()
-        )
-          .setAlignment(alignment)
-          .setLineSpacing(0f, 1f)
-          .setIncludePad(includePadding)
-          .setTextDirection(heuristic as android.text.TextDirectionHeuristic)
-
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-          builder = builder.setUseLineSpacingFromFallbacks(true)
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          builder = if (style.resolvedTextAlign == TextAlign.Justify) {
-            builder.setJustificationMode(android.text.Layout.JUSTIFICATION_MODE_INTER_WORD)
-          } else {
-            builder.setJustificationMode(android.text.Layout.JUSTIFICATION_MODE_NONE)
-          }
-        }
-
-        builder.build()
-      } else {
-        StaticLayout(
-          spannable, paint, measuredWidth.toInt(), alignment, 1f, // lineSpacingMultiplier
-          0f, // lineSpacingExtra
-          includePadding // includePad
-        )
-      }
-    }
-
     if (container is TextView) {
       container.cachedStaticLayout = layout
       container.cachedStaticLayoutWidth = widthConstraint
     }
 
-    // CRITICAL: Collect and send segments to Rust
-    collectAndCacheSegments(layout, spannable, paint)
+    // CRITICAL: Collect and send segments to Rust.
+    //
+    // Skip the walk + JNI push when the previously pushed segments are still
+    // valid. Pure-text segments depend only on the attributed string and font
+    // state: content/style changes bump segmentsInvalidateVersion via
+    // invalidateInlineSegments(), and async font-load swaps set style.fontDirty.
+    // Segments containing inline-child ViewSpans embed live child sizes, so
+    // those must refresh on every measure.
+    if (segmentsSyncedVersion != segmentsInvalidateVersion ||
+      segmentsContainInlineChildren || style.fontDirty
+    ) {
+      collectAndCacheSegments(layout, spannable, paint)
+    }
 
     return layout
   }
@@ -647,11 +678,69 @@ class TextEngine(val container: TextContainer) {
     }
   }
 
+  private fun measureCacheKey(
+    knownWidth: Float,
+    knownHeight: Float,
+    availableWidth: Float,
+    isInline: Boolean,
+  ): Long {
+    // Text layout consumes integer pixel widths. Height is not part of the key:
+    // measureLayout currently derives height solely from the resulting layout.
+    // knownHeight only matters as the sentinel that enables knownWidth.
+    val normalizedKnownWidth =
+      if (
+        !isInline &&
+        knownWidth > 0f &&
+        knownHeight != Float.MIN_VALUE
+      ) {
+        knownWidth.toInt().coerceAtLeast(1)
+      } else {
+        0
+      }
+    val normalizedAvailableWidth =
+      when {
+        availableWidth == -1f -> -1 // min-content
+        availableWidth == -2f -> -2 // max-content
+        availableWidth.isFinite() && availableWidth > 0f ->
+          availableWidth.toInt().coerceAtLeast(1)
+        else -> 0
+      }
+
+    return (normalizedKnownWidth.toLong() shl 32) or
+      (normalizedAvailableWidth.toLong() and 0xffffffffL)
+  }
+
   fun measure(
     paint: TextPaint,
     knownWidth: Float, knownHeight: Float,
     availableWidth: Float, availableHeight: Float
   ): Long {
+    // A container with inline child views depends on those children's current
+    // computed sizes, which are not represented by the four constraints.
+    // Cache only true text leaves.
+    val cacheable = node.children.isNotEmpty() && node.children.all { it is TextNode }
+    // The first measure also creates/writes inline segments. Its result is a
+    // bootstrap value and must not be reused after those segments exist.
+    val segmentsReady =
+      cachedAttributedString != null && attributedStringVersion == segmentsInvalidateVersion
+    val isInline = NodeUtils.isInlineLike(node)
+    val cacheKey = measureCacheKey(knownWidth, knownHeight, availableWidth, isInline)
+    if (MasonPerf.enabled) {
+      MasonPerf.onMeasure(
+        node.nativePtr, availableWidth, cacheKey,
+        "${container.javaClass.simpleName}/${if (isInline) "inline" else "block"}"
+      )
+    }
+    if (cacheable && !style.fontDirty) {
+      measureCache[cacheKey]?.let { cached ->
+        if (container is TextView) {
+          container.cachedStaticLayout = cached.staticLayout
+          container.cachedStaticLayoutWidth = cached.staticLayoutWidth
+        }
+        return cached.output
+      }
+    }
+
     // Guard: Rust holds a read lock during measure — no buffer writes allowed
     style.inMeasure = true
     val pendingInvalidate = style.fontDirty
@@ -661,7 +750,8 @@ class TextEngine(val container: TextContainer) {
         knownWidth,
         knownHeight,
         availableWidth,
-        availableHeight
+        availableHeight,
+        isInline
       )
 
 
@@ -688,7 +778,8 @@ class TextEngine(val container: TextContainer) {
       // Deferred: syncFontMetrics will set pendingMetricsSync instead of writing
       style.syncFontMetrics()
 
-      val fontMetrics = paint.fontMetrics
+      val fontMetrics = scratchFontMetrics
+      paint.getFontMetrics(fontMetrics)
 
       val minLineHeight = -fontMetrics.ascent + fontMetrics.descent + fontMetrics.leading
 
@@ -696,7 +787,15 @@ class TextEngine(val container: TextContainer) {
 
       val finalHeight = measuredHeight?.coerceAtLeast(minLineHeight) ?: height
 
-      return MeasureOutput.make(width, finalHeight)
+      val output = MeasureOutput.make(width, finalHeight)
+      if (cacheable && segmentsReady && !pendingInvalidate) {
+        measureCache[cacheKey] = MeasureCacheEntry(
+          output,
+          (container as? TextView)?.cachedStaticLayout,
+          (container as? TextView)?.cachedStaticLayoutWidth ?: -1,
+        )
+      }
+      return output
     } finally {
       style.inMeasure = false
       if (pendingInvalidate) {
@@ -728,11 +827,15 @@ class TextEngine(val container: TextContainer) {
 
     // Collect floated sibling exclusions from the parent's children.
     // Expand each exclusion by the float's margins to match CSS margin-box behavior.
-    val exclusions = mutableListOf<FloatExclusion>()
+    //
+    // onDraw retries this every frame for as long as it returns null — the
+    // permanent state for text with no floated siblings — so the no-float path
+    // must stay allocation-free: test `float` first and only build the list
+    // once an actual float is found.
+    var exclusions: MutableList<FloatExclusion>? = null
     for (child in parentNode.children) {
       if (child === node) continue
       if (child.type != NodeType.Element) continue
-      val childView = child.view as? View ?: continue
       if (!child.style.isValueInitialized) continue
       val floatSide = try {
         child.style.float
@@ -740,6 +843,7 @@ class TextEngine(val container: TextContainer) {
         continue
       }
       if (floatSide == org.nativescript.mason.masonkit.enums.Float.None) continue
+      val childView = child.view as? View ?: continue
 
       // Read margins from the float's style to expand the exclusion to the margin box
       val margin = try {
@@ -753,7 +857,8 @@ class TextEngine(val container: TextContainer) {
       val mb = resolveMarginValue(margin?.bottom)
 
       // Use Android View positions (border-box) expanded by margins
-      exclusions.add(
+      val list = exclusions ?: ArrayList<FloatExclusion>(4).also { exclusions = it }
+      list.add(
         FloatExclusion(
           (childView.left - ml).toInt(), (childView.top - mt).toInt(),
           (childView.right + mr).toInt(), (childView.bottom + mb).toInt(),
@@ -762,7 +867,7 @@ class TextEngine(val container: TextContainer) {
       )
     }
 
-    if (exclusions.isEmpty()) return null
+    val floatExclusions = exclusions ?: return null
 
     // Get text from the container (already set during measure)
     val text = (container as? android.widget.TextView)?.text as? Spannable ?: return null
@@ -785,7 +890,7 @@ class TextEngine(val container: TextContainer) {
     val lineH = (-fm.ascent + fm.descent).coerceAtLeast(1f)
 
     // Calculate max number of lines we need to consider
-    val maxExclBottom = exclusions.maxOf { it.bottom }
+    val maxExclBottom = floatExclusions.maxOf { it.bottom }
     val maxLines = ((maxExclBottom - textTop).toFloat() / lineH + 20).toInt().coerceIn(1, 500)
 
     val leftIndents = IntArray(maxLines)
@@ -800,7 +905,7 @@ class TextEngine(val container: TextContainer) {
       var leftInset = 0f
       var rightInset = 0f
 
-      for (e in exclusions) {
+      for (e in floatExclusions) {
         // Check vertical overlap
         if (lineBottomInParent > e.top && lineTopInParent < e.bottom) {
           when (e.side) {
@@ -903,22 +1008,32 @@ class TextEngine(val container: TextContainer) {
 
     val segments = mutableListOf<InlineSegment>()
 
-    // Use a TextPaint matching the current TextView properties for consistent measurement
-    val textPaint = TextPaint(paint)
+    // The supplied paint already matches the current TextView. Do not clone it
+    // unless a text run has CharacterStyle spans that need a mutable paint.
+    val textPaint = paint
 
     // Pre-collect all ViewSpan and BrSpan boundaries sorted by start position.
     // This replaces the per-iteration findNextViewSpan() call — which re-scanned the
     // full span array from currentPos to attributed.length on every text run — with a
     // single upfront O(spans) pass.  Subsequent lookups are O(1) via index cursor.
+    // A plain text leaf — no inline children, no <br> — has no boundaries at
+    // all, which is the common case; skip the list and the sort entirely.
     data class SpanBoundary(val start: Int, val end: Int, val viewSpan: ViewSpan?, val isBr: Boolean)
-    val spBoundaries = ArrayList<SpanBoundary>(8)
-    for (sp in attributed.getSpans(0, attributed.length, ViewSpan::class.java)) {
-      spBoundaries.add(SpanBoundary(attributed.getSpanStart(sp), attributed.getSpanEnd(sp), sp, false))
+    val viewSpans = attributed.getSpans(0, attributed.length, ViewSpan::class.java)
+    val brSpans = attributed.getSpans(0, attributed.length, BrSpan::class.java)
+    val spBoundaries: List<SpanBoundary> = if (viewSpans.isEmpty() && brSpans.isEmpty()) {
+      emptyList()
+    } else {
+      val list = ArrayList<SpanBoundary>(viewSpans.size + brSpans.size)
+      for (sp in viewSpans) {
+        list.add(SpanBoundary(attributed.getSpanStart(sp), attributed.getSpanEnd(sp), sp, false))
+      }
+      for (sp in brSpans) {
+        list.add(SpanBoundary(attributed.getSpanStart(sp), attributed.getSpanEnd(sp), null, true))
+      }
+      list.sortBy { it.start }
+      list
     }
-    for (sp in attributed.getSpans(0, attributed.length, BrSpan::class.java)) {
-      spBoundaries.add(SpanBoundary(attributed.getSpanStart(sp), attributed.getSpanEnd(sp), null, true))
-    }
-    spBoundaries.sortBy { it.start }
 
     // Walk through the spannable to find text runs and view placeholders
     var currentPos = 0
@@ -959,7 +1074,8 @@ class TextEngine(val container: TextContainer) {
 
         var baseline = 0f
         try {
-          val pFm = paint.fontMetricsInt
+          val pFm = scratchFontMetricsInt
+          paint.getFontMetricsInt(pFm)
           when (verticalAlign) {
             VerticalAlign.Baseline -> {
               baseline = 0f
@@ -1041,16 +1157,26 @@ class TextEngine(val container: TextContainer) {
             Layout.getDesiredWidth(attributed, currentPos, end, textPaint)
           }
 
-          // Apply character style spans to a single reused TextPaint (avoids a
-          // TextPaint allocation per run). Paint.set() copies all fields cheaply.
-          val runPaint = TextPaint(textPaint)
+          // Only MetricAffectingSpans can move ascent/descent — colour,
+          // decoration and shadow spans cannot, so querying CharacterStyle
+          // here only cost us a wider span array and needless paint work.
           val spans =
-            attributed.getSpans(currentPos, end, android.text.style.CharacterStyle::class.java)
-          for (span in spans) {
-            span.updateDrawState(runPaint)
-          }
+            attributed.getSpans(currentPos, end, MetricAffectingSpan::class.java)
+          val runPaint =
+            if (spans.isEmpty()) {
+              textPaint
+            } else {
+              // Reuse a scratch paint; set() fully resets it from textPaint.
+              val styledPaint = scratchRunPaint ?: TextPaint().also { scratchRunPaint = it }
+              styledPaint.set(textPaint)
+              for (span in spans) {
+                span.updateMeasureState(styledPaint)
+              }
+              styledPaint
+            }
 
-          val fontMetrics = runPaint.fontMetrics
+          val fontMetrics = scratchFontMetrics
+          runPaint.getFontMetrics(fontMetrics)
           segments.add(
             InlineSegment.Text(
               style.resolvedWhiteSpace.value,
@@ -1077,7 +1203,6 @@ class TextEngine(val container: TextContainer) {
       val floats = FloatArray(count * 4)
       val longs = LongArray(count)
 
-      val tPackStart = System.nanoTime()
       for (i in 0 until count) {
         when (val seg = segments[i]) {
           is InlineSegment.Text -> {
@@ -1103,7 +1228,6 @@ class TextEngine(val container: TextContainer) {
           }
         }
       }
-      val tPackEnd = System.nanoTime()
 
       // Call the packed JNI path synchronously. This path is safe when
       // invoked inside the expected native/Java measurement flow and we
@@ -1115,19 +1239,16 @@ class TextEngine(val container: TextContainer) {
         longs,
         kinds
       )
+
+      // Mark the sync only when native actually received the segments, so a
+      // node measured before its native peer exists still pushes on the first
+      // measure after attach.
+      segmentsSyncedVersion = segmentsInvalidateVersion
+      segmentsContainInlineChildren = viewSpans.isNotEmpty()
     }
 
     // segments are up-to-date now — align attributedStringVersion so cache checks succeed
     attributedStringVersion = segmentsInvalidateVersion
-  }
-
-  private fun findNextViewSpan(text: SpannableStringBuilder, start: Int): Int {
-    val spans = text.getSpans(start, text.length, ViewSpan::class.java)
-    return if (spans.isNotEmpty()) {
-      text.getSpanStart(spans[0])
-    } else {
-      -1
-    }
   }
 
   // Resolve an int value taking pseudo-set buffers into account. If a
@@ -1199,6 +1320,11 @@ class TextEngine(val container: TextContainer) {
     val childNode: Node, private val viewHelper: ViewHelper
   ) : ReplacementSpan() {
 
+    // Last size the child view was measured at from draw(); used to skip the
+    // per-frame subtree measure when nothing changed.
+    private var lastMeasuredWidth = -1
+    private var lastMeasuredHeight = -1
+
     override fun getSize(
       paint: Paint, text: CharSequence?, start: Int, end: Int, fm: Paint.FontMetricsInt?
     ): Int {
@@ -1234,7 +1360,8 @@ class TextEngine(val container: TextContainer) {
         VerticalAlign.Baseline
       }
 
-      val parentFm = paint.fontMetricsInt
+      val parentFm = scratchSpanFontMetricsInt
+      paint.getFontMetricsInt(parentFm)
       val lineHeight = -parentFm.ascent + parentFm.descent
 
       fm?.let { metrics ->
@@ -1389,10 +1516,22 @@ class TextEngine(val container: TextContainer) {
       }
 
       if (cachedWidth > 0 && cachedHeight > 0) {
-        childView.measure(
-          MeasureSpec.makeMeasureSpec(cachedWidth, MeasureSpec.EXACTLY),
-          MeasureSpec.makeMeasureSpec(cachedHeight, MeasureSpec.EXACTLY)
-        )
+        // Skip the child subtree's measure pass when the placeholder size is
+        // unchanged and the child hasn't requested layout itself — a full
+        // measure per inline child per frame is the dominant draw cost for
+        // inline views. layout() still runs every frame: it no-ops when the
+        // frame is unchanged and the child is clean, and honors
+        // PFLAG_LAYOUT_REQUIRED otherwise.
+        if (cachedWidth != lastMeasuredWidth || cachedHeight != lastMeasuredHeight ||
+          childView.isLayoutRequested
+        ) {
+          childView.measure(
+            MeasureSpec.makeMeasureSpec(cachedWidth, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(cachedHeight, MeasureSpec.EXACTLY)
+          )
+          lastMeasuredWidth = cachedWidth
+          lastMeasuredHeight = cachedHeight
+        }
         childView.layout(0, 0, cachedWidth, cachedHeight)
       }
 
@@ -1403,7 +1542,8 @@ class TextEngine(val container: TextContainer) {
         VerticalAlign.Baseline
       }
 
-      val parentFm = paint.fontMetricsInt
+      val parentFm = scratchSpanFontMetricsInt
+      paint.getFontMetricsInt(parentFm)
       val lineHeight = -parentFm.ascent + parentFm.descent
 
       // Calculate Y position based on vertical-align
@@ -1490,6 +1630,17 @@ class TextEngine(val container: TextContainer) {
   // attributedStringVersion == segmentsInvalidateVersion
   private var attributedStringVersion: Int = 0
   private var segmentsInvalidateVersion: Int = 0
+
+  // Version of the attributed string whose segments were last pushed to native.
+  // Native keeps segments until the next push (they are only ever replaced,
+  // never cleared per pass), so unchanged pure-text segments need not be
+  // re-collected or re-pushed on every measure.
+  private var segmentsSyncedVersion: Int = -1
+
+  // Whether the last pushed segments included inline-child ViewSpans, whose
+  // reported sizes/baselines change as the child layout progresses.
+  private var segmentsContainInlineChildren = false
+
   internal var cachedAttributedString: SpannableStringBuilder? = null
   private var isBuilding = false
 
@@ -1957,6 +2108,8 @@ class TextEngine(val container: TextContainer) {
   internal fun invalidateInlineSegments(markDirty: Boolean = true) {
     segmentsInvalidateVersion += 1
     cachedAttributedString = null
+    appliedTextVersion = -1
+    measureCache.clear()
     minMeasuredTextWidth = 0f
     minMeasuredTextHeight = 0f
     measuredTextWidth = 0f

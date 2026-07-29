@@ -45,8 +45,6 @@ open class View @JvmOverloads constructor(
   override val view: android.view.View
     get() = this
 
-  private val nodes = mutableMapOf<android.view.View, Node>()
-
 
   constructor(context: Context, mason: Mason) : this(context) {
     node = mason.createNode().apply {
@@ -538,57 +536,67 @@ open class View @JvmOverloads constructor(
 
   override fun removeViewInLayout(view: android.view.View) {
     if (node.suppressChildOps > 0) {
-      removeViewFromMasonTree(view, true)
+      super.removeViewInLayout(view)
+      return
+    }
+    val childNode = if (view is Element) {
+      (view as Element).node
+    } else {
+      node.mason.nodeForView(view)
+    }
+    if (childNode.parent == node) {
+      node.removeChild(childNode)
+      onChildStructureChangedSafe()
+      return
     }
     super.removeViewInLayout(view)
   }
 
   override fun removeViews(start: Int, count: Int) {
     if (node.suppressChildOps > 0) {
-      for (i in start until start + count) {
-        removeViewFromMasonTree(getChildAt(i), false)
-      }
+      super.removeViews(start, count)
+      return
     }
-    super.removeViews(start, count)
+    removeChildrenFromMasonTree(start, count, false)
   }
 
   override fun removeViewsInLayout(start: Int, count: Int) {
     if (node.suppressChildOps > 0) {
-      for (i in start until start + count) {
-        removeViewFromMasonTree(getChildAt(i), true)
-      }
+      super.removeViewsInLayout(start, count)
+      return
     }
-    super.removeViewsInLayout(start, count)
+    removeChildrenFromMasonTree(start, count, true)
   }
 
   override fun removeAllViewsInLayout() {
     if (node.suppressChildOps > 0) {
-      val childCount = nodes.count()
-      for (i in 0 until childCount) {
-        removeViewFromMasonTree(getChildAt(i), true)
-      }
+      super.removeAllViewsInLayout()
+      return
     }
-    super.removeAllViewsInLayout()
+    removeAllViews()
   }
 
-  private fun removeViewFromMasonTree(view: android.view.View, inLayout: Boolean) {
-    nodes[view]?.let { node ->
-      val owner = node.parent as Node
-      val count = owner.getChildCount()
-      for (i in 0 until count) {
-        owner.getChildAt(i)?.let {
-          if (it == node) {
-            owner.removeChildAt(i)
-            return
-          }
-        }
+  private fun removeChildrenFromMasonTree(start: Int, count: Int, inLayout: Boolean) {
+    var removed = 0
+    while (removed < count && start < getChildCount()) {
+      val child = getChildAt(start)
+      val childNode = if (child is Element) {
+        (child as Element).node
+      } else {
+        node.mason.nodeForView(child)
       }
-      node.view = null
-      nodes.remove(view)
-      if (inLayout) {
-        computeMaxContent()
+      if (childNode.parent == node) {
+        // node.removeChild also detaches the platform view, so the next child
+        // shifts into `start`.
+        node.removeChild(childNode)
+      } else if (inLayout) {
+        super.removeViewsInLayout(start, 1)
+      } else {
+        super.removeViews(start, 1)
       }
+      removed++
     }
+    onChildStructureChangedSafe()
   }
 
   protected fun applyLayoutParams(

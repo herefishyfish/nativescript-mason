@@ -167,11 +167,12 @@ export class Text extends TextBase {
     return false;
   }
 
-  _removeViewFromNativeVisualTree(view: ViewBase): void {
+  // @ts-ignore
+  _removeViewFromNativeVisualTree(view: MasonChild): void {
     view[isTextChild_] = false;
-    // todo: remove from native view
+    view._isMasonChild = false;
     // @ts-ignore
-    // super._removeViewFromNativeVisualTree(view);
+    super._removeViewFromNativeVisualTree(view);
   }
 }
 
@@ -214,9 +215,11 @@ export class Br extends TextBase {
     return false;
   }
 
-  _removeViewFromNativeVisualTree(view: ViewBase): void {
+  // @ts-ignore
+  _removeViewFromNativeVisualTree(view: MasonChild): void {
     view[isTextChild_] = false;
+    view._isMasonChild = false;
     // @ts-ignore
-    // super._removeViewFromNativeVisualTree(view);
+    super._removeViewFromNativeVisualTree(view);
   }
 }

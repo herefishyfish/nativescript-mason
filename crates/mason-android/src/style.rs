@@ -357,6 +357,17 @@ pub extern "system" fn nativeGetStyleBuffer(
         let mason = &mut *(mason as *mut Mason);
         let node = &mut *(node as *mut NodeRef);
 
+        // Exposure invariant: the platform writes *through* this buffer (Kotlin
+        // caches it as `mValues` and mutates it in place), so it must be
+        // exclusively owned before we hand out a pointer. Without this a shared
+        // slot — in particular one of the immortal DEFAULT_* slots, which can
+        // carry hundreds of refs — gets written by one node's styles and every
+        // other node sharing it silently inherits them.
+        //
+        // Must run before the cached-id early return below: that path would
+        // otherwise hand back a pointer to a still-shared slot.
+        mason.prepare_mut(node);
+
         let data = mason.style_data(node.id());
         if data >= 0 {
             return data;

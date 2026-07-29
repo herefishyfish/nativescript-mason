@@ -1471,10 +1471,10 @@ export class Style {
 
     switch (value) {
       case 'nowrap':
-        wrap = 0;
+        wrap = 1;
         break;
       case 'wrap':
-        wrap = 1;
+        wrap = 0;
         break;
       case 'balance':
         wrap = 2;
@@ -2135,6 +2135,7 @@ export class Style {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.INSET_LEFT_TYPE, 0);
       setFloat32(this.style_view, StyleKeys.INSET_LEFT_VALUE, 0);
+      this.commitState(StateKeys.INSET);
       return;
     }
     switch (typeof value) {
@@ -2177,6 +2178,7 @@ export class Style {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.INSET_RIGHT_TYPE, 0);
       setFloat32(this.style_view, StyleKeys.INSET_RIGHT_VALUE, 0);
+      this.commitState(StateKeys.INSET);
       return;
     }
     switch (typeof value) {
@@ -2219,6 +2221,7 @@ export class Style {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.INSET_TOP_TYPE, 0);
       setFloat32(this.style_view, StyleKeys.INSET_TOP_VALUE, 0);
+      this.commitState(StateKeys.INSET);
       return;
     }
     switch (typeof value) {
@@ -2261,6 +2264,7 @@ export class Style {
       this.prepareMut();
       setInt8(this.style_view, StyleKeys.INSET_BOTTOM_TYPE, 0);
       setFloat32(this.style_view, StyleKeys.INSET_BOTTOM_VALUE, 0);
+      this.commitState(StateKeys.INSET);
       return;
     }
     switch (typeof value) {
