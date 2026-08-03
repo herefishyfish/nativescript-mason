@@ -387,6 +387,15 @@ class BorderRenderer(private val style: Style) {
   private val clipPath = Path()
   private val outerClipPath = Path()
 
+  // Solid-border fast path: reused so a draw allocates neither Path nor Paint.
+  // Configured once — the shared `paint` never carries a shader, color filter or
+  // alpha, so colour is the only thing a draw has to set.
+  private val ringPath = Path()
+  private val ringFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    isDither = true
+    style = Paint.Style.FILL
+  }
+
   // Reusable RectF for arc corner calculations — avoids allocation per corner
   private val cornerRect = RectF()
   // Reusable RectF for addRoundRect calls
@@ -448,7 +457,9 @@ class BorderRenderer(private val style: Style) {
   private var bottomRightExponent = 0f
   private var bottomLeftExponent = 0f
 
-  private var lastHash = 0
+  private var lastStyleVersion = -1L
+  private var lastCacheWidth = Float.NaN
+  private var lastCacheHeight = Float.NaN
 
   private var cacheInvalidated = true
   private var clipPathDirty = true
@@ -457,70 +468,6 @@ class BorderRenderer(private val style: Style) {
   private var lastClipHeight = 0f
   private var lastOuterClipWidth = 0f
   private var lastOuterClipHeight = 0f
-
-  private fun computeHash(): Int {
-    var result = 17
-
-    // Border widths: use raw type + float bits to avoid allocating LengthPercentage
-    val leftKeys = style.mBorderLeft.keys
-    val topKeys = style.mBorderTop.keys
-    val rightKeys = style.mBorderRight.keys
-    val bottomKeys = style.mBorderBottom.keys
-
-    result = 31 * result + style.values.get(leftKeys.widthType)
-    result =
-      31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(leftKeys.widthValue))
-
-    result = 31 * result + style.values.get(topKeys.widthType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(topKeys.widthValue))
-
-    result = 31 * result + style.values.get(rightKeys.widthType)
-    result =
-      31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(rightKeys.widthValue))
-
-    result = 31 * result + style.values.get(bottomKeys.widthType)
-    result =
-      31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(bottomKeys.widthValue))
-
-    // Colors (ints)
-    result = 31 * result + style.mBorderLeft.color
-    result = 31 * result + style.mBorderTop.color
-    result = 31 * result + style.mBorderRight.color
-    result = 31 * result + style.mBorderBottom.color
-
-    // Border radii: read raw type/value for each corner to avoid allocating Points/LengthPercentage
-    val tl = Border.cornerTopLeftKeys
-    result = 31 * result + style.values.get(tl.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tl.xValue))
-    result = 31 * result + style.values.get(tl.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tl.yValue))
-
-    val tr = Border.cornerTopRightKeys
-    result = 31 * result + style.values.get(tr.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tr.xValue))
-    result = 31 * result + style.values.get(tr.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tr.yValue))
-
-    val br = Border.cornerBottomRightKeys
-    result = 31 * result + style.values.get(br.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(br.xValue))
-    result = 31 * result + style.values.get(br.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(br.yValue))
-
-    val bl = Border.cornerBottomLeftKeys
-    result = 31 * result + style.values.get(bl.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(bl.xValue))
-    result = 31 * result + style.values.get(bl.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(bl.yValue))
-
-    // Exponents (floats)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderLeft.corner1Exponent)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderLeft.corner2Exponent)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderRight.corner1Exponent)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderRight.corner2Exponent)
-
-    return result
-  }
 
   fun invalidate() {
     cacheInvalidated = true
@@ -821,10 +768,25 @@ class BorderRenderer(private val style: Style) {
   }
 
   fun updateCache(viewWidth: Float, viewHeight: Float) {
-    val newHash = computeHash()
-    if (!cacheInvalidated && newHash == lastHash) return
+    // Revalidate against the style's write counter and the view box rather than
+    // re-hashing ~30 style-buffer fields. This runs on every draw of every
+    // bordered view, and the profile put it in the draw path's hot set.
+    //
+    // The view box is part of the key because the values cached below are
+    // resolved *pixels* — `toPx(viewWidth)`, so a percentage width or radius
+    // changes with the box while every style byte stays identical. The old hash
+    // covered only the bytes, so a resize left the cache holding pixel values
+    // from the previous size.
+    val version = style.styleWriteVersion
+    if (!cacheInvalidated &&
+      version == lastStyleVersion &&
+      viewWidth == lastCacheWidth &&
+      viewHeight == lastCacheHeight
+    ) return
 
-    lastHash = newHash
+    lastStyleVersion = version
+    lastCacheWidth = viewWidth
+    lastCacheHeight = viewHeight
     cacheInvalidated = false
     clipPathDirty = true  // border properties changed, clip path needs rebuild
     outerClipPathDirty = true
@@ -889,35 +851,23 @@ class BorderRenderer(private val style: Style) {
       topWidth > 0f
     ) {
       if (topStyle == BorderStyle.Solid) {
-        // Solid single-color border: draw a filled ring using saveLayer+CLEAR
-        paint.color = topColor
-        paint.isDither = true
+        // Solid single-color border: one even-odd fill of outer+inner.
+        //
+        // This used to punch the hole with saveLayer + a CLEAR-blended inner
+        // path, which allocated an offscreen buffer per bordered view per frame
+        // (plus two Paints and two Paths) — on the most common decorated-element
+        // path there is. Two closed contours in a single EVEN_ODD path give the
+        // same ring: the inner contour's winding cancels the outer's, so the
+        // hole falls out of the fill rule instead of a blend op. No layer, no
+        // per-draw allocation, and antialiasing along the inner edge improves
+        // because it is no longer composited through a CLEAR.
+        ringPath.reset()
+        ringPath.fillType = Path.FillType.EVEN_ODD
+        appendBorderPathInset(ringPath, 0f, width, height)
+        appendBorderPathInset(ringPath, topWidth, width, height)
 
-        val outer = buildBorderPathInset(0f, width, height)
-        val inner = buildBorderPathInset(topWidth, width, height)
-
-        // Use a dedicated fill paint and a dedicated clear paint to punch the inner hole.
-        // This avoids mutating the shared `paint` xfermode/state and provides an
-        // API-safe BlendMode fallback on newer Android versions.
-        val layer = canvas.saveLayer(0f, 0f, width, height, null)
-
-        val fillPaint = Paint(paint)
-        fillPaint.style = Paint.Style.FILL
-        fillPaint.xfermode = null
-        canvas.drawPath(outer, fillPaint)
-
-        val clearPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        clearPaint.style = Paint.Style.FILL
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-          clearPaint.blendMode = android.graphics.BlendMode.CLEAR
-        } else {
-          clearPaint.xfermode =
-            android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR)
-        }
-        canvas.drawPath(inner, clearPaint)
-
-        // restore
-        canvas.restoreToCount(layer)
+        ringFillPaint.color = topColor
+        canvas.drawPath(ringPath, ringFillPaint)
       } else {
         // Non-solid single-color border: stroke the path once and apply pathEffect
         paint.color = topColor
@@ -1277,13 +1227,18 @@ class BorderRenderer(private val style: Style) {
    * but uses the provided offset so each side can be stroked centered at a different inset
    * (matching CSS where each side's stroke is centered on a path inset by half that side's width).
    */
-  private fun buildBorderPathInset(ofs: Float, width: Float, height: Float): Path {
+  private fun buildBorderPathInset(ofs: Float, width: Float, height: Float): Path =
+    Path().also { appendBorderPathInset(it, ofs, width, height) }
+
+  /**
+   * Appends the inset contour to [p] instead of returning a fresh [Path], so the
+   * ring fast path can build both contours into one reused path.
+   */
+  private fun appendBorderPathInset(p: Path, ofs: Float, width: Float, height: Float) {
     val tl = topLeftCorner
     val tr = topRightCorner
     val br = bottomRightCorner
     val bl = bottomLeftCorner
-
-    val p = Path()
 
     val innerWidth = (width - ofs * 2).coerceAtLeast(0f)
     val innerHeight = (height - ofs * 2).coerceAtLeast(0f)
@@ -1321,7 +1276,6 @@ class BorderRenderer(private val style: Style) {
     addCorner(p, Corner.TOP_LEFT, tempRadius, topLeftExponent, innerWidth, innerHeight, ofs)
 
     p.close()
-    return p
   }
 
   /** Build a straight-edge centerline path for a single side (excludes corner arcs). */
@@ -1817,7 +1771,8 @@ fun parseBorderRadius(style: Style, value: String) {
   // Always invalidate renderer and notify native update for radius changes
   style.mBorderRenderer.invalidate()
   if (!style.inBatch) {
-    style.isDirty = StateKeys.BORDER_RADIUS.bits
+    style.isDirty = StateKeys.BORDER_RADIUS.low
+    style.isDirtyHigh = StateKeys.BORDER_RADIUS.high
     style.updateNativeStyle()
   }
 }
