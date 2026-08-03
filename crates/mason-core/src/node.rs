@@ -59,6 +59,9 @@ pub struct AndroidNode(pub(crate) jni::sys::jint);
 #[cfg(target_os = "android")]
 impl AndroidNode {
     pub fn set_computed_size(&self, width: f32, height: f32) {
+        if android_size_writeback_deferred() {
+            return;
+        }
         if let Some(jvm) = crate::JVM.get() {
             let mut env = match jvm.get_env() {
                 Ok(env) => env,
@@ -88,6 +91,21 @@ impl AndroidNode {
     pub fn computed_height(&self) -> f32 {
         0f32
     }
+}
+
+#[cfg(target_os = "android")]
+thread_local! {
+    static DEFER_ANDROID_SIZE_WRITEBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(target_os = "android")]
+pub fn set_android_size_writeback_deferred(value: bool) {
+    DEFER_ANDROID_SIZE_WRITEBACK.with(|deferred| deferred.set(value));
+}
+
+#[cfg(target_os = "android")]
+fn android_size_writeback_deferred() -> bool {
+    DEFER_ANDROID_SIZE_WRITEBACK.with(|deferred| deferred.get())
 }
 
 #[derive(Debug)]
@@ -275,70 +293,6 @@ impl NodeData {
             apple_data: None,
             measure: None,
             inline_segments: Mutex::new(vec![]),
-        }
-    }
-
-    #[cfg(target_os = "android")]
-    pub fn measure(
-        &self,
-        known_dimensions: taffy::Size<Option<f32>>,
-        available_space: taffy::Size<AvailableSpace>,
-    ) -> taffy::geometry::Size<f32> {
-        match crate::JVM.get() {
-            Some(jvm) => {
-                let Ok(mut env) = jvm.get_env() else {
-                    return known_dimensions.map(|v| v.unwrap_or(0.0));
-                };
-
-                if let Some(cache) = crate::JVM_CACHE.get() {
-                    unsafe {
-                        let node = unsafe {
-                            jni::objects::JClass::from_raw(cache.node_clazz.clone().as_raw())
-                        };
-                        let result = env.call_static_method_unchecked(
-                            node,
-                            cache.measure_measure_id,
-                            jni::signature::ReturnType::Primitive(jni::signature::Primitive::Long),
-                            &[
-                                jni::sys::jvalue { i: self.measure },
-                                jni::sys::jvalue { j: MeasureOutput::make_bits(
-                                    known_dimensions.width.unwrap_or(-3.0).to_bits(),
-                                    known_dimensions.height.unwrap_or(-3.0).to_bits(),
-                                ) },
-                                jni::sys::jvalue { j: MeasureOutput::make_bits(
-                                    match available_space.width {
-                                        AvailableSpace::MinContent => (-1f32).to_bits(),
-                                        AvailableSpace::MaxContent => (-2f32).to_bits(),
-                                        AvailableSpace::Definite(value) => value.to_bits(),
-                                    },
-                                    match available_space.height {
-                                        AvailableSpace::MinContent => (-1f32).to_bits(),
-                                        AvailableSpace::MaxContent => (-2f32).to_bits(),
-                                        AvailableSpace::Definite(value) => value.to_bits(),
-                                    },
-                                ) },
-                            ],
-                        );
-
-                        return match result {
-                            Ok(result) => {
-                                let size = result.j().unwrap_or_default();
-                                let width = MeasureOutput::get_width(size);
-                                let height = MeasureOutput::get_height(size);
-
-                                Size { width, height }
-                            }
-                            Err(_) => {
-                                let _ = env.exception_clear();
-                                known_dimensions.map(|v| v.unwrap_or(0.0))
-                            }
-                        };
-                    }
-                }
-
-                known_dimensions.map(|v| v.unwrap_or(0.0))
-            }
-            _ => known_dimensions.map(|v| v.unwrap_or(0.0)),
         }
     }
 

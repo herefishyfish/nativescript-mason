@@ -23,6 +23,8 @@ pub use taffy::Layout;
 pub use taffy::Overflow;
 mod layout_cache;
 mod node;
+#[cfg(target_os = "android")]
+pub use node::set_android_size_writeback_deferred;
 
 #[cfg(target_vendor = "apple")]
 use crate::node::AppleNode;
@@ -133,6 +135,50 @@ fn copy_output(taffy: &Tree, node: Id, output: &mut Vec<f32>) {
     let inner = taffy.inner();
     let use_rounding = inner.use_rounding;
     copy_output_inner(&inner, node, output, use_rounding);
+}
+
+fn output_len_inner(inner: &crate::tree::TreeInner, root: Id) -> usize {
+    let mut count = 0usize;
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        count += 1;
+        if let Some(children) = inner.children.get(node) {
+            stack.extend(children.iter().copied());
+        }
+    }
+    count * 22
+}
+
+fn copy_output_to_slice_inner(
+    inner: &crate::tree::TreeInner,
+    node: Id,
+    output: &mut [f32],
+    offset: &mut usize,
+    use_rounding: bool,
+) {
+    let n = &inner.nodes[node];
+    let layout = if use_rounding { n.final_layout } else { n.unrounded_layout };
+    let children = inner.children.get(node);
+    let len = children.map(|c| c.len()).unwrap_or(0);
+    let h = if layout.size.height.abs() <= 1e-6 && layout.content_size.height > layout.size.height {
+        layout.content_size.height
+    } else {
+        layout.size.height
+    };
+    output[*offset..*offset + 22].copy_from_slice(&[
+        layout.order as f32, layout.location.x, layout.location.y, layout.size.width, h,
+        layout.border.top, layout.border.right, layout.border.bottom, layout.border.left,
+        layout.margin.top, layout.margin.right, layout.margin.bottom, layout.margin.left,
+        layout.padding.top, layout.padding.right, layout.padding.bottom, layout.padding.left,
+        layout.content_size.width, layout.content_size.height,
+        layout.scrollbar_size.width, layout.scrollbar_size.height, len as f32,
+    ]);
+    *offset += 22;
+    if let Some(children) = children {
+        for &child in children {
+            copy_output_to_slice_inner(inner, child, output, offset, use_rounding);
+        }
+    }
 }
 
 fn copy_output_inner(inner: &crate::tree::TreeInner, node: Id, output: &mut Vec<f32>, use_rounding: bool) {
@@ -671,6 +717,11 @@ impl Mason {
         *self.0.layout(node_id.into())
     }
 
+    /// Diagnostic count for the guarded block-to-mixed zero-height fallback.
+    pub fn zero_height_fallback_count(&self) -> u64 {
+        self.0.inner().zero_height_fallback_count
+    }
+
     /// Return transient float rects for a container as a flat `[left, top, right, bottom, …]` vec.
     pub fn get_float_rects(&self, container_id: Id) -> Vec<f32> {
         self.0
@@ -1001,6 +1052,27 @@ impl Mason {
         F: FnOnce(&mut Style),
     {
         self.0.with_style_mut(node, func)
+    }
+
+    /// Writes the flat Android layout stream into caller-owned storage and
+    /// returns the required float count. If the slice is too small it is left
+    /// untouched, allowing the caller to grow once and retry without computing.
+    pub fn layout_into(&self, node_id: Id, output: &mut [f32]) -> usize {
+        let inner = self.0.inner();
+        let required = output_len_inner(&inner, node_id);
+        if output.len() < required {
+            return required;
+        }
+        let mut offset = 0;
+        copy_output_to_slice_inner(&inner, node_id, output, &mut offset, inner.use_rounding);
+        required
+    }
+
+    pub fn with_style_mut_force_dirty<F>(&mut self, node: Id, func: F)
+    where
+        F: FnOnce(&mut Style),
+    {
+        self.0.with_style_mut_force_dirty(node, func)
     }
 
     /// Prepare and invoke `func` on a mutable pseudo `Style` for `node` matching `flags`.
@@ -1523,7 +1595,7 @@ mod tests {
 
         // Mutate parent style which should mark it dirty and clear its cache
         mason.with_style_mut(pid, |s| {
-            s.set_display(taffy::style::Display::Block);
+            s.set_display(taffy::style::Display::Flex);
         });
 
         // After mutation, cache should be cleared
@@ -1533,6 +1605,21 @@ mod tests {
             node2.cache.is_empty(),
             "expected cache to be cleared after style change"
         );
+    }
+
+    #[test]
+    fn cache_survives_noop_style_write() {
+        let mut mason = Mason::new();
+        let node = mason.create_node();
+        let id = node.id();
+        mason.compute(id);
+        assert!(!mason.0.inner().nodes[id].cache.is_empty());
+
+        mason.with_style_mut(id, |style| {
+            style.set_display(taffy::style::Display::Block);
+        });
+
+        assert!(!mason.0.inner().nodes[id].cache.is_empty());
     }
 
     #[test]

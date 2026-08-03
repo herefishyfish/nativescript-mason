@@ -235,9 +235,9 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     "(JJI)J",
                     "(JJJ)J",
                     "(JJ)V",
-                    "(JJFF)[F",
+                    "(JJFF[F)I",
                     "(JJ)[J",
-                    "(JJ)[F",
+                    "(JJ[F)I",
                     "(JJ)[J",
                     "(JJ)[F",
                     "(JZ)J",
@@ -257,7 +257,7 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     "(JJ)I",
                     "(JJI)I",
                     "(JJI)I",
-                    "(JJ[F[J[I)V"
+                    "(JJ[F[J[II)V"
                 ]
             } else {
                 [
@@ -282,9 +282,9 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     "!(JJI)J",
                     "!(JJJ)J",
                     "!(JJ)V",
-                    "!(JJFF)[F",
+                    "!(JJFF[F)I",
                     "!(JJ)[J",
-                    "!(JJ)[F",
+                    "!(JJ[F)I",
                     "!(JJ)[J",
                     "!(JJ)[F",
                     "!(JZ)J",
@@ -304,7 +304,7 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     "!(JJ)I",
                     "!(JJI)I",
                     "!(JJI)I",
-                    "!(JJ[F[J[I)V"
+                    "!(JJ[F[J[II)V"
                 ]
             };
 
@@ -314,11 +314,11 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *const c_void) -
                     node::NodeNativeNewNode as *mut c_void,
                     node::NodeNativeNewNodeWithContext as *mut c_void,
                     node::NodeNativeGetChildCount as *mut c_void,
-                    node::NodeNativeComputeWH as *mut c_void,
-                    node::NodeNativeComputeSize as *mut c_void,
-                    node::NodeNativeComputeMaxContent as *mut c_void,
-                    node::NodeNativeComputeMinContent as *mut c_void,
-                    node::NodeNativeCompute as *mut c_void,
+                    node::NodeNativeComputeWHNormal as *mut c_void,
+                    node::NodeNativeComputeSizeNormal as *mut c_void,
+                    node::NodeNativeComputeMaxContentNormal as *mut c_void,
+                    node::NodeNativeComputeMinContentNormal as *mut c_void,
+                    node::NodeNativeComputeNormal as *mut c_void,
                     node::NodeNativeGetChildAt as *mut c_void,
                     node::NodeNativeAddChild as *mut c_void,
                     node::NodeNativeReplaceChildAt as *mut c_void,

@@ -5,7 +5,7 @@ use crate::{Id, InlineSegment, Tree};
 use taffy::{
     compute_leaf_layout, AvailableSpace, BlockContext, BoxSizing, CoreStyle, Dimension, Display,
     LayoutInput, LayoutOutput, LayoutPartialTree, MaybeMath, MaybeResolve, NodeId, Point,
-    Position, ResolveOrZero, Size, SizingMode,
+    Position, ResolveOrZero, RunMode, Size, SizingMode,
 };
 
 /// Represents an item in a line during inline layout
@@ -413,6 +413,7 @@ struct InlineFormattingContext {
     base_available: f32,
     content_box_left_base: f32,
     float_rects: Vec<taffy::Rect<f32>>,
+    completed_lines_height: f32,
 }
 
 impl InlineFormattingContext {
@@ -435,6 +436,7 @@ impl InlineFormattingContext {
             base_available: available_width,
             content_box_left_base: content_box_left,
             float_rects,
+            completed_lines_height: 0.0,
         };
 
         // Initialize available width for the first line
@@ -442,16 +444,13 @@ impl InlineFormattingContext {
         s
     }
 
-    fn current_y_offset(&self) -> f32 {
-        let mut sum = 0.0_f32;
-        for line in &self.lines {
-            sum += line.height();
-        }
-        sum + self.content_box_top
-    }
-
     fn update_available_for_current_line(&mut self) {
-        let y = self.current_y_offset();
+        if self.float_rects.is_empty() {
+            self.available_width = self.base_available;
+            self.content_box_left = self.content_box_left_base;
+            return;
+        }
+        let y = self.completed_lines_height + self.content_box_top;
         let mut left_occupied = 0.0_f32;
         let mut right_occupied = 0.0_f32;
         for fr in &self.float_rects {
@@ -481,6 +480,7 @@ impl InlineFormattingContext {
     fn wrap_line(&mut self) {
         if !self.current_line.is_empty() {
             let line = std::mem::replace(&mut self.current_line, Line::new(self.parent_font));
+            self.completed_lines_height += line.height();
             self.lines.push(line);
         }
     }
@@ -495,6 +495,7 @@ impl InlineFormattingContext {
             line.max_descent = line.max_descent.max(self.parent_font.descent);
         }
 
+        self.completed_lines_height += line.height();
         self.lines.push(line);
     }
 
@@ -595,6 +596,7 @@ impl InlineFormattingContext {
             margin.bottom,
             false,
         );
+        self.completed_lines_height += block_line.height();
         self.lines.push(block_line);
     }
 
@@ -1441,10 +1443,8 @@ impl Tree {
         // here.
         if has_measure && !is_text_container {
             let measure = self.node_data().get(child_id).unwrap().copy_measure();
-            let style = self.nodes()[child_id].style().clone();
-            let is_inline = matches!(style.display_mode(), DisplayMode::Inline);
-
-            let mut adjusted_style = style.clone();
+            let mut adjusted_style = self.nodes()[child_id].style().clone();
+            let is_inline = matches!(adjusted_style.display_mode(), DisplayMode::Inline);
             if is_inline {
                 let mut size = adjusted_style.size();
                 if !size.width.is_auto() && size.width.value() == 0.0 {
@@ -1456,23 +1456,27 @@ impl Tree {
                 adjusted_style.set_size(size);
             }
 
-            let layout = compute_leaf_layout(
-                inputs,
-                &adjusted_style,
-                |_val, _basis| 0.0,
-                |known_dimensions, available_space| {
-                    let measure_known = if is_inline {
-                        Size::NONE
-                    } else {
-                        known_dimensions
-                    };
-                    // measure was copied via `copy_measure()` earlier; ensure
-                    // we invoke it outside long-lived tree locks. This log
-                    // helps detect accidental lock-holding during tests.
-
-                    measure.measure(measure_known, available_space)
-                },
-            );
+            let cache_inputs = LayoutInput { run_mode: RunMode::ComputeSize, ..inputs };
+            let cached = { self.nodes()[child_id].cache.get(&cache_inputs) };
+            let layout = if let Some(cached) = cached {
+                cached
+            } else {
+                let computed = compute_leaf_layout(
+                    cache_inputs,
+                    &adjusted_style,
+                    |_val, _basis| 0.0,
+                    |known_dimensions, available_space| {
+                        let measure_known = if is_inline {
+                            Size::NONE
+                        } else {
+                            known_dimensions
+                        };
+                        measure.measure(measure_known, available_space)
+                    },
+                );
+                self.nodes_mut()[child_id].cache.store(&cache_inputs, computed);
+                computed
+            };
 
             if let Some(child) = self.nodes_mut().get_mut(child_id) {
                 let padding = child
@@ -1551,11 +1555,9 @@ impl Tree {
             }
 
             let measure = self.node_data().get(child_id).unwrap().copy_measure();
-            let style = self.nodes()[child_id].style().clone();
+            let mut adjusted_style = self.nodes()[child_id].style().clone();
 
-            let is_inline = matches!(style.display_mode(), DisplayMode::Inline);
-
-            let mut adjusted_style = style.clone();
+            let is_inline = matches!(adjusted_style.display_mode(), DisplayMode::Inline);
 
             if is_inline {
                 let mut size = adjusted_style.size();
@@ -1667,21 +1669,27 @@ impl Tree {
             let a = self.compute_child_layout(child_node_id, child_inputs);
             */
 
-            let layout = compute_leaf_layout(
-                inputs,
-                &adjusted_style,
-                |_val, _basis| 0.0,
-                |known_dimensions, available_space| {
-                    let measure_known = if is_inline {
-                        Size::NONE
-                    } else {
-                        known_dimensions
-                    };
-                    // debug prints removed
-
-                    measure.measure(measure_known, available_space)
-                },
-            );
+            let cache_inputs = LayoutInput { run_mode: RunMode::ComputeSize, ..inputs };
+            let cached = { self.nodes()[child_id].cache.get(&cache_inputs) };
+            let layout = if let Some(cached) = cached {
+                cached
+            } else {
+                let computed = compute_leaf_layout(
+                    cache_inputs,
+                    &adjusted_style,
+                    |_val, _basis| 0.0,
+                    |known_dimensions, available_space| {
+                        let measure_known = if is_inline {
+                            Size::NONE
+                        } else {
+                            known_dimensions
+                        };
+                        measure.measure(measure_known, available_space)
+                    },
+                );
+                self.nodes_mut()[child_id].cache.store(&cache_inputs, computed);
+                computed
+            };
 
             if let Some(child) = self.nodes_mut().get_mut(child_id) {
                 let padding = child
@@ -2187,7 +2195,7 @@ impl Tree {
             }
         }
 
-        let (style, is_text_container, has_measure) = {
+        let (mut style, is_text_container, has_measure) = {
             let node = &self.nodes()[id];
             (
                 node.style().clone(),
@@ -2317,37 +2325,38 @@ impl Tree {
             let is_inline = matches!(style.display_mode(), DisplayMode::Inline);
             let _is_block = matches!(style.get_display(), Display::Block);
 
-            let mut adjusted_style = style.clone();
             if is_inline {
-                let mut size = adjusted_style.size();
+                let mut size = style.size();
                 if !size.width.is_auto() && size.width.value() == 0.0 {
                     size.width = Dimension::auto();
                 }
                 if !size.height.is_auto() && size.height.value() == 0.0 {
                     size.height = Dimension::auto();
                 }
-                adjusted_style.set_size(size);
+                style.set_size(size);
             }
 
-            let mut ret = compute_leaf_layout(
-                inputs,
-                &adjusted_style,
-                |_val, _basis| 0.0,
-                |known_dimensions, available_space| {
-                    let measure_known = if is_inline {
-                        Size::NONE
-                    } else {
-                        known_dimensions
-                    };
-                    // Measure callback must be invoked outside of long-held
-                    // tree locks; we copy the measure earlier to enforce this.
-                    let meas = measure.measure(measure_known, available_space);
-                    #[cfg(test)]
-                    eprintln!("MEASURE_TRACE node={:?} known={:?} avail={:?} => size={:?}",
-                        node_id, measure_known, available_space, meas);
-                    meas
-                },
-            );
+            let cache_inputs = LayoutInput { run_mode: RunMode::ComputeSize, ..inputs };
+            let cached = { self.nodes()[id].cache.get(&cache_inputs) };
+            let mut ret = if let Some(cached) = cached {
+                cached
+            } else {
+                let computed = compute_leaf_layout(
+                    cache_inputs,
+                    &style,
+                    |_val, _basis| 0.0,
+                    |known_dimensions, available_space| {
+                        let measure_known = if is_inline {
+                            Size::NONE
+                        } else {
+                            known_dimensions
+                        };
+                        measure.measure(measure_known, available_space)
+                    },
+                );
+                self.nodes_mut()[id].cache.store(&cache_inputs, computed);
+                computed
+            };
 
             // Phase 2: Now measure pure inline children (after parent).
             // Their sizes are needed for IFC positioning but must not
@@ -2616,15 +2625,23 @@ impl Tree {
 
         if flow_child_ids.is_empty() && segments.is_empty() {
             let leaf_output = if has_measure {
-                let measure = self.node_data().get(id).unwrap().copy_measure();
-                compute_leaf_layout(
-                    inputs,
-                    &style,
-                    |_val, _basis| 0.0,
-                    |known_dimensions, available_space| {
-                        measure.measure(known_dimensions, available_space)
-                    },
-                )
+                let cache_inputs = LayoutInput { run_mode: RunMode::ComputeSize, ..inputs };
+                let cached = { self.nodes()[id].cache.get(&cache_inputs) };
+                if let Some(cached) = cached {
+                    cached
+                } else {
+                    let measure = self.node_data().get(id).unwrap().copy_measure();
+                    let computed = compute_leaf_layout(
+                        cache_inputs,
+                        &style,
+                        |_val, _basis| 0.0,
+                        |known_dimensions, available_space| {
+                            measure.measure(known_dimensions, available_space)
+                        },
+                    );
+                    self.nodes_mut()[id].cache.store(&cache_inputs, computed);
+                    computed
+                }
             } else {
                 compute_leaf_layout(inputs, &style, |_val, _basis| 0.0, |_, _| Size::ZERO)
             };

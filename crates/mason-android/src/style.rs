@@ -129,7 +129,9 @@ pub extern "system" fn Java_org_nativescript_mason_masonkit_Style_nativeNonBuffe
         };
 
         if flags == 0 {
-            mason.with_style_mut(node.id().into(), update_style);
+            // The shared direct style buffer was written before this JNI
+            // callback, so Rust cannot perform the normal before/after guard.
+            mason.with_style_mut_force_dirty(node.id().into(), update_style);
         } else {
             mason.with_pseudo_style_mut(node.id().into(), flags, update_style);
         }

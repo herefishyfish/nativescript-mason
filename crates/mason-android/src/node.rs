@@ -11,6 +11,21 @@ use jni::sys::{
 use jni::JNIEnv;
 use mason_core::{AvailableSpace, Id, InlineSegment, Mason, NodeRef, Size};
 
+struct AndroidSizeWritebackGuard;
+
+impl AndroidSizeWritebackGuard {
+    fn defer() -> Self {
+        mason_core::set_android_size_writeback_deferred(true);
+        Self
+    }
+}
+
+impl Drop for AndroidSizeWritebackGuard {
+    fn drop(&mut self) {
+        mason_core::set_android_size_writeback_deferred(false);
+    }
+}
+
 #[no_mangle]
 pub extern "system" fn NodeNativeDestroy(node: jlong) {
     if node == 0 {
@@ -269,26 +284,32 @@ pub extern "system" fn NodeNativeGetChildCountNormal(
 
 #[no_mangle]
 pub extern "system" fn nativeLayout(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     taffy: jlong,
     node: jlong,
-) -> jfloatArray {
+    output: JFloatArray,
+) -> jint {
     if taffy == 0 || node == 0 {
-        return env.new_float_array(0_i32).unwrap().into_raw();
+        return 0;
     }
     unsafe {
-        let mason = &mut *(taffy as *mut Mason);
+        let mason = &*(taffy as *mut Mason);
         let node = &*(node as *mut NodeRef);
-        let output = mason.layout(node.id());
-        let size = output.len();
-        match env.new_float_array(size as i32) {
-            Ok(array) => {
-                if let Err(_) = env.set_float_array_region(&array, 0, output.as_slice()) {}
-                array.into_raw()
+        let array: JPrimitiveArray<jfloat> = output;
+        let result = match env.get_array_elements_critical(&array, ReleaseMode::CopyBack) {
+            Ok(elements) => {
+                let slice = std::slice::from_raw_parts_mut(
+                    elements.as_ptr() as *mut jfloat,
+                    elements.len(),
+                );
+                let required = mason.layout_into(node.id(), slice);
+                drop(elements);
+                required.min(jint::MAX as usize) as jint
             }
-            Err(_) => env.new_float_array(0_i32).unwrap().into_raw(),
-        }
+            Err(_) => mason.layout_into(node.id(), &mut []).min(jint::MAX as usize) as jint,
+        };
+        result
     }
 }
 
@@ -558,32 +579,39 @@ pub extern "system" fn Java_org_nativescript_mason_masonkit_Node_nativeComputeAn
 
 #[no_mangle]
 pub extern "system" fn nativeComputeWithSizeAndLayout(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _: JClass,
     taffy: jlong,
     node: jlong,
     width: jfloat,
     height: jfloat,
-) -> jfloatArray {
+    output: JFloatArray,
+) -> jint {
     if taffy == 0 || node == 0 {
-        return env.new_float_array(0_i32).unwrap().into_raw();
+        return 0;
     }
 
     unsafe {
         let mason = &mut *(taffy as *mut Mason);
         let node = &*(node as *mut NodeRef);
 
+        let _writeback_guard = AndroidSizeWritebackGuard::defer();
         mason.compute_wh(node.id(), width, height);
 
-        let output = mason.layout(node.id());
-
-        match env.new_float_array(output.len() as i32) {
-            Ok(array) => {
-                if let Err(_) = env.set_float_array_region(&array, 0, output.as_slice()) {}
-                array.into_raw()
+        let array: JPrimitiveArray<jfloat> = output;
+        let result = match env.get_array_elements_critical(&array, ReleaseMode::CopyBack) {
+            Ok(elements) => {
+                let slice = std::slice::from_raw_parts_mut(
+                    elements.as_ptr() as *mut jfloat,
+                    elements.len(),
+                );
+                let required = mason.layout_into(node.id(), slice);
+                drop(elements);
+                required.min(jint::MAX as usize) as jint
             }
-            Err(_) => env.new_float_array(0_i32).unwrap().into_raw(),
-        }
+            Err(_) => mason.layout_into(node.id(), &mut []).min(jint::MAX as usize) as jint,
+        };
+        result
     }
 }
 
@@ -1270,6 +1298,7 @@ pub extern "system" fn NodeNativeSetSegmentsPacked(
     floats: JFloatArray,
     longs: JLongArray,
     kinds: JIntArray,
+    count: jint,
 ) {
     if taffy == 0 || node == 0 {
         return;
@@ -1279,9 +1308,11 @@ pub extern "system" fn NodeNativeSetSegmentsPacked(
         let node_ref = &*(node as *mut NodeRef);
 
         // Copy primitive arrays into Rust-owned buffers to avoid nested mutable borrows
-        let klen = env.get_array_length(&kinds).unwrap_or(0) as usize;
-        let flen = env.get_array_length(&floats).unwrap_or(0) as usize;
-        let llen = env.get_array_length(&longs).unwrap_or(0) as usize;
+        let klen = (count.max(0) as usize)
+            .min(env.get_array_length(&kinds).unwrap_or(0) as usize);
+        let flen = klen.saturating_mul(4)
+            .min(env.get_array_length(&floats).unwrap_or(0) as usize);
+        let llen = klen.min(env.get_array_length(&longs).unwrap_or(0) as usize);
 
         if klen == 0 {
             mason.set_segments(node_ref.id(), Vec::new());

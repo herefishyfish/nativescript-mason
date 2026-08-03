@@ -881,6 +881,39 @@ impl Clone for Style {
     }
 }
 
+impl Style {
+    /// Snapshot used only by taffy's leaf sizing path. Grid collections are
+    /// irrelevant for a node with no children, so avoid cloning their Vecs for
+    /// every intrinsic probe while retaining the shared raw style buffer.
+    pub(crate) fn clone_for_leaf_layout(&self) -> Self {
+        let arena = unsafe { &mut *self.arena };
+        arena.retain(self.handle);
+        Self {
+            arena,
+            raw: self.raw,
+            grid_template_rows: Vec::new(),
+            grid_template_rows_raw: None,
+            grid_template_columns: Vec::new(),
+            grid_template_columns_raw: None,
+            grid_auto_rows: Vec::new(),
+            grid_auto_rows_raw: None,
+            grid_auto_columns: Vec::new(),
+            grid_auto_columns_raw: None,
+            grid_template_areas: Vec::new(),
+            grid_template_areas_raw: self.grid_template_areas_raw.clone(),
+            grid_template_column_names: Vec::new(),
+            grid_template_row_names: Vec::new(),
+            grid_area: self.grid_area.clone(),
+            grid_column_start: self.grid_column_start.clone(),
+            grid_column_end: self.grid_column_end.clone(),
+            grid_row_start: self.grid_row_start.clone(),
+            grid_row_end: self.grid_row_end.clone(),
+            device_scale: self.device_scale.clone(),
+            handle: self.handle,
+        }
+    }
+}
+
 impl Drop for Style {
     fn drop(&mut self) {
         let arena = unsafe { &mut *self.arena };
