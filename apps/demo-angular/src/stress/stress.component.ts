@@ -39,6 +39,14 @@ export class StressComponent {
   /** Case 5: swapping which of two component types occupies a slot. */
   useAlternate = false;
 
+  /**
+   * Case 10: a percentage border-radius resolves to pixels against the view box,
+   * so resizing the box has to re-resolve it. BorderRenderer caches the resolved
+   * pixel values; if the box is not part of that cache's key, the corner keeps
+   * the radius it had at the old width.
+   */
+  wideBorderBox = false;
+
   get expectedOrder(): string {
     return this.items.map((item) => item.label).join(', ');
   }
@@ -85,6 +93,11 @@ export class StressComponent {
     ];
     this.showMiddle = true;
     this.useAlternate = false;
+    this.wideBorderBox = false;
+  }
+
+  toggleBorderBoxWidth(): void {
+    this.wideBorderBox = !this.wideBorderBox;
   }
 
   toggleMiddle(): void {
