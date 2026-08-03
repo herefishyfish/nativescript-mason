@@ -62,19 +62,14 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeDestroy(long mason);
 
-  @CriticalNative
   static native void nativeNodeCompute(long mason, long node);
 
-  @CriticalNative
   static native void nativeNodeComputeSize(long mason, long node, long size);
 
-  @CriticalNative
   static native void nativeNodeComputeWH(long mason, long node, float width, float height);
 
-  @CriticalNative
   static native void nativeNodeComputeMaxContent(long mason, long node);
 
-  @CriticalNative
   static native void nativeNodeComputeMinContent(long mason, long node);
 
   @CriticalNative
@@ -119,17 +114,16 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeRemoveContext(long mason, long node);
 
-  @FastNative
-  static native float[] nativeNodeComputeWithSizeAndLayout(long mason,
-                                                           long node,
-                                                           float width,
-                                                           float height);
+  static native int nativeNodeComputeWithSizeAndLayout(long mason,
+                                                       long node,
+                                                       float width,
+                                                       float height,
+                                                       float[] output);
 
   @FastNative
   static native long[] nativeNodeGetChildren(long mason, long node);
 
-  @FastNative
-  static native float[] nativeNodeLayout(long mason, long node);
+  static native int nativeNodeLayout(long mason, long node, float[] output);
 
   @FastNative
   static native long[] nativeNodeGetFloatRectWithIds(long mason, long node);
@@ -143,7 +137,6 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeSetContext(long mason, long node, int measureFunc);
 
-  @FastNative
   static native float[] nativeNodeComputeAndLayout(long mason, long node);
 
   @FastNative
@@ -157,7 +150,7 @@ public class NativeHelpers {
   static native void nativeNodeSetSegments(long masonPtr, long nodePtr, InlineSegment[] segments);
 
   @FastNative
-  static native void nativeNodeSetSegmentsPacked(long masonPtr, long nodePtr, float[] floats, long[] longs, int[] kinds);
+  static native void nativeNodeSetSegmentsPacked(long masonPtr, long nodePtr, float[] floats, long[] longs, int[] kinds, int count);
 
   @CriticalNative
   static native void nativeSetAndroidNode(long masonPtr, long nodePtr, int node);

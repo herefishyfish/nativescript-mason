@@ -9,6 +9,9 @@ import android.text.style.LineHeightSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.UnderlineSpan
 
+private val COLLAPSIBLE_WHITESPACE = Regex("[ \t\u000B\u000C\n]+")
+private val COLLAPSIBLE_INLINE_WHITESPACE = Regex("[ \t\u000B\u000C]+")
+
 
 open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData {
   init {
@@ -308,8 +311,12 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       // Apply text transform
       processed = when (style.textTransform) {
         Styles.TextTransform.None -> processed
-        Styles.TextTransform.Capitalize -> processed.split(" ").joinToString(" ") {
-          it.replaceFirstChar { c -> if (c.isLowerCase()) c.titlecase() else c.toString() }
+        Styles.TextTransform.Capitalize -> buildString(processed.length) {
+          var capitalizeNext = true
+          for (character in processed) {
+            if (capitalizeNext && character.isLowerCase()) append(character.titlecase()) else append(character)
+            capitalizeNext = character == ' '
+          }
         }
 
         Styles.TextTransform.Uppercase -> processed.uppercase()
@@ -321,7 +328,7 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
       processed = when (style.whiteSpace) {
         Styles.WhiteSpace.Normal, Styles.WhiteSpace.NoWrap -> {
           // Collapse sequences of whitespace
-          normalizeNewlines(processed).replace(Regex("[ \t\u000B\u000C\n]+"), " ")
+          normalizeNewlines(processed).replace(COLLAPSIBLE_WHITESPACE, " ")
         }
 
         Styles.WhiteSpace.Pre -> {
@@ -355,7 +362,7 @@ open class TextNode(mason: Mason) : Node(mason, 0, NodeType.Text), CharacterData
 
     private fun processPreLine(s: String): String {
       return s.split("\n").joinToString("\n") { line ->
-        line.replace(Regex("[ \t\u000B\u000C]+"), " ")
+        line.replace(COLLAPSIBLE_INLINE_WHITESPACE, " ")
       }
     }
   }

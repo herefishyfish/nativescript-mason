@@ -4,7 +4,7 @@ import { parseCSSShadow } from '@nativescript/core/ui/styling/css-shadow';
 import type { TextBase, ViewBase } from './common';
 import { isMasonChild_, isMasonView_ } from './symbols';
 import type { Style as MasonStyle } from './style';
-import { alignItemsProperty, alignSelfProperty, flexDirectionProperty, flexGrowProperty, flexShrinkProperty, flexWrapProperty, justifyContentProperty } from '@nativescript/core/ui/layouts/flexbox-layout';
+import { alignSelfProperty, flexDirectionProperty, flexGrowProperty, flexShrinkProperty, flexWrapProperty, justifyContentProperty } from '@nativescript/core/ui/layouts/flexbox-layout';
 
 function getViewStyle(view: WeakRef<NSViewBase> | WeakRef<TextBase>): MasonStyle {
   const ret: NSViewBase & { _styleHelper: MasonStyle } = (__ANDROID__ ? view.get() : view.deref()) as never;
@@ -805,22 +805,22 @@ export const borderRadiusProperty = new CssProperty<Style, string>({
   cssName: 'border-radius',
 });
 
-alignItemsProperty.overrideHandlers({
-  name: 'alignItems',
-  cssName: 'align-items',
-  valueChanged(target, oldValue, newValue) {
-    const view = getViewStyle(target.viewRef);
-    if (view) {
-      if (newValue) {
-        view.alignItems = newValue as never;
-      } else {
-        // Revert to old value if newValue is invalid
-        // @ts-ignore
-        target.alignItems = oldValue as never;
-      }
-    }
-  },
-});
+// NOTE: no `alignItemsProperty.overrideHandlers` here on purpose.
+//
+// `View` already implements `[alignItemsProperty.setNative]` (common.ts), which
+// is the idiomatic per-view path and runs both on change and on
+// `initNativeView` via `applyAllNativeSetters`. An override here additionally
+// wrote the value through `getViewStyle(target.viewRef)`, so every align-items
+// change was applied twice — measured on device as 52 override calls alongside
+// the setNative calls for the same elements.
+//
+// `overrideHandlers` also replaces the handler on the *shared* core property,
+// so it applies app-wide to every view, not just MasonKit ones — the same
+// pattern flagged for `textShadow` in ANDROID-FIXES 1.6.
+//
+// The same duplication still exists for flexDirection, flexWrap, flexGrow,
+// alignSelf and justifyContent below; they want the same treatment once each
+// has coverage.
 
 alignSelfProperty.overrideHandlers({
   name: 'alignSelf',

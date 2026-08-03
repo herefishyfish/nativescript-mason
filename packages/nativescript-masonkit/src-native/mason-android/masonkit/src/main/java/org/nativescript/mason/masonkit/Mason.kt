@@ -480,6 +480,20 @@ class Mason {
 
   companion object {
 
+    /**
+     * Bumped whenever a platform layout request reaches a Mason container.
+     *
+     * A NativeScript/Android subtree can be added underneath a Mason view
+     * without touching the Mason node tree at all (e.g. the Frame swapping in
+     * a new Page). Nothing in that flow dirties a node, so the compute cache
+     * legitimately stays clean and the layout snapshot keeps its version — but
+     * the new platform views still need `measure()`/`layout()` from
+     * `applyLayoutFlat`. Tracking the request epoch lets the version skip
+     * (see `Node.lastAppliedLayoutVersion`) stay in place for genuinely
+     * unchanged passes while never swallowing a pass that Android asked for.
+     */
+    internal var platformLayoutEpoch = 0L
+
     internal fun initLib() {
       NativeHelpers.initLib()
     }

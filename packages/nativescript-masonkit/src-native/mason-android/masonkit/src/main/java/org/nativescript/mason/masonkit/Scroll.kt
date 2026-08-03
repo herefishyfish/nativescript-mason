@@ -79,7 +79,7 @@ class Scroll @JvmOverloads constructor(
   }
 
   override fun onChange(low: Long, high: Long) {
-    Node.invalidateDescendantTextViews(node, low, high)
+    Node.scheduleDescendantTextInvalidation(node, low, high)
   }
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -233,6 +233,13 @@ class Scroll @JvmOverloads constructor(
   }
 
   // Layout
+
+  override fun requestLayout() {
+    // Same reasoning as View.requestLayout — a scroll root is also an apply
+    // root, so pending platform layouts underneath it must arm the next pass.
+    Mason.platformLayoutEpoch++
+    super.requestLayout()
+  }
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
     // Run base TwoDScrollView logic (focus, scroll-position clamping).

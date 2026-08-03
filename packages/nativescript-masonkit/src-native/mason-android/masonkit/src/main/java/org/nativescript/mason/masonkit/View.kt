@@ -72,6 +72,17 @@ open class View @JvmOverloads constructor(
   }
 
 
+  override fun requestLayout() {
+    // Android propagates a child's request up through its parents, so every
+    // pending layout below a Mason container passes through here — including
+    // requests from plain platform views (a NativeScript Page being swapped
+    // into a Frame) that never touch the Mason node tree. Arm the apply pass;
+    // `applyLayoutFlat` would otherwise skip an unchanged snapshot and leave
+    // those views measured-but-never-laid-out at 0x0.
+    Mason.platformLayoutEpoch++
+    super.requestLayout()
+  }
+
   override fun onViewAdded(child: android.view.View) {
     super.onViewAdded(child)
     onChildStructureChangedSafe()
@@ -281,7 +292,7 @@ open class View @JvmOverloads constructor(
   }
 
   override fun onChange(low: Long, high: Long) {
-    Node.invalidateDescendantTextViews(node, low, high)
+    Node.scheduleDescendantTextInvalidation(node, low, high)
     // Redraw self so parent-drawn markers (list items in padding zone) are updated.
     invalidate()
   }
@@ -330,6 +341,17 @@ open class View @JvmOverloads constructor(
       if (!node.mason.inCompute) {
         // normal root measurement
 
+        // A Mason component host can wrap a single NativeScript Frame/Page.
+        // Measure that platform child against the real viewport before Mason
+        // asks its measure callback for intrinsic size; otherwise the callback
+        // can report only the toolbar height and collapse the entire page.
+        if (childCount == 1) {
+          val child = getChildAt(0)
+          if (child !is Element && child.visibility != GONE) {
+            child.measure(widthMeasureSpec, heightMeasureSpec)
+          }
+        }
+
         // on Android the initial measurement pass for a view that hasn’t yet
         // been sized by its parent sometimes comes through as EXACTLY 0.  If we
         // pass that straight into the engine it will force the layout to a
@@ -351,7 +373,19 @@ open class View @JvmOverloads constructor(
           setMeasuredDimension(0, 0)
           return
         }
-        setMeasuredDimension(node.computedWidth.toInt(), node.computedHeight.toInt())
+        val computedWidth = node.computedWidth.toInt().coerceAtLeast(0)
+        val computedHeight = node.computedHeight.toInt().coerceAtLeast(0)
+        val measuredWidth = when (specWidthMode) {
+          MeasureSpec.EXACTLY -> specWidth
+          MeasureSpec.AT_MOST -> minOf(computedWidth, specWidth)
+          else -> computedWidth
+        }
+        val measuredHeight = when (specHeightMode) {
+          MeasureSpec.EXACTLY -> specHeight
+          MeasureSpec.AT_MOST -> minOf(computedHeight, specHeight)
+          else -> computedHeight
+        }
+        setMeasuredDimension(measuredWidth, measuredHeight)
       } else {
         // we're currently inside a compute cycle; running computeAndLayout would
         // deadlock, so temporarily fall back to the provided spec sizes.

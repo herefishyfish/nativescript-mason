@@ -454,6 +454,12 @@ const splitBigIntToInt64Parts = (value: bigint): [string, string] => {
   return [lowSigned.toString(), HIGH.toString()];
 };
 
+const splitBigIntToInt32Parts = (value: bigint): [number, number, number, number] => {
+  const low = BigInt.asUintN(64, value);
+  const high = BigInt.asUintN(64, value >> 64n);
+  return [Number(BigInt.asIntN(32, low)), Number(BigInt.asIntN(32, low >> 32n)), Number(BigInt.asIntN(32, high)), Number(BigInt.asIntN(32, high >> 32n))];
+};
+
 const getInt16 = (view: DataView, offset: number) => {
   return view.getInt16(offset, true);
 };
@@ -1113,17 +1119,19 @@ export class Style {
   }
 
   private syncStyle() {
-    const [low, high] = splitBigIntToInt64Parts(this.isDirty);
     if (__ANDROID__) {
+      const [lowLow, lowHigh, highLow, highHigh] = splitBigIntToInt32Parts(this.isDirty);
       //@ts-ignore
       const view = this.view?.android ?? (this.view._view as never as org.nativescript.mason.masonkit.Element);
-      view.syncStyle(low, high);
+      view.syncStyle(lowLow, lowHigh, highLow, highHigh);
     } else if (__APPLE__) {
+      const [low, high] = splitBigIntToInt64Parts(this.isDirty);
       //@ts-ignore
       const view = this.view?.ios ?? (this.view._view as never as MasonText);
       // @ts-ignore
       view.mason_syncStyle(low, high);
     } else if (__WINDOWS__) {
+      const [low, high] = splitBigIntToInt64Parts(this.isDirty);
       // @ts-ignore
       const view = (this.view as any)?.windows ?? this.view._view;
       (view as NativeScript.Mason.IMasonElement).SyncStyle(low, high);

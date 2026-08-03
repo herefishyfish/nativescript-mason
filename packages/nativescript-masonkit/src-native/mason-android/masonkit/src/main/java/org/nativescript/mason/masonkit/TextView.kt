@@ -3,6 +3,7 @@ package org.nativescript.mason.masonkit
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.os.Build
 import android.text.StaticLayout
 import android.util.AttributeSet
@@ -99,6 +100,7 @@ class TextView @JvmOverloads constructor(
 
   // Float-aware StaticLayout: wraps text around floated sibling elements
   internal var floatAwareStaticLayout: StaticLayout? = null
+  private val drawFontMetrics = Paint.FontMetricsInt()
 
   // Height applied by float-aware expansion so onSizeChanged can skip clearing the cache
   private var floatExpandedHeight: Int = -1
@@ -114,8 +116,20 @@ class TextView @JvmOverloads constructor(
     if (floatExpandedHeight > 0 && h == floatExpandedHeight) {
       // Keep the float-aware layout intact — we just expanded to fit it.
     } else {
-      cachedStaticLayout = null
-      cachedStaticLayoutWidth = -1
+      // A StaticLayout is built against a *width* constraint alone; its height
+      // falls out of line breaking. So a size change that leaves the content
+      // width untouched cannot invalidate it. That is the common case here:
+      // applyLayoutFlat re-layout()s all ~282 views every pass, and most land
+      // at the width they already had — which used to discard the layout built
+      // during measure and force onDraw to build a second one (66 of 166 text
+      // views in a profile).
+      val contentWidth = w - paddingLeft - paddingRight
+      if (contentWidth != cachedStaticLayoutWidth) {
+        cachedStaticLayout = null
+        cachedStaticLayoutWidth = -1
+      }
+      // Float-aware layouts embed floated *siblings'* geometry, which this
+      // view's own size says nothing about, so those still always rebuild.
       floatAwareStaticLayout = null
       floatExpandedHeight = -1
     }
@@ -140,8 +154,14 @@ class TextView @JvmOverloads constructor(
       // re-runs to rebuild cachedStaticLayout (cleared by onSizeChanged). Rebuild
       // it here at the current content width so our custom centered draw still
       // runs instead of falling back to the platform's top-aligned TextView.
-      if (floatAwareStaticLayout == null && cachedStaticLayout == null) {
-        cachedStaticLayout = engine.rebuildCachedStaticLayout(paint, width - paddingLeft - paddingRight)
+      // Revalidate against the width the cached layout was built at rather than
+      // just its nullness: onSizeChanged now keeps a layout whose content width
+      // is unchanged, so a stale-width layout must still be caught here.
+      val contentWidth = width - paddingLeft - paddingRight
+      if (floatAwareStaticLayout == null &&
+        (cachedStaticLayout == null || cachedStaticLayoutWidth != contentWidth)
+      ) {
+        cachedStaticLayout = engine.rebuildCachedStaticLayout(paint, contentWidth)
       }
 
       val layoutToDraw = floatAwareStaticLayout ?: cachedStaticLayout
@@ -193,7 +213,8 @@ class TextView @JvmOverloads constructor(
             }
           }
         }
-        val fm = paint.fontMetricsInt
+        val fm = drawFontMetrics
+        paint.getFontMetricsInt(fm)
         val contentH = height - paddingTop - paddingBottom
         val dy = if (layoutToDraw.lineCount == 1 && contentH > 0) {
           val baseline0 = layoutToDraw.getLineBaseline(0)
@@ -240,6 +261,24 @@ class TextView @JvmOverloads constructor(
 
   private fun setup(mason: Mason, isAnonymous: Boolean = false) {
     TextViewCompat.setAutoSizeTextTypeWithDefaults(this, TextViewCompat.AUTO_SIZE_TEXT_TYPE_NONE)
+
+    // Opt out of Content Capture.
+    //
+    // This class draws its own StaticLayout and bypasses super.onDraw, so the
+    // platform's `mLayout` is permanently null. TextView.onProvideStructure
+    // reacts to that by calling assumeLayout() — "onProvideStructure: calling
+    // assumeLayout()" in logcat — which runs makeNewLayout() and line-breaks the
+    // whole text a second time, into a layout nothing ever draws. It fires once
+    // per text view per capture pass, on the UI thread.
+    //
+    // Trade-off: system features that consume captured text — app-search
+    // indexing and on-device translation — stop seeing text in mason views.
+    // Accessibility is unaffected; that goes through AccessibilityNodeInfo, a
+    // separate path. Editable fields are Input/TextArea, not this class, so
+    // autofill on forms is untouched.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      importantForContentCapture = IMPORTANT_FOR_CONTENT_CAPTURE_NO
+    }
     node = mason.createTextNode(this, isAnonymous).apply {
       view = this@TextView
       this.isAnonymous = isAnonymous
@@ -418,6 +457,15 @@ class TextView @JvmOverloads constructor(
   }
 
   override fun onChange(low: Long, high: Long) {
+    // ALL_TEXT is exactly the union of the engine's layout-affecting and
+    // visual-affecting flag sets, so anything outside it leaves onTextStyleChanged
+    // a no-op. Returning here keeps such a dispatch (caret-color is the one that
+    // reaches a TextView) from discarding a StaticLayout that is still valid —
+    // the rebuild it forced showed up as text.miss.newKey on the next measure.
+    if (!StateKeys.hasFlag(low, high, StateKeys.ALL_TEXT.low, StateKeys.ALL_TEXT.high)) {
+      return
+    }
+
     // Style change affects layout; invalidate cached StaticLayout
     cachedStaticLayout = null
     cachedStaticLayoutWidth = -1

@@ -197,7 +197,6 @@ class ViewUtils {
         }
 
         Style.applyOverflowClip(style, canvas, style.node)
-
         val filter = style.mFilter
         if (filter != null) {
           if (filter.filters.isEmpty() || useFastFilter) {

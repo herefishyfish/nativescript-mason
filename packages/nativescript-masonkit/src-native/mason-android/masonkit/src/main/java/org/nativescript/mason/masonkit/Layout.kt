@@ -38,14 +38,18 @@ class MasonLayoutTree {
   var nodeCount = 0
     internal set
 
+  /** Advances whenever a new native layout snapshot is decoded into this tree. */
+  var version = 0L
+    private set
+
   /** Pre-allocated reusable cursor — use in hot paths instead of allocating new MasonNodeView. */
   val cursor = MasonNodeView(this, 0)
 
   private var childIndicesCount = 0
 
-  fun fromFloatArray(args: FloatArray) {
+  fun fromFloatArray(args: FloatArray, length: Int = args.size) {
     val STRIDE = 22
-    val estimatedNodes = args.size / STRIDE
+    val estimatedNodes = length / STRIDE
     ensureCapacity(estimatedNodes, estimatedNodes) // rough estimate for child indices too
     nodeCount = 0
     childIndicesCount = 0
@@ -55,10 +59,10 @@ class MasonLayoutTree {
     // DFS stack: (nodeIndex, remainingChildren)
     val stack = ArrayList<IntArray>(32) // [nodeIndex, remaining]
 
-    while (arrayIndex < args.size) {
+    while (arrayIndex < length) {
       // Ensure there are enough floats remaining for one node
-      if (arrayIndex + STRIDE > args.size) {
-        throw IllegalArgumentException("fromFloatArray: truncated args (expected stride=$STRIDE, remaining=${args.size - arrayIndex})")
+      if (arrayIndex + STRIDE > length) {
+        throw IllegalArgumentException("fromFloatArray: truncated args (expected stride=$STRIDE, remaining=${length - arrayIndex})")
       }
 
       // Make sure arrays can hold this node before writing
@@ -145,7 +149,7 @@ class MasonLayoutTree {
       nodeCount++
       ensureCapacity(nodeCount + 1, childIndicesCount)
     }
-
+    version++
   }
 
   private fun ensureCapacity(nodes: Int, childIndicesCap: Int) {

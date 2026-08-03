@@ -40,6 +40,9 @@ open class Node internal constructor(
 
   internal var computeCacheDirty = false
   internal var computeScheduled = false
+  private var textDispatchScheduled = false
+  private var pendingTextDispatchLow = 0L
+  private var pendingTextDispatchHigh = 0L
   internal var hasNativeClickDispatch = false
   internal var isPlaceholder = false
   internal var isImage = false
@@ -55,9 +58,25 @@ open class Node internal constructor(
 
   // Flat layout tree — reused across layout passes to avoid allocation
   internal val layoutTree = MasonLayoutTree()
+  internal var layoutReadback = FloatArray(22 * 16)
+
+  internal fun ensureLayoutReadback(required: Int) {
+    if (required <= layoutReadback.size) return
+    var capacity = layoutReadback.size
+    while (capacity < required) capacity *= 2
+    layoutReadback = FloatArray(capacity)
+  }
 
   // Index of this node in the flat layout tree (set during applyLayoutFlat)
   internal var layoutTreeIndex: Int = 0
+
+  // Version of layoutTree last consumed by applyLayoutFlat for this root.
+  internal var lastAppliedLayoutVersion = -1L
+
+  // Value of Mason.platformLayoutEpoch when applyLayoutFlat last ran for this
+  // root. A newer epoch means Android requested a layout since then, so the
+  // apply must run even if the snapshot version is unchanged.
+  internal var lastAppliedLayoutEpoch = -1L
 
   // Helper to ensure the shared cursor points at this node's index before reads.
   private fun nv() = layoutTree.cursor.apply { pointTo(layoutTreeIndex) }
@@ -542,6 +561,9 @@ open class Node internal constructor(
       // Keep a JVM-side cached copy of the pseudo-mask to avoid unsafe
       // direct-buffer reads on hot paths (see pseudoMask getter).
       pseudoMaskCache = updated and 0xFFFF
+      // Resolved values overlay the active pseudo buffers (resolvePseudo*), so a
+      // pseudo-state flip changes them without any style byte being written.
+      if (updated != orig) Style.bumpTextStyleEpoch()
       if (autoDirty) {
         dirty()
       }
@@ -720,11 +742,42 @@ open class Node internal constructor(
       invalidateDescendantTextViews(node, state.low, state.high)
     }
 
+    /**
+     * Coalesce inherited text-style propagation until the current batch of
+     * writes has finished. Style synchronization queues this before its layout
+     * request, so descendants are updated before the next measure pass.
+     */
+    internal fun scheduleDescendantTextInvalidation(node: Node, low: Long, high: Long) {
+      if (!StateKeys.hasFlag(low, high, StateKeys.TEXT_DISPATCH.low, StateKeys.TEXT_DISPATCH.high)) return
+      node.pendingTextDispatchLow = node.pendingTextDispatchLow or low
+      node.pendingTextDispatchHigh = node.pendingTextDispatchHigh or high
+      if (node.textDispatchScheduled) return
+
+      val host = (node.view as? View) ?: (node.getRootNode()?.view as? View)
+      if (host == null) {
+        val pendingLow = node.pendingTextDispatchLow
+        val pendingHigh = node.pendingTextDispatchHigh
+        node.pendingTextDispatchLow = 0L
+        node.pendingTextDispatchHigh = 0L
+        invalidateDescendantTextViews(node, pendingLow, pendingHigh)
+        return
+      }
+
+      node.textDispatchScheduled = true
+      host.post {
+        val pendingLow = node.pendingTextDispatchLow
+        val pendingHigh = node.pendingTextDispatchHigh
+        node.pendingTextDispatchLow = 0L
+        node.pendingTextDispatchHigh = 0L
+        node.textDispatchScheduled = false
+        invalidateDescendantTextViews(node, pendingLow, pendingHigh)
+      }
+    }
+
     internal fun invalidateDescendantTextViews(node: Node, low: Long, high: Long) {
-      // Early exit if node has no initialized text values
-      // if (!node.style.isTextValueInitialized) {
-      //  return
-      // }
+      if (!StateKeys.hasFlag(low, high, StateKeys.TEXT_DISPATCH.low, StateKeys.TEXT_DISPATCH.high)) {
+        return
+      }
 
       // Direct invalidation if this is a TextView
       if (node.view is TextContainer) {
@@ -1318,6 +1371,10 @@ open class Node internal constructor(
   }
 
   fun dirty() {
+    // The Kotlin dirty bit is cleared only after a native compute. Repeated
+    // writes before that compute therefore need neither another JNI crossing
+    // nor another native ancestor walk.
+    if (computeCacheDirty) return
     // During compute Rust holds the lock — skip JNI to avoid deadlock
     if (mason.inCompute) {
       computeCacheDirty = true

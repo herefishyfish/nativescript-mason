@@ -613,6 +613,38 @@ class StateKeys internal constructor(val low: Long, val high: Long) {
       TEXT_ALIGN or TEXT_OVERFLOW or TEXT_SHADOWS or
       WORD_SPACING or WRITING_MODE or UNICODE_BIDI or HYPHENS or FONT_STRETCH
 
+    /**
+     * Flags whose mutation can change a memoized *resolved* value — the
+     * per-style inherited memo (`resolvedCached`) and TextEngine's
+     * alignment/direction cache, both keyed on [Style.textStyleEpoch].
+     *
+     * The epoch is global, so bumping it on a layout-only write (margin, size,
+     * flex, grid…) discards the resolved values of every node in the tree and
+     * reinstates the O(depth) ancestor recursion the memo exists to collapse.
+     * Layout writes dominate a render, so this mask is what keeps the memo alive.
+     *
+     * Wider than [ALL_TEXT]: it also covers the resolved slots TextEngine does
+     * not react to (list-style, caret-color, decoration-thickness) plus
+     * `direction`, which feeds the TextDirectionHeuristic. Keep in sync with
+     * `ResolvedSlot` and [TextEngine.getTextDirectionHeuristic].
+     */
+    val RESOLVE_INVALIDATING: StateKeys = ALL_TEXT or DIRECTION or FONT_STYLE_SLANT or
+      DECORATION_THICKNESS or LIST_STYLE_TYPE or LIST_STYLE_POSITION or CARET_COLOR or
+      VERTICAL_ALIGN
+
+    /** Writes in this set change drawing only and must not dirty native layout. */
+    val VISUAL_ONLY: StateKeys = FONT_COLOR or DECORATION_LINE or DECORATION_COLOR or
+      DECORATION_STYLE or BACKGROUND_COLOR or TEXT_SHADOWS or BORDER_COLOR or
+      LIST_STYLE_TYPE or CARET_COLOR or OBJECT_POSITION or Z_INDEX
+
+    /**
+     * Flags any [StyleChangeListener] reacts to — [ALL_TEXT] plus CARET_COLOR,
+     * which `Input` alone consumes. A dispatch carrying nothing from this set
+     * makes `Node.invalidateDescendantTextViews` walk the whole subtree for a
+     * change every listener ignores, so the walk is guarded on it.
+     */
+    val TEXT_DISPATCH: StateKeys = ALL_TEXT or CARET_COLOR
+
     fun hasFlag(low: Long, high: Long, flag: StateKeys): Boolean =
       ((low and flag.low) != 0L) || ((high and flag.high) != 0L)
 
@@ -750,6 +782,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     _resolvedFontFaceDirty = true
     _cachedResolvedFontFace = null
     fontDirty = true
+    // A font swap changes resolved font-size percentages and anything else
+    // memoized against the current epoch.
+    bumpTextStyleEpoch()
   }
 
   data class FontMetrics(
@@ -944,6 +979,25 @@ class Style internal constructor(@Transient internal var node: Node) {
 
   private var mWritableValue: ByteBuffer? = null
 
+  // JS writes directly into the native style buffer before syncStyle reaches
+  // Kotlin. Keep one allocation-free shadow so identical framework writes can
+  // be discarded before they dirty the Rust tree or dispatch text changes.
+  private val syncedStyleBytes = ByteArray(596)
+  private var hasSyncedStyleBytes = false
+
+  private fun captureSyncedStyleBytes(buffer: ByteBuffer = values) {
+    for (index in syncedStyleBytes.indices) syncedStyleBytes[index] = buffer.get(index)
+    hasSyncedStyleBytes = true
+  }
+
+  private fun styleBufferChanged(buffer: ByteBuffer = values): Boolean {
+    if (!hasSyncedStyleBytes) return true
+    for (index in syncedStyleBytes.indices) {
+      if (syncedStyleBytes[index] != buffer.get(index)) return true
+    }
+    return false
+  }
+
   fun prepareMut() {
     if (node.isPlaceholder) {
       return
@@ -1001,8 +1055,26 @@ class Style internal constructor(@Transient internal var node: Node) {
         order(ByteOrder.nativeOrder())
       }
       mValues = buffer
+      // Do not establish the equality baseline here. On the JS path the direct
+      // buffer has already been written before syncStyle enters Kotlin, so
+      // snapshotting now would make the node's first style batch look like a
+      // no-op. updateNativeStyleImpl captures the baseline after that first
+      // batch has actually been processed.
       return buffer
     }
+
+  /**
+   * Bumped by every style write on this node. Lets draw-time caches revalidate
+   * with one comparison instead of re-reading the style bytes they derive from
+   * — [BorderRenderer.updateCache] hashed ~30 buffer fields on *every draw of
+   * every bordered view* to answer the same question.
+   *
+   * Deliberately per-node and write-granular rather than border-granular: any
+   * write bumps it, so a cache keyed on it can never go stale, and the cost of
+   * an occasional redundant rebuild is far below the cost of the hash.
+   */
+  internal var styleWriteVersion = 0L
+    private set
 
   internal var isDirty = -1L
   internal var isDirtyHigh = -1L
@@ -1018,6 +1090,12 @@ class Style internal constructor(@Transient internal var node: Node) {
   private fun isDirtyEmpty(): Boolean = (isDirty == -1L && isDirtyHigh == -1L)
 
   internal fun setOrAppendState(value: StateKeys) {
+    // Bump before the batch check: inside a batch no updateNativeStyle runs, so
+    // this is the only thing that invalidates resolved-value caches for reads
+    // that happen mid-batch. Gated on RESOLVE_INVALIDATING so a layout-only
+    // write does not flush every node's resolved memo.
+    if (value hasFlag StateKeys.RESOLVE_INVALIDATING) bumpTextStyleEpoch()
+    styleWriteVersion++
     if (isDirtyEmpty()) {
       isDirty = value.low
       isDirtyHigh = value.high
@@ -1031,6 +1109,13 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal fun setOrAppendState(keys: Array<StateKeys>) {
+    styleWriteVersion++
+    for (value in keys) {
+      if (value hasFlag StateKeys.RESOLVE_INVALIDATING) {
+        bumpTextStyleEpoch()
+        break
+      }
+    }
     for (value in keys) {
       if (isDirtyEmpty()) {
         isDirty = value.low
@@ -1078,6 +1163,16 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal fun setStateFromHalves(low: Long, high: Long) {
+    // TS writes land directly in the shared ByteBuffer and only then call in
+    // here, so this is where a JS-driven change becomes visible to resolution.
+    if (!styleBufferChanged()) return
+    if (StateKeys.hasFlag(
+        low, high, StateKeys.RESOLVE_INVALIDATING.low, StateKeys.RESOLVE_INVALIDATING.high
+      )
+    ) {
+      bumpTextStyleEpoch()
+    }
+    styleWriteVersion++
     if (isDirtyEmpty()) {
       isDirty = low
       isDirtyHigh = high
@@ -1110,7 +1205,7 @@ class Style internal constructor(@Transient internal var node: Node) {
       val changed = field && !value
       field = value
       if (changed) {
-        updateTextStyle()
+        // updateNativeStyleImpl dispatches the accumulated text flags once.
         updateNativeStyle()
       }
     }
@@ -4070,6 +4165,28 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal fun updateNativeStyle() {
+    val nothingDirty = isDirtyEmpty() && !isSlowDirty
+
+    // A style write can change an inherited text property on this node or on an
+    // ancestor, which every descendant's memo depends on — see [textStyleEpoch].
+    // Only the flags in RESOLVE_INVALIDATING can do that, so a layout-only write
+    // leaves the tree's resolved values intact. Bump before the guards below: a
+    // write deferred during compute still has to invalidate the memo, or
+    // resolution mid-compute reads a value the write already superseded.
+    if (!nothingDirty) {
+      // Callers that set the dirty flags directly rather than through
+      // setOrAppendState (Border's radius path, Mason.setStyle) reach the
+      // version counter only here.
+      styleWriteVersion++
+      if (StateKeys.hasFlag(
+          isDirty, isDirtyHigh,
+          StateKeys.RESOLVE_INVALIDATING.low, StateKeys.RESOLVE_INVALIDATING.high
+        )
+      ) {
+        bumpTextStyleEpoch()
+      }
+    }
+
     if (node.nativePtr == 0L) {
       return
     }
@@ -4079,14 +4196,48 @@ class Style internal constructor(@Transient internal var node: Node) {
       return
     }
 
+    // Nothing to flush. Worth an explicit exit because the clean sentinel for
+    // `isDirty` is -1L — all bits set — so every mask test in the impl below
+    // reads "dirty" and it re-invalidates the border renderer, re-dispatches
+    // caret-color and re-writes layoutDirection for a write that never
+    // happened. Kotlin's View setters reach here twice per assignment (the
+    // setter syncs and resets, then checkAndUpdateStyle calls again), so this
+    // is the whole second call.
+    if (nothingDirty) {
+      isValueInitialized = true
+      return
+    }
+
+    updateNativeStyleImpl()
+  }
+
+  private fun updateNativeStyleImpl() {
+
     // Mark the style as initialized so ViewUtils.render() draws
     // backgrounds, borders, etc. This is the first point where TS-driven
     // style writes reach Kotlin (via syncStyle → setStateFromHalves).
     isValueInitialized = true
 
+    // Everything below observes the new values; advance the direct-buffer
+    // equality baseline before dispatch so a re-entrant identical write is a no-op.
+    captureSyncedStyleBytes()
+
+    // The direct buffer is authoritative. Do not rely solely on the dirty mask
+    // to construct this drawing helper: CSS properties can be delivered in
+    // separate/coalesced bridge turns, while a later layout batch still carries
+    // the already-set background bytes. Missing the original visual bit would
+    // otherwise leave a valid background permanently undrawn.
+    if (mBackground == null && values.get(StyleKeys.BACKGROUND_COLOR_STATE) == StyleState.SET) {
+      mBackground = Background(this)
+    }
+
     updateTextStyle()
 
     val stateKeys = StateKeys(isDirty, isDirtyHigh)
+    val layoutAffecting = isSlowDirty || (!isDirtyEmpty() && (
+      (isDirty and StateKeys.VISUAL_ONLY.low.inv()) != 0L ||
+        (isDirtyHigh and StateKeys.VISUAL_ONLY.high.inv()) != 0L
+      ))
     val directionDirty = stateKeys.hasFlag(StateKeys.DIRECTION)
     if (directionDirty) {
       val androidView = node.view as? android.view.View
@@ -4143,7 +4294,11 @@ class Style internal constructor(@Transient internal var node: Node) {
           gridState.gridTemplateAreas
         )
         resetState()
-        (node.view as? Element)?.invalidateLayout()
+        if (layoutAffecting) {
+          (node.view as? Element)?.invalidateLayout()
+        } else {
+          (node.view as? android.view.View)?.invalidate()
+        }
         return
       }
 
@@ -4251,7 +4406,11 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
 
       resetState()
-      (node.view as? Element)?.invalidateLayout()
+      if (layoutAffecting) {
+        (node.view as? Element)?.invalidateLayout()
+      } else {
+        (node.view as? android.view.View)?.invalidate()
+      }
       return
     }
 
@@ -4262,7 +4421,11 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
 
       resetState()
-      (node.view as? Element)?.invalidateLayout()
+      if (layoutAffecting) {
+        (node.view as? Element)?.invalidateLayout()
+      } else {
+        (node.view as? android.view.View)?.invalidate()
+      }
       return
     }
   }
@@ -4411,6 +4574,109 @@ class Style internal constructor(@Transient internal var node: Node) {
       }
       return null
     }
+
+  // ---- Resolved inherited-value memo -----------------------------------
+  //
+  // An inherited property resolves by recursing into the nearest ancestor with
+  // an initialized style, and that ancestor recurses again — so one read costs
+  // O(depth). A single render of the HN comment thread issued 85k of these
+  // lookups across 186k parent hops.
+  //
+  // Memoizing the *resolved* value per style collapses the recursion: an
+  // ancestor resolves once per epoch and every descendant below it then reads a
+  // cached value. Slots are per-property and independent, so a property is
+  // correct whether or not its neighbours are memoized.
+  //
+  // Validity is keyed on [textStyleEpoch], bumped by every mutation that can
+  // change a resolved value — Kotlin setters via setOrAppendState, JS writes via
+  // setStateFromHalves, pseudo-state flips via Node.setPseudo, and font
+  // invalidation via invalidateResolvedFontFace. Layout-only writes deliberately
+  // do not bump; see [StateKeys.RESOLVE_INVALIDATING].
+
+  private object ResolvedSlot {
+    const val COLOR = 0
+    const val FONT_SIZE = 1
+    const val TEXT_ALIGN = 2
+    const val WRITING_MODE = 3
+    const val UNICODE_BIDI = 4
+    const val LETTER_SPACING = 5
+    const val DECORATION_COLOR = 6
+    const val DECORATION_THICKNESS = 7
+    const val FONT_WEIGHT = 8
+    const val FONT_STYLE = 9
+    const val DECORATION_LINE = 10
+    const val DECORATION_STYLE = 11
+    const val FONT_VARIANT_NUMERIC = 12
+    const val TEXT_WRAP = 13
+    const val WHITE_SPACE = 14
+    const val TEXT_TRANSFORM = 15
+    const val TEXT_JUSTIFY = 16
+    const val LINE_HEIGHT = 17
+    const val LINE_HEIGHT_TYPE = 18
+    const val TEXT_SHADOW = 19
+    const val LIST_STYLE_TYPE = 20
+    const val LIST_STYLE_TYPE_RAW = 21
+    const val LIST_STYLE_POSITION = 22
+    const val CARET_COLOR = 23
+    const val WORD_SPACING = 24
+    const val HYPHENS = 25
+    const val FONT_STRETCH = 26
+    const val COUNT = 27
+  }
+
+  private var resolvedEpoch = -1L
+  private var resolvedPrimitiveMask = 0L
+  private val resolvedPrimitiveCache = LongArray(ResolvedSlot.COUNT)
+  private val resolvedObjectCache = arrayOfNulls<Any>(ResolvedSlot.COUNT)
+
+  private fun prepareResolvedCache() {
+    val epoch = textStyleEpoch
+    if (epoch != resolvedEpoch) {
+      resolvedPrimitiveMask = 0L
+      resolvedObjectCache.fill(null)
+      resolvedEpoch = epoch
+    }
+  }
+
+  private inline fun <T : Any> resolvedCached(slot: Int, compute: () -> T): T {
+    prepareResolvedCache()
+    @Suppress("UNCHECKED_CAST")
+    val hit = resolvedObjectCache[slot] as T?
+    if (hit != null) return hit
+    val value = compute()
+    resolvedObjectCache[slot] = value
+    return value
+  }
+
+  private inline fun resolvedIntCached(slot: Int, compute: () -> Int): Int {
+    prepareResolvedCache()
+    val bit = 1L shl slot
+    if ((resolvedPrimitiveMask and bit) != 0L) return resolvedPrimitiveCache[slot].toInt()
+    val value = compute()
+    resolvedPrimitiveCache[slot] = value.toLong()
+    resolvedPrimitiveMask = resolvedPrimitiveMask or bit
+    return value
+  }
+
+  private inline fun resolvedFloatCached(slot: Int, compute: () -> Float): Float {
+    prepareResolvedCache()
+    val bit = 1L shl slot
+    if ((resolvedPrimitiveMask and bit) != 0L) return Float.fromBits(resolvedPrimitiveCache[slot].toInt())
+    val value = compute()
+    resolvedPrimitiveCache[slot] = value.toRawBits().toLong()
+    resolvedPrimitiveMask = resolvedPrimitiveMask or bit
+    return value
+  }
+
+  private inline fun resolvedByteCached(slot: Int, compute: () -> Byte): Byte {
+    prepareResolvedCache()
+    val bit = 1L shl slot
+    if ((resolvedPrimitiveMask and bit) != 0L) return resolvedPrimitiveCache[slot].toByte()
+    val value = compute()
+    resolvedPrimitiveCache[slot] = value.toLong()
+    resolvedPrimitiveMask = resolvedPrimitiveMask or bit
+    return value
+  }
 
   // Store the resolved FontFace - cached and invalidated when font properties change
   internal val resolvedFontFace: FontFace
@@ -4574,6 +4840,9 @@ class Style internal constructor(@Transient internal var node: Node) {
 
   // Resolved properties that handle inheritance
   internal val resolvedColor: Int
+    get() = resolvedIntCached(ResolvedSlot.COLOR) { resolvedColorUncached }
+
+  private val resolvedColorUncached: Int
     get() {
       val state = values.get(StyleKeys.FONT_COLOR_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4590,6 +4859,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedFontSize: Int
+    get() = resolvedIntCached(ResolvedSlot.FONT_SIZE) { resolvedFontSizeUncached }
+
+  private val resolvedFontSizeUncached: Int
     get() {
       val state = values.get(StyleKeys.FONT_SIZE_STATE)
       val type = values.get(StyleKeys.FONT_SIZE_TYPE)
@@ -4626,6 +4898,9 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal val resolvedFontWeight: FontWeight
+    get() = resolvedCached(ResolvedSlot.FONT_WEIGHT) { resolvedFontWeightUncached }
+
+  private val resolvedFontWeightUncached: FontWeight
     get() {
       val state = values.get(StyleKeys.FONT_WEIGHT_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4648,6 +4923,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedFontStyle: FontStyle
+    get() = resolvedCached(ResolvedSlot.FONT_STYLE) { resolvedFontStyleUncached }
+
+  private val resolvedFontStyleUncached: FontStyle
     get() {
       val state = values.get(StyleKeys.FONT_STYLE_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4690,6 +4968,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedDecorationLine: Styles.DecorationLine
+    get() = resolvedCached(ResolvedSlot.DECORATION_LINE) { resolvedDecorationLineUncached }
+
+  private val resolvedDecorationLineUncached: Styles.DecorationLine
     get() {
       val state = values.get(StyleKeys.DECORATION_LINE_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4713,6 +4994,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedDecorationColor: Int
+    get() = resolvedIntCached(ResolvedSlot.DECORATION_COLOR) { resolvedDecorationColorUncached }
+
+  private val resolvedDecorationColorUncached: Int
     get() {
       val state = values.get(StyleKeys.DECORATION_COLOR_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4730,6 +5014,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedDecorationStyle: Styles.DecorationStyle
+    get() = resolvedCached(ResolvedSlot.DECORATION_STYLE) { resolvedDecorationStyleUncached }
+
+  private val resolvedDecorationStyleUncached: Styles.DecorationStyle
     get() {
       val state = values.get(StyleKeys.DECORATION_STYLE_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4754,6 +5041,9 @@ class Style internal constructor(@Transient internal var node: Node) {
 
 
   internal val resolvedDecorationThickness: Float
+    get() = resolvedFloatCached(ResolvedSlot.DECORATION_THICKNESS) { resolvedDecorationThicknessUncached }
+
+  private val resolvedDecorationThicknessUncached: Float
     get() {
       val state = values.get(StyleKeys.DECORATION_THICKNESS_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4772,6 +5062,9 @@ class Style internal constructor(@Transient internal var node: Node) {
 
 
   internal val resolvedLetterSpacing: Float
+    get() = resolvedFloatCached(ResolvedSlot.LETTER_SPACING) { resolvedLetterSpacingUncached }
+
+  private val resolvedLetterSpacingUncached: Float
     get() {
       val state = values.get(StyleKeys.LETTER_SPACING_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4789,6 +5082,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedFontVariantNumeric: Int
+    get() = resolvedIntCached(ResolvedSlot.FONT_VARIANT_NUMERIC) { resolvedFontVariantNumericUncached }
+
+  private val resolvedFontVariantNumericUncached: Int
     get() {
       val state = values.get(StyleKeys.FONT_VARIANT_NUMERIC_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4806,6 +5102,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedTextWrap: TextWrap
+    get() = resolvedCached(ResolvedSlot.TEXT_WRAP) { resolvedTextWrapUncached }
+
+  private val resolvedTextWrapUncached: TextWrap
     get() {
       val state = values.get(StyleKeys.TEXT_WRAP_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4831,6 +5130,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedWhiteSpace: Styles.WhiteSpace
+    get() = resolvedCached(ResolvedSlot.WHITE_SPACE) { resolvedWhiteSpaceUncached }
+
+  private val resolvedWhiteSpaceUncached: Styles.WhiteSpace
     get() {
       val state = values.get(StyleKeys.WHITE_SPACE_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4853,6 +5155,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedTextTransform: Styles.TextTransform
+    get() = resolvedCached(ResolvedSlot.TEXT_TRANSFORM) { resolvedTextTransformUncached }
+
+  private val resolvedTextTransformUncached: Styles.TextTransform
     get() {
       val state = values.get(StyleKeys.TEXT_TRANSFORM_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4875,6 +5180,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedTextAlign: TextAlign
+    get() = resolvedCached(ResolvedSlot.TEXT_ALIGN) { resolvedTextAlignUncached }
+
+  private val resolvedTextAlignUncached: TextAlign
     get() {
       val state = values.get(StyleKeys.TEXT_ALIGN_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4900,6 +5208,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedTextJustify: TextJustify
+    get() = resolvedCached(ResolvedSlot.TEXT_JUSTIFY) { resolvedTextJustifyUncached }
+
+  private val resolvedTextJustifyUncached: TextJustify
     get() {
       val state = values.get(StyleKeys.TEXT_JUSTIFY_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4925,6 +5236,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedLineHeight: Float
+    get() = resolvedFloatCached(ResolvedSlot.LINE_HEIGHT) { resolvedLineHeightUncached }
+
+  private val resolvedLineHeightUncached: Float
     get() {
       val state = values.get(StyleKeys.LINE_HEIGHT_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4942,6 +5256,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedLineHeightType: Byte
+    get() = resolvedByteCached(ResolvedSlot.LINE_HEIGHT_TYPE) { resolvedLineHeightTypeUncached }
+
+  private val resolvedLineHeightTypeUncached: Byte
     get() {
       val state = values.get(StyleKeys.LINE_HEIGHT_STATE)
       val base = if (state == StyleState.INHERIT) {
@@ -4960,6 +5277,9 @@ class Style internal constructor(@Transient internal var node: Node) {
 
 
   internal val resolvedTextShadow: List<Shadow.TextShadow>
+    get() = resolvedCached(ResolvedSlot.TEXT_SHADOW) { resolvedTextShadowUncached }
+
+  private val resolvedTextShadowUncached: List<Shadow.TextShadow>
     get() {
       val state = values.get(StyleKeys.TEXT_SHADOW_STATE)
       return if (state == StyleState.INHERIT) {
@@ -4986,6 +5306,9 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal val resolvedListStyleType: ListStyleType
+    get() = resolvedCached(ResolvedSlot.LIST_STYLE_TYPE) { resolvedListStyleTypeUncached }
+
+  private val resolvedListStyleTypeUncached: ListStyleType
     get() {
       return parentStyleWithTextValues?.resolvedListStyleType ?: ListStyleType.from(
         values.get(
@@ -4995,6 +5318,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedListStyleTypeRaw: Byte
+    get() = resolvedByteCached(ResolvedSlot.LIST_STYLE_TYPE_RAW) { resolvedListStyleTypeRawUncached }
+
+  private val resolvedListStyleTypeRawUncached: Byte
     get() {
       return parentStyleWithTextValues?.resolvedListStyleTypeRaw ?: values.get(
         StyleKeys.LIST_STYLE_TYPE
@@ -5002,6 +5328,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedListStylePosition: ListStylePosition
+    get() = resolvedCached(ResolvedSlot.LIST_STYLE_POSITION) { resolvedListStylePositionUncached }
+
+  private val resolvedListStylePositionUncached: ListStylePosition
     get() {
       return parentStyleWithTextValues?.resolvedListStylePosition ?: ListStylePosition.from(
         values.get(StyleKeys.LIST_STYLE_POSITION)
@@ -5009,6 +5338,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedCaretColor: Int
+    get() = resolvedIntCached(ResolvedSlot.CARET_COLOR) { resolvedCaretColorUncached }
+
+  private val resolvedCaretColorUncached: Int
     get() {
       val state = values.get(StyleKeys.CARET_COLOR_STATE)
       return if (state == StyleState.SET) {
@@ -5022,6 +5354,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedWordSpacing: Float
+    get() = resolvedFloatCached(ResolvedSlot.WORD_SPACING) { resolvedWordSpacingUncached }
+
+  private val resolvedWordSpacingUncached: Float
     get() {
       val state = values.get(StyleKeys.WORD_SPACING_STATE)
       return if (state == StyleState.SET || state == StyleState.INHERIT) {
@@ -5039,6 +5374,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     get() = values.get(StyleKeys.WORD_SPACING_TYPE)
 
   internal val resolvedWritingMode: Byte
+    get() = resolvedByteCached(ResolvedSlot.WRITING_MODE) { resolvedWritingModeUncached }
+
+  private val resolvedWritingModeUncached: Byte
     get() {
       val state = values.get(StyleKeys.WRITING_MODE_STATE)
       return if (state == StyleState.INHERIT) {
@@ -5049,6 +5387,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedUnicodeBidi: Byte
+    get() = resolvedByteCached(ResolvedSlot.UNICODE_BIDI) { resolvedUnicodeBidiUncached }
+
+  private val resolvedUnicodeBidiUncached: Byte
     get() {
       val state = values.get(StyleKeys.UNICODE_BIDI_STATE)
       return if (state == StyleState.INHERIT) {
@@ -5059,6 +5400,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedHyphens: Byte
+    get() = resolvedByteCached(ResolvedSlot.HYPHENS) { resolvedHyphensUncached }
+
+  private val resolvedHyphensUncached: Byte
     get() {
       val state = values.get(StyleKeys.HYPHENS_STATE)
       return if (state == StyleState.INHERIT) {
@@ -5069,6 +5413,9 @@ class Style internal constructor(@Transient internal var node: Node) {
     }
 
   internal val resolvedFontStretch: Int
+    get() = resolvedIntCached(ResolvedSlot.FONT_STRETCH) { resolvedFontStretchUncached }
+
+  private val resolvedFontStretchUncached: Int
     get() {
       val state = values.get(StyleKeys.FONT_STRETCH_STATE)
       return if (state == StyleState.INHERIT) {
@@ -5084,6 +5431,52 @@ class Style internal constructor(@Transient internal var node: Node) {
   companion object {
     init {
       Mason.initLib()
+    }
+
+    /**
+     * Bumped when a style write could change a resolved (inherited) text value;
+     * lets callers cache values derived from those properties for as long as
+     * none has been written.
+     *
+     * Resolving an inherited property such as `text-align` walks the ancestor
+     * chain, and each ancestor's getter walks again — O(depth²) — while a
+     * layout pass calls it once per measure probe (371× on the HN comment
+     * thread). Those calls all happen with no interleaved style writes, so a
+     * single counter is enough to make them cacheable.
+     *
+     * Tree-wide by design: inherited properties depend on ancestors, so a
+     * per-node flag would be wrong — one node's `color` write must invalidate
+     * every descendant. It is *not* bumped for layout-only writes though: those
+     * cannot change a resolved value, and bumping on them meant a single margin
+     * write during a render discarded the memo of every node in the tree. See
+     * [StateKeys.RESOLVE_INVALIDATING] for the exact flag set.
+     *
+     * The advance is lazy: writers only set [textStyleEpochDirty] (see
+     * [bumpTextStyleEpoch]) and the counter moves at most once, on the next
+     * read. Writes stream continuously during a render while readers cluster in
+     * dispatch/measure phases, so a burst of writes collapses into one advance
+     * per read phase instead of thrashing every node's resolved memo per write.
+     * Every reader goes through this getter, so a write between two reads is
+     * always observed as an epoch change.
+     */
+    @JvmStatic
+    @Volatile
+    var textStyleEpoch: Long = 0
+      get() {
+        if (textStyleEpochDirty) {
+          textStyleEpochDirty = false
+          field++
+        }
+        return field
+      }
+      private set
+
+    @Volatile
+    private var textStyleEpochDirty = false
+
+    /** Invalidates every node's resolved memo. Go through [StateKeys.RESOLVE_INVALIDATING]. */
+    internal fun bumpTextStyleEpoch() {
+      textStyleEpochDirty = true
     }
 
     /**
