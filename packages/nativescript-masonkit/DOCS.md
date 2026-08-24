@@ -893,6 +893,19 @@ Framework detection is automatic. MasonKit detects which framework is in use and
 
 ### Vue 3 Example
 
+Install the Vue renderer integration before starting the app. It registers the
+elements and supplies the child-operation metadata required for keyed inserts,
+removals and reorders:
+
+```typescript
+import { createApp } from 'nativescript-vue';
+import { installMasonKit } from '@triniwiz/nativescript-masonkit/vue';
+import App from './App.vue';
+
+installMasonKit();
+createApp(App).start();
+```
+
 ```vue
 <template>
   <Div display="flex" flexDirection="column" padding="16">

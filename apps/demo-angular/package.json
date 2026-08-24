@@ -1,6 +1,7 @@
 {
   "main": "./src/main.ts",
   "dependencies": {
+    "@nativescript/font-manager": "file:../../../font-manager/dist/packages/font-manager",
     "@nativescript/core": "file:../../node_modules/@nativescript/core",
     "@triniwiz/nativescript-masonkit": "file:../../dist/packages/nativescript-masonkit"
   },

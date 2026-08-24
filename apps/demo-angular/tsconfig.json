@@ -1,15 +1,27 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "baseUrl": ".",
     "paths": {
       "~/*": ["src/*"],
-      "@demo/shared": ["tools/demo/index.ts"],
+      "@demo/shared": ["../../tools/demo/index.ts"],
       "@triniwiz/*": ["../../dist/packages/*"],
-      "@triniwiz/nativescript-masonkit": ["../../packages/nativescript-masonkit/index.d.ts"],
+      // Map to the package directory, not to `index.d.ts`. A declaration file
+      // emits no runtime code, so webpack resolving this specifier to it makes
+      // every imported value `undefined` — `class MasonComponentHost extends
+      // View` then dies with "Class extends value undefined". The directory
+      // lets webpack pick `index.android.ts`/`index.ios.ts` via the platform
+      // suffix while TypeScript still reads types from the `typings` field.
+      "@triniwiz/nativescript-masonkit": ["../../packages/nativescript-masonkit"],
       "@triniwiz/nativescript-masonkit/angular": ["../../packages/nativescript-masonkit/angular/index.ts"],
       "@triniwiz/nativescript-masonkit/web": ["../../packages/nativescript-masonkit/web.ts"]
     }
   },
   "files": ["./references.d.ts", "./src/main.ts", "./src/polyfills.ts"],
-  "include": ["../../packages/**/references.d.ts"]
+  // `@triniwiz/nativescript-masonkit` maps to `index.d.ts`, so the TypeScript
+  // program never pulls in the platform implementations. Webpack, however,
+  // resolves the same import to `index.android.ts`/`index.ios.ts` and hands it
+  // to @ngtools/webpack, which refuses to build a file that is not part of the
+  // program. Listing them here keeps both resolvers in agreement.
+  "include": ["../../packages/**/references.d.ts", "../../packages/nativescript-masonkit/**/index.android.ts", "../../packages/nativescript-masonkit/**/index.ios.ts"]
 }

@@ -49,6 +49,22 @@
         }
       ]
     },
+    "build.vue": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["production", "^production"],
+      "options": {
+        "commands": ["tsc -p packages/nativescript-masonkit/vue/tsconfig.json", "node tools/scripts/copy-subpackage.ts nativescript-masonkit vue"],
+        "parallel": false
+      },
+      "outputs": ["{workspaceRoot}/dist/packages/nativescript-masonkit/vue"],
+      "dependsOn": [
+        {
+          "target": "build",
+          "projects": "self"
+        }
+      ]
+    },
     "build.all": {
       "executor": "nx:run-commands",
       "options": {
@@ -63,6 +79,10 @@
         },
         {
           "target": "build.angular",
+          "projects": "self"
+        },
+        {
+          "target": "build.vue",
           "projects": "self"
         }
       ]

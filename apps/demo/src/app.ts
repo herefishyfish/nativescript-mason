@@ -115,6 +115,11 @@ function benchmarkProp(root: any, Container: any, containerProps: any, Child: an
   });
 }
 
+// Page-based entry: app-root.xml picks the page to show. Flip to the
+// benchmark harness below when profiling instead of demoing.
+Application.run({ moduleName: 'app-root' });
+
+/*
 Application.run({
   create() {
     const root = new Div();
@@ -165,6 +170,7 @@ Application.run({
     return root as never;
   },
 });
+*/
 
 /*
 Application.run({

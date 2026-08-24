@@ -361,3 +361,268 @@ stress-chip-alt,
   background-color: #eeeee4;
   border-radius: 4;
 }
+
+// ------------------------------------------------ shared 1K benchmark
+
+.benchmark-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6;
+  padding: 10;
+  margin-bottom: 8;
+  background-color: #fff6cc;
+  border-radius: 8;
+}
+
+.benchmark-result {
+  font-size: 12;
+  color: $ink;
+}
+
+// ------------------------------------------------ core NativeScript baseline
+
+// These rules intentionally contain only properties understood by normal
+// NativeScript views. Structure and flow come from StackLayout/GridLayout.
+.core-page {
+  background-color: $bg;
+  padding: 12;
+}
+
+.core-story-header,
+.core-comment {
+  background-color: $surface;
+  border-radius: 8;
+  padding: 10;
+}
+
+.core-story-header,
+.core-comment-bar,
+.core-comment-list,
+.core-comment {
+  margin-bottom: 8;
+}
+
+.core-meta-row {
+  margin-top: 6;
+}
+
+.core-meta-row .meta-score,
+.core-meta-row .meta-dim {
+  margin-right: 8;
+}
+
+.core-comment-head {
+  margin-bottom: 4;
+}
+
+.core-comment-head .meta-dim,
+.core-comment-head .depth-badge {
+  margin-left: 8;
+  vertical-align: middle;
+}
+
+.core-collapse-btn {
+  font-size: 12;
+  color: $dim;
+  background-color: transparent;
+  border-width: 0;
+  padding: 2 6;
+  margin: 0;
+}
+
+.core-replies {
+  margin-top: 6;
+  margin-left: 12;
+}
+
+.core-empty {
+  padding: 16;
+  text-align: center;
+}
+
+// ---------------------------------------------------------------------------
+// Border rendering cases (stress route, cases 6-10)
+//
+// The solid single-colour border is drawn as one EVEN_ODD path holding an outer
+// and an inner contour, replacing a saveLayer + CLEAR punch. These boxes cover
+// the shapes where a fill rule and a blend can disagree: corners, a collapsed
+// inner contour, and alpha. Per-side and dashed/dotted boxes take other
+// branches and are controls.
+//
+// Border widths here go through the `border` shorthand, which resolves a bare
+// number with the device scale already applied — unlike the unitless dip
+// lengths everywhere else in this file. Values are chosen to be unambiguous
+// under either reading rather than to be exact.
+// ---------------------------------------------------------------------------
+
+.b-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12;
+  padding: 8;
+  background-color: #f0f0e8;
+  border-radius: 6;
+}
+
+.b-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4;
+}
+
+.b-box {
+  width: 64;
+  height: 44;
+  background-color: #ffffff;
+}
+
+.b-cap {
+  font-size: 10;
+  color: $dim;
+}
+
+// --- 6. uniform solid: the ring path ---
+.b-solid {
+  border: 12 solid #2d6cdf;
+}
+
+.b-solid-r {
+  border: 12 solid #2d6cdf;
+  border-radius: 14;
+}
+
+.b-solid-pill {
+  border: 12 solid #2d6cdf;
+  border-radius: 22;
+}
+
+// Distinct radius per corner: the contours must stay paired corner by corner.
+.b-corners {
+  border: 12 solid #7a3ea3;
+  border-radius: 2 20 2 20;
+}
+
+// --- 7. inner contour collapses; expected result is a solid block ---
+.b-thick {
+  border: 90 solid #2d6cdf;
+}
+
+.b-thick-r {
+  border: 90 solid #2d6cdf;
+  border-radius: 16;
+}
+
+.b-huge-radius {
+  border: 12 solid #2d6cdf;
+  border-radius: 200;
+}
+
+// --- 8. alpha: one flat tone, no double-painted ring ---
+.b-alpha {
+  border: 16 solid rgba(20, 110, 220, 0.45);
+}
+
+.b-alpha-r {
+  border: 16 solid rgba(20, 110, 220, 0.45);
+  border-radius: 14;
+}
+
+.b-alpha-on-fill {
+  border: 16 solid rgba(20, 110, 220, 0.45);
+  border-radius: 14;
+  background-color: #ffd9a0;
+}
+
+// --- 9. controls: per-side and stroked branches, not the ring ---
+.b-sides {
+  border-top: 12 solid #d1495b;
+  border-right: 12 solid #2d6cdf;
+  border-bottom: 12 solid #3f9b3f;
+  border-left: 12 solid #e0a800;
+}
+
+.b-widths {
+  border-top: 6 solid #444444;
+  border-right: 20 solid #444444;
+  border-bottom: 6 solid #444444;
+  border-left: 20 solid #444444;
+}
+
+.b-dashed {
+  border: 8 dashed #2d6cdf;
+}
+
+.b-dotted {
+  border: 8 dotted #2d6cdf;
+}
+
+// --- 10. percentage radius must re-resolve when the box resizes ---
+.b-pct {
+  border: 12 solid #2d6cdf;
+  border-radius: 50%;
+}
+
+.b-wide {
+  width: 180;
+}
+
+// --- 6b. superellipse corners: polyline contours, not analytic arcs ---
+//
+// corner-shape maps to an exponent: round=1 (arcTo), squircle/superellipse=0.5,
+// notch=2, bevel=4. Anything but round builds the corner from 16 lineTo
+// segments, which is where a contour can self-intersect — the one condition
+// under which EVEN_ODD (the ring) and WINDING (the old two-path fill) disagree.
+
+.b-sq {
+  border: 12 solid #2d6cdf;
+  border-radius: 18;
+  corner-shape: squircle;
+}
+
+.b-notch {
+  border: 12 solid #2d6cdf;
+  border-radius: 18;
+  corner-shape: notch;
+}
+
+.b-bevel {
+  border: 12 solid #2d6cdf;
+  border-radius: 18;
+  corner-shape: bevel;
+}
+
+// One of each, so a single box shows whether the shapes stay paired per corner.
+.b-se-mixed {
+  border: 12 solid #7a3ea3;
+  border-radius: 18;
+  corner-shape: round squircle notch bevel;
+}
+
+// Thick border + large radius: the inner contour is emitted at an offset with
+// its radii rescaled to the inner box, so adjacent corners crowd each other.
+.b-sq-thick {
+  border: 40 solid #2d6cdf;
+  border-radius: 30;
+  corner-shape: squircle;
+}
+
+.b-notch-thick {
+  border: 40 solid #2d6cdf;
+  border-radius: 30;
+  corner-shape: notch;
+}
+
+.b-bevel-thick {
+  border: 40 solid #2d6cdf;
+  border-radius: 30;
+  corner-shape: bevel;
+}
+
+// Alpha makes a double-painted overlap visible as a darker patch.
+.b-sq-alpha {
+  border: 20 solid rgba(20, 110, 220, 0.45);
+  border-radius: 22;
+  corner-shape: squircle;
+}

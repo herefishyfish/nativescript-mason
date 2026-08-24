@@ -6,7 +6,8 @@
     "paths": {
       "~/*": ["app/*"],
       "@demo/shared": ["../../tools/demo/index.ts"],
-      "@triniwiz/nativescript-masonkit": ["../../packages/nativescript-masonkit/index.d.ts", "../../packages/nativescript-masonkit/typings/android.d.ts", "../../packages/nativescript-masonkit/typings/objc!Mason.d.ts"]
+      "@triniwiz/nativescript-masonkit": ["../../packages/nativescript-masonkit/index.d.ts", "../../packages/nativescript-masonkit/typings/android.d.ts", "../../packages/nativescript-masonkit/typings/objc!Mason.d.ts"],
+      "@triniwiz/nativescript-masonkit/vue": ["../../packages/nativescript-masonkit/vue/index.ts"]
     }
   },
   "vueCompilerOptions": {

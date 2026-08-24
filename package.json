@@ -34,6 +34,7 @@
     "@nativescript/webpack": "~5.0.5",
     "@ngtools/webpack": "^21.0.0",
     "husky": "~9.0.0",
+    "nativescript-vue": "^3.0.2",
     "ng-packagr": "^21.0.0",
     "rxjs": "~7.8.0",
     "sass": "1.53.0",

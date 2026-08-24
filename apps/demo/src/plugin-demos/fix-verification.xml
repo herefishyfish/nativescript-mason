@@ -1,0 +1,117 @@
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo"
+  xmlns:ui="@triniwiz/nativescript-masonkit/view"
+  xmlns:text="@triniwiz/nativescript-masonkit/text"
+  xmlns:list="@triniwiz/nativescript-masonkit/list"
+  xmlns:li="@triniwiz/nativescript-masonkit/li">
+
+  <!--
+    Each test draws the mason-laid-out element above a grey REFERENCE bar of
+    the spec-correct size. Aligned right edges = pass; a short coloured bar
+    against a long grey bar = fail. The reference bars use fixed dips, so they
+    do not depend on any of the code paths under test.
+  -->
+
+  <ScrollView>
+    <StackLayout style="padding: 10;">
+
+      <Label text="MASON FIX VERIFICATION" style="font-size: 16; font-weight: bold; margin-bottom: 4;"/>
+
+      <!-- ============ 1.6: text-shadow on a CORE (non-mason) Label ============
+           Before the fix, loading the plugin installed an identity converter for
+           every view, so core's setNative got a raw string and text-shadow died
+           app-wide. Expect a visible red shadow offset down-right. -->
+      <Label text="1.6  core Label text-shadow (expect red shadow)" style="font-size: 11; color: #666666; margin-top: 8;"/>
+      <Label id="coreShadow" text="SHADOWED" loaded="onCoreLabel"
+             style="text-shadow: 3 3 2 #ff0000; font-size: 26; font-weight: bold; color: #111111; background-color: #f4f4f4; padding: 4;"/>
+
+      <!-- ============ 1.5: flex shorthands that used to throw ============
+           'flex: 1 0 auto', 'flex: 1 0' and 'flex: initial' each threw a
+           TypeError during CSS application. Rendering at all is the pass. -->
+      <Label text="1.5  flex shorthands (expect 3 bars, no crash)" style="font-size: 11; color: #666666; margin-top: 10;"/>
+      <ui:View id="flexCrash" loaded="onFlexCrash"
+               style="display: flex; flex-direction: row; width: 300; height: 28; background-color: #dddddd;">
+        <ui:View id="fc1" style="flex: 1 0 auto; background-color: #e06666;"/>
+        <ui:View id="fc2" style="flex: 1 0; background-color: #6aa84f;"/>
+        <ui:View id="fc3" style="flex: initial; width: 40; background-color: #3d85c6;"/>
+      </ui:View>
+
+      <!-- ============ F5: `flex: 1` is `1 1 0%` ============
+           Basis 0% means content width is ignored and the three items are exact
+           thirds of 300 = 100 each, despite wildly different text lengths.
+           With the old `auto` basis the middle bar would be much wider. -->
+      <Label text="F5  flex:1 = exact thirds despite content (expect 3 equal bars)" style="font-size: 11; color: #666666; margin-top: 10;"/>
+      <ui:View id="flexThirds" loaded="onFlexThirds"
+               style="display: flex; flex-direction: row; width: 300; height: 28; background-color: #dddddd;">
+        <ui:View id="ft1" style="flex: 1; background-color: #e06666;">
+          <text:Text textContent="a"/>
+        </ui:View>
+        <ui:View id="ft2" style="flex: 1; background-color: #6aa84f;">
+          <text:Text textContent="a much longer label here"/>
+        </ui:View>
+        <ui:View id="ft3" style="flex: 1; background-color: #3d85c6;">
+          <text:Text textContent="b"/>
+        </ui:View>
+      </ui:View>
+      <ui:View style="width: 300; height: 6; display: flex; flex-direction: row;">
+        <ui:View style="width: 100; height: 6; background-color: #999999;"/>
+        <ui:View style="width: 100; height: 6; background-color: #cccccc;"/>
+        <ui:View style="width: 100; height: 6; background-color: #999999;"/>
+      </ui:View>
+
+      <!-- ============ F6: flex-basis: 50% ============
+           Was parsed by Length.parse -> parseFloat('50%') = 50dip.
+           Now 50% of 300 = 150. Grey reference bar is 150 wide. -->
+      <Label text="F6  flex-basis:50% of 300 (expect 150, matches grey)" style="font-size: 11; color: #666666; margin-top: 10;"/>
+      <ui:View id="basisPct" loaded="onBasisPct"
+               style="display: flex; flex-direction: row; width: 300; height: 22; background-color: #dddddd;">
+        <ui:View id="bp1" style="flex-grow: 0; flex-shrink: 0; flex-basis: 50%; background-color: #e06666;"/>
+      </ui:View>
+      <ui:View style="width: 300; height: 6; display: flex; flex-direction: row;">
+        <ui:View id="ref150" style="width: 150; height: 6; background-color: #999999;"/>
+      </ui:View>
+
+      <!-- ============ F6: max-width: 50% ============ -->
+      <Label text="F6  max-width:50% of 300 (expect 150, matches grey)" style="font-size: 11; color: #666666; margin-top: 10;"/>
+      <ui:View id="maxPct" loaded="onMaxPct" style="width: 300; height: 22; background-color: #dddddd;">
+        <ui:View id="mp1" style="width: 100%; max-width: 50%; height: 22; background-color: #3d85c6;"/>
+      </ui:View>
+      <ui:View style="width: 300; height: 6; display: flex; flex-direction: row;">
+        <ui:View style="width: 150; height: 6; background-color: #999999;"/>
+      </ui:View>
+
+      <!-- ============ F6: gap: 10% ============
+           10% of 300 = 30. Two 100-wide boxes + one 30 gap = 230 total,
+           so the second box's right edge lands on the 230 grey bar. -->
+      <Label text="F6  gap:10% of 300 (expect 30 gap, right edge at grey)" style="font-size: 11; color: #666666; margin-top: 10;"/>
+      <ui:View id="gapPct" loaded="onGapPct"
+               style="display: flex; flex-direction: row; width: 300; height: 22; gap: 10%; background-color: #dddddd;">
+        <ui:View id="gp1" style="width: 100; background-color: #e06666;"/>
+        <ui:View id="gp2" style="width: 100; background-color: #6aa84f;"/>
+      </ui:View>
+      <ui:View style="width: 300; height: 6; display: flex; flex-direction: row;">
+        <ui:View style="width: 230; height: 6; background-color: #999999;"/>
+      </ui:View>
+
+      <!-- ============ 1.4 / F3: inline list-item line height ============
+           is_virtual read garbage from the state buffer and was almost always
+           true, which zeroed every inline list-item's height contribution.
+           Two 30dip items should now produce a list at least 60 tall. -->
+      <Label text="1.4  inline list-items contribute height (expect 2 visible rows)" style="font-size: 11; color: #666666; margin-top: 10;"/>
+      <!-- NB: list:UnorderedList renders from an `items` binding, not static
+           XML children, so Li is used directly here. -->
+      <ui:View id="ul" loaded="onLiBox" style="width: 300; padding-left: 40; background-color: #fff6cc;">
+        <li:Li id="li1" style="height: 30; background-color: #ffe680;">
+          <text:Text textContent="list item one"/>
+        </li:Li>
+        <li:Li id="li2" style="height: 30; background-color: #ffd966;">
+          <text:Text textContent="list item two"/>
+        </li:Li>
+      </ui:View>
+
+      <Label text="RESULTS" style="font-size: 13; font-weight: bold; margin-top: 12;"/>
+      <Label id="results" text="running..." textWrap="true"
+             style="font-family: monospace; font-size: 11; background-color: #f0f0f0; padding: 6;"/>
+
+    </StackLayout>
+  </ScrollView>
+</Page>

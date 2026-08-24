@@ -71,7 +71,18 @@ android {
 
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
+// The plugin drives the NDK linker through a Python wrapper script. On Windows
+// a bare `python` usually hits the Microsoft Store alias stub, which exits
+// without running anything, so prefer the `py` launcher there. Override with
+// -Prust.pythonCommand=<path> if neither is on PATH.
+def resolvedPythonCommand = {
+  def prop = project.findProperty("rust.pythonCommand")
+  if (prop) return prop
+  return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows") ? "py" : "python"
+}()
+
 cargo {
+  pythonCommand = resolvedPythonCommand
   module = "../../../../../"
   libname = "masonnative"
 
