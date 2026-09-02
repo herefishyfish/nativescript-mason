@@ -46,6 +46,16 @@ open class Node internal constructor(
   internal var hasNativeClickDispatch = false
   internal var isPlaceholder = false
   internal var isImage = false
+
+  /**
+   * Attributes carried over from parsed HTML (`class`, `id`, `href`, `alt`,
+   * `title`). These are recorded, not acted on by the cascade: a node built by
+   * the HTML parser is a native view with a mason node, not a NativeScript
+   * ViewBase, so NativeScript's selector engine never sees it. Keeping them lets
+   * an app find and style a parsed subtree itself.
+   */
+  val htmlAttributes: MutableMap<String, String> = mutableMapOf()
+
   var computeCache: SizeF = SizeF(Float.MIN_VALUE, Float.MIN_VALUE)
     set(value) {
       computeCacheDirty = true

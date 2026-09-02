@@ -231,11 +231,8 @@ class Scroll @JvmOverloads constructor(
     val computedW = node.computedWidth.toInt()
     val computedH = node.computedHeight.toInt()
 
-    // Read through layoutTreeRef, not the node's own (often-empty) layoutTree
-    // — when this Scroll is nested under an Element parent, its geometry
-    // lives in the ancestor's flat tree, not its own.
-    val nv = node.layoutTreeRef.cursor
-    nv.pointTo(node.layoutTreeIndex)
+    val nv = node.layoutTree.cursor
+    nv.pointTo(0)
     val cw = nv.contentWidth.toInt()
     val ch = nv.contentHeight.toInt()
 
