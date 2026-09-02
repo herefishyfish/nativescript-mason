@@ -384,9 +384,17 @@ class BorderRenderer(private val style: Style) {
 
   private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val path = Path()
-  private val ringPath = Path()
   private val clipPath = Path()
   private val outerClipPath = Path()
+
+  // Solid-border fast path: reused so a draw allocates neither Path nor Paint.
+  // Configured once — the shared `paint` never carries a shader, color filter or
+  // alpha, so colour is the only thing a draw has to set.
+  private val ringPath = Path()
+  private val ringFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    isDither = true
+    style = Paint.Style.FILL
+  }
 
   // Reusable RectF for arc corner calculations — avoids allocation per corner
   private val cornerRect = RectF()
@@ -449,7 +457,9 @@ class BorderRenderer(private val style: Style) {
   private var bottomRightExponent = 0f
   private var bottomLeftExponent = 0f
 
-  private var lastHash = 0
+  private var lastStyleVersion = -1L
+  private var lastCacheWidth = Float.NaN
+  private var lastCacheHeight = Float.NaN
 
   private var cacheInvalidated = true
   private var clipPathDirty = true
@@ -458,70 +468,6 @@ class BorderRenderer(private val style: Style) {
   private var lastClipHeight = 0f
   private var lastOuterClipWidth = 0f
   private var lastOuterClipHeight = 0f
-
-  private fun computeHash(): Int {
-    var result = 17
-
-    // Border widths: use raw type + float bits to avoid allocating LengthPercentage
-    val leftKeys = style.mBorderLeft.keys
-    val topKeys = style.mBorderTop.keys
-    val rightKeys = style.mBorderRight.keys
-    val bottomKeys = style.mBorderBottom.keys
-
-    result = 31 * result + style.values.get(leftKeys.widthType)
-    result =
-      31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(leftKeys.widthValue))
-
-    result = 31 * result + style.values.get(topKeys.widthType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(topKeys.widthValue))
-
-    result = 31 * result + style.values.get(rightKeys.widthType)
-    result =
-      31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(rightKeys.widthValue))
-
-    result = 31 * result + style.values.get(bottomKeys.widthType)
-    result =
-      31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(bottomKeys.widthValue))
-
-    // Colors (ints)
-    result = 31 * result + style.mBorderLeft.color
-    result = 31 * result + style.mBorderTop.color
-    result = 31 * result + style.mBorderRight.color
-    result = 31 * result + style.mBorderBottom.color
-
-    // Border radii: read raw type/value for each corner to avoid allocating Points/LengthPercentage
-    val tl = Border.cornerTopLeftKeys
-    result = 31 * result + style.values.get(tl.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tl.xValue))
-    result = 31 * result + style.values.get(tl.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tl.yValue))
-
-    val tr = Border.cornerTopRightKeys
-    result = 31 * result + style.values.get(tr.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tr.xValue))
-    result = 31 * result + style.values.get(tr.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(tr.yValue))
-
-    val br = Border.cornerBottomRightKeys
-    result = 31 * result + style.values.get(br.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(br.xValue))
-    result = 31 * result + style.values.get(br.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(br.yValue))
-
-    val bl = Border.cornerBottomLeftKeys
-    result = 31 * result + style.values.get(bl.xType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(bl.xValue))
-    result = 31 * result + style.values.get(bl.yType)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.values.getFloat(bl.yValue))
-
-    // Exponents (floats)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderLeft.corner1Exponent)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderLeft.corner2Exponent)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderRight.corner1Exponent)
-    result = 31 * result + java.lang.Float.floatToIntBits(style.mBorderRight.corner2Exponent)
-
-    return result
-  }
 
   fun invalidate() {
     cacheInvalidated = true
@@ -551,17 +497,16 @@ class BorderRenderer(private val style: Style) {
     val innerWidth = (width - maxStrokeHalf * 2).coerceAtLeast(0f)
     val innerHeight = (height - maxStrokeHalf * 2).coerceAtLeast(0f)
 
-    // CSS spec proportional radius reduction on the outer box, then inset the
-    // radii so the clipped content follows the same curve family inside the border.
-    val f = cssRadiusScale(width, height)
-    val tlX = insetRadius(tl.x * f, maxStrokeHalf)
-    val tlY = insetRadius(tl.y * f, maxStrokeHalf)
-    val trX = insetRadius(tr.x * f, maxStrokeHalf)
-    val trY = insetRadius(tr.y * f, maxStrokeHalf)
-    val brX = insetRadius(br.x * f, maxStrokeHalf)
-    val brY = insetRadius(br.y * f, maxStrokeHalf)
-    val blX = insetRadius(bl.x * f, maxStrokeHalf)
-    val blY = insetRadius(bl.y * f, maxStrokeHalf)
+    // CSS spec proportional radius reduction
+    val f = cssRadiusScale(innerWidth, innerHeight)
+    val tlX = tl.x * f
+    val tlY = tl.y * f
+    val trX = tr.x * f
+    val trY = tr.y * f
+    val brX = br.x * f
+    val brY = br.y * f
+    val blX = bl.x * f
+    val blY = bl.y * f
 
     val ofs = maxStrokeHalf
 
@@ -823,10 +768,25 @@ class BorderRenderer(private val style: Style) {
   }
 
   fun updateCache(viewWidth: Float, viewHeight: Float) {
-    val newHash = computeHash()
-    if (!cacheInvalidated && newHash == lastHash) return
+    // Revalidate against the style's write counter and the view box rather than
+    // re-hashing ~30 style-buffer fields. This runs on every draw of every
+    // bordered view, and the profile put it in the draw path's hot set.
+    //
+    // The view box is part of the key because the values cached below are
+    // resolved *pixels* — `toPx(viewWidth)`, so a percentage width or radius
+    // changes with the box while every style byte stays identical. The old hash
+    // covered only the bytes, so a resize left the cache holding pixel values
+    // from the previous size.
+    val version = style.styleWriteVersion
+    if (!cacheInvalidated &&
+      version == lastStyleVersion &&
+      viewWidth == lastCacheWidth &&
+      viewHeight == lastCacheHeight
+    ) return
 
-    lastHash = newHash
+    lastStyleVersion = version
+    lastCacheWidth = viewWidth
+    lastCacheHeight = viewHeight
     cacheInvalidated = false
     clipPathDirty = true  // border properties changed, clip path needs rebuild
     outerClipPathDirty = true
@@ -891,23 +851,23 @@ class BorderRenderer(private val style: Style) {
       topWidth > 0f
     ) {
       if (topStyle == BorderStyle.Solid) {
-        // Solid single-color border: draw a filled ring with even-odd fill.
-        // This avoids CLEAR-layer edge artifacts around rounded corners.
-        paint.color = topColor
-        paint.isDither = true
-
-        val outer = buildBorderPathInset(0f, width, height)
-        val inner = buildBorderPathInset(topWidth, width, height)
-
-        val fillPaint = Paint(paint)
-        fillPaint.style = Paint.Style.FILL
-        fillPaint.pathEffect = null
-
+        // Solid single-color border: one even-odd fill of outer+inner.
+        //
+        // This used to punch the hole with saveLayer + a CLEAR-blended inner
+        // path, which allocated an offscreen buffer per bordered view per frame
+        // (plus two Paints and two Paths) — on the most common decorated-element
+        // path there is. Two closed contours in a single EVEN_ODD path give the
+        // same ring: the inner contour's winding cancels the outer's, so the
+        // hole falls out of the fill rule instead of a blend op. No layer, no
+        // per-draw allocation, and antialiasing along the inner edge improves
+        // because it is no longer composited through a CLEAR.
         ringPath.reset()
         ringPath.fillType = Path.FillType.EVEN_ODD
-        ringPath.addPath(outer)
-        ringPath.addPath(inner)
-        canvas.drawPath(ringPath, fillPaint)
+        appendBorderPathInset(ringPath, 0f, width, height)
+        appendBorderPathInset(ringPath, topWidth, width, height)
+
+        ringFillPaint.color = topColor
+        canvas.drawPath(ringPath, ringFillPaint)
       } else {
         // Non-solid single-color border: stroke the path once and apply pathEffect
         paint.color = topColor
@@ -926,10 +886,10 @@ class BorderRenderer(private val style: Style) {
       }
     } else {
       // Draw each side separately for per-side colors and styles
-      drawSide(canvas, Side.Top, topColor, topStyle, width, height)
-      drawSide(canvas, Side.Right, rightColor, rightStyle, width, height)
-      drawSide(canvas, Side.Bottom, bottomColor, bottomStyle, width, height)
-      drawSide(canvas, Side.Left, leftColor, leftStyle, width, height)
+      drawSide(canvas, Side.Top, path, topColor, topStyle, width, height)
+      drawSide(canvas, Side.Right, path, rightColor, rightStyle, width, height)
+      drawSide(canvas, Side.Bottom, path, bottomColor, bottomStyle, width, height)
+      drawSide(canvas, Side.Left, path, leftColor, leftStyle, width, height)
     }
   }
 
@@ -948,17 +908,16 @@ class BorderRenderer(private val style: Style) {
     val innerWidth = (width - maxStrokeHalf * 2).coerceAtLeast(0f)
     val innerHeight = (height - maxStrokeHalf * 2).coerceAtLeast(0f)
 
-    // CSS spec proportional radius reduction on the outer box, then inset the
-    // centerline radii by half the maximum stroke.
-    val f = cssRadiusScale(width, height)
-    val tlX = insetRadius(tl.x * f, maxStrokeHalf)
-    val tlY = insetRadius(tl.y * f, maxStrokeHalf)
-    val trX = insetRadius(tr.x * f, maxStrokeHalf)
-    val trY = insetRadius(tr.y * f, maxStrokeHalf)
-    val brX = insetRadius(br.x * f, maxStrokeHalf)
-    val brY = insetRadius(br.y * f, maxStrokeHalf)
-    val blX = insetRadius(bl.x * f, maxStrokeHalf)
-    val blY = insetRadius(bl.y * f, maxStrokeHalf)
+    // CSS spec proportional radius reduction applied to inner dimensions
+    val f = cssRadiusScale(innerWidth, innerHeight)
+    val tlX = tl.x * f
+    val tlY = tl.y * f
+    val trX = tr.x * f
+    val trY = tr.y * f
+    val brX = br.x * f
+    val brY = br.y * f
+    val blX = bl.x * f
+    val blY = bl.y * f
 
     val ofs = maxStrokeHalf
 
@@ -1111,6 +1070,7 @@ class BorderRenderer(private val style: Style) {
   private fun drawSide(
     canvas: Canvas,
     side: Side,
+    path: Path,
     color: Int,
     style: BorderStyle,
     viewWidth: Float,
@@ -1267,28 +1227,32 @@ class BorderRenderer(private val style: Style) {
    * but uses the provided offset so each side can be stroked centered at a different inset
    * (matching CSS where each side's stroke is centered on a path inset by half that side's width).
    */
-  private fun buildBorderPathInset(ofs: Float, width: Float, height: Float): Path {
+  private fun buildBorderPathInset(ofs: Float, width: Float, height: Float): Path =
+    Path().also { appendBorderPathInset(it, ofs, width, height) }
+
+  /**
+   * Appends the inset contour to [p] instead of returning a fresh [Path], so the
+   * ring fast path can build both contours into one reused path.
+   */
+  private fun appendBorderPathInset(p: Path, ofs: Float, width: Float, height: Float) {
     val tl = topLeftCorner
     val tr = topRightCorner
     val br = bottomRightCorner
     val bl = bottomLeftCorner
 
-    val p = Path()
-
     val innerWidth = (width - ofs * 2).coerceAtLeast(0f)
     val innerHeight = (height - ofs * 2).coerceAtLeast(0f)
 
-    // CSS spec proportional radius reduction on the outer box, then inset the
-    // requested path so border centerlines and inner rings do not bulge outward.
-    val f = cssRadiusScale(width, height)
-    val tlX = insetRadius(tl.x * f, ofs)
-    val tlY = insetRadius(tl.y * f, ofs)
-    val trX = insetRadius(tr.x * f, ofs)
-    val trY = insetRadius(tr.y * f, ofs)
-    val brX = insetRadius(br.x * f, ofs)
-    val brY = insetRadius(br.y * f, ofs)
-    val blX = insetRadius(bl.x * f, ofs)
-    val blY = insetRadius(bl.y * f, ofs)
+    // CSS spec proportional radius reduction applied to inner dimensions
+    val f = cssRadiusScale(innerWidth, innerHeight)
+    val tlX = tl.x * f
+    val tlY = tl.y * f
+    val trX = tr.x * f
+    val trY = tr.y * f
+    val brX = br.x * f
+    val brY = br.y * f
+    val blX = bl.x * f
+    val blY = bl.y * f
 
     p.moveTo(ofs + tlX, ofs)
     p.lineTo(ofs + innerWidth - trX, ofs)
@@ -1312,45 +1276,45 @@ class BorderRenderer(private val style: Style) {
     addCorner(p, Corner.TOP_LEFT, tempRadius, topLeftExponent, innerWidth, innerHeight, ofs)
 
     p.close()
-    return p
   }
 
   /** Build a straight-edge centerline path for a single side (excludes corner arcs). */
   private fun buildStraightEdgePath(side: Side, ofs: Float, width: Float, height: Float): Path {
-    val f = cssRadiusScale(width, height)
-    val tlX = insetRadius(topLeftCorner.x * f, ofs)
-    val tlY = insetRadius(topLeftCorner.y * f, ofs)
-    val trX = insetRadius(topRightCorner.x * f, ofs)
-    val trY = insetRadius(topRightCorner.y * f, ofs)
-    val brX = insetRadius(bottomRightCorner.x * f, ofs)
-    val brY = insetRadius(bottomRightCorner.y * f, ofs)
-    val blX = insetRadius(bottomLeftCorner.x * f, ofs)
-    val blY = insetRadius(bottomLeftCorner.y * f, ofs)
+    val f =
+      cssRadiusScale((width - ofs * 2).coerceAtLeast(0f), (height - ofs * 2).coerceAtLeast(0f))
+    val tlX = topLeftCorner.x * f
+    val tlY = topLeftCorner.y * f
+    val trX = topRightCorner.x * f
+    val trY = topRightCorner.y * f
+    val brX = bottomRightCorner.x * f
+    val brY = bottomRightCorner.y * f
+    val blX = bottomLeftCorner.x * f
+    val blY = bottomLeftCorner.y * f
 
     val p = Path()
     when (side) {
       Side.Top -> {
         val y = ofs
         p.moveTo(ofs + tlX, y)
-        p.lineTo(width - ofs - trX, y)
+        p.lineTo(ofs + (width - ofs * 2) - trX + ofs, y)
       }
 
       Side.Right -> {
         val x = width - ofs
         p.moveTo(x, ofs + trY)
-        p.lineTo(x, height - ofs - brY)
+        p.lineTo(x, ofs + (height - ofs * 2) - brY + ofs)
       }
 
       Side.Bottom -> {
         val y = height - ofs
         p.moveTo(ofs + blX, y)
-        p.lineTo(width - ofs - brX, y)
+        p.lineTo(ofs + (width - ofs * 2) - brX + ofs, y)
       }
 
       Side.Left -> {
         val x = ofs
         p.moveTo(x, ofs + tlY)
-        p.lineTo(x, height - ofs - blY)
+        p.lineTo(x, ofs + (height - ofs * 2) - blY + ofs)
       }
     }
     return p
@@ -1370,10 +1334,6 @@ class BorderRenderer(private val style: Style) {
     v < 0f -> 0f
     v > 1f -> 1f
     else -> v
-  }
-
-  private fun insetRadius(radius: Float, inset: Float): Float {
-    return (radius - inset).coerceAtLeast(0f)
   }
 
   private fun darkenColor(color: Int, amount: Float): Int {
@@ -1404,32 +1364,7 @@ class BorderRenderer(private val style: Style) {
   enum class Side { Left, Top, Right, Bottom }
 }
 
-// `px` is a CSS pixel (the same size as a dip), matching the web and iOS's
-// BorderParser; `dppx` is the escape hatch for a literal device pixel.
-// Alternation order matters: `dppx` also ends with `px`, and `rem` with `em`.
-private val lengthPercentageRegex = Regex("""^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(dppx|px|%|dip|rem|em|vmin|vmax|vw|vh|pt)?$""")
-
-/** 1pt = 1/72in and 1 CSS px = 1/96in, so a point is 96/72 CSS px. */
-private const val PX_PER_PT = 96f / 72f
-
-/**
- * CSS px for one length token, before the density multiply. `em` resolves
- * against [emBasis] (the element's own font size) when given, else the root
- * font size — matching `tokenToDevicePx` in style.ts.
- */
-private fun cssPxForUnit(num: Float, unit: String?, emBasis: Float?): Float {
-  val mason = Mason.shared
-  return when (unit) {
-    "rem" -> num * mason.rootFontSize
-    "em" -> num * (emBasis?.takeIf { it > 0f } ?: mason.rootFontSize)
-    "pt" -> num * PX_PER_PT
-    "vw" -> (num / 100f) * mason.viewportWidth
-    "vh" -> (num / 100f) * mason.viewportHeight
-    "vmin" -> (num / 100f) * minOf(mason.viewportWidth, mason.viewportHeight)
-    "vmax" -> (num / 100f) * maxOf(mason.viewportWidth, mason.viewportHeight)
-    else -> num
-  }
-}
+private val lengthPercentageRegex = Regex("""^(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(px|%|dip|em)?$""")
 
 // allow hex, simple names, and functional color forms like rgb(...), rgba(...), hsl(...)
 private val colorRegex = Regex("""^(#\w{3,8}|[a-zA-Z]+|(?:rgb|rgba|hsl|hsla|hsv|hsva)\([^)]*\))$""")
@@ -1443,24 +1378,27 @@ fun parseLengthPercentage(value: String): LengthPercentage? {
   val num = raw.coerceIn(-9999f, 9999f)
   val unit = match.groupValues.getOrNull(2)
   return when (unit) {
-    "dppx" -> Points(num)
+    "px" -> Points(num)
     "%" -> Percent(raw / 100f)  // percentages don't overflow so use raw
-    else -> Points(cssPxForUnit(num, unit, null) * Mason.shared.scale)
+    "dip" -> Points(num * Mason.shared.scale)
+    else -> {
+      return Points(num * Mason.shared.scale)
+    }
   }
 }
 
 fun parseLengthPercentageAuto(value: String): LengthPercentageAuto? {
-  val trimmed = value.trim()
-  // "auto" has no numeric part, so it can never match lengthPercentageRegex
-  // below (its first group is a mandatory digit run) — check it separately.
-  if (trimmed == "auto") return LengthPercentageAuto.Auto
-  val match = lengthPercentageRegex.matchEntire(trimmed) ?: return null
+  val match = lengthPercentageRegex.matchEntire(value.trim()) ?: return null
   val num = match.groupValues[1].toFloatOrNull() ?: return null
   val unit = match.groupValues.getOrNull(2)
   return when (unit) {
-    "dppx" -> LengthPercentageAuto.Points(num)
+    "auto" -> LengthPercentageAuto.Auto
+    "px" -> LengthPercentageAuto.Points(num)
     "%" -> LengthPercentageAuto.Percent(num / 100f)
-    else -> LengthPercentageAuto.Points(cssPxForUnit(num, unit, null) * Mason.shared.scale)
+    "dip" -> LengthPercentageAuto.Points(num * Mason.shared.scale)
+    else -> {
+      LengthPercentageAuto.Points(num * Mason.shared.scale)
+    }
   }
 }
 
@@ -1469,10 +1407,16 @@ fun parseLength(style: Style, value: String): Float? {
   val num = match.groupValues[1].toFloatOrNull() ?: return null
   val unit = match.groupValues.getOrNull(2)
   return when (unit) {
-    "dppx" -> num
+    "px" -> num
     "%" -> 0f // don't parse
-    // This one has a style in hand, so `em` can use the element's own font size.
-    else -> cssPxForUnit(num, unit, style.fontSize.toFloat()) * Mason.shared.scale
+    "dip" -> num * Mason.shared.scale
+    "em" -> {
+      (style.fontSize * Mason.shared.scale) * num
+    }
+
+    else -> {
+      return num * Mason.shared.scale
+    }
   }
 }
 
@@ -1827,7 +1771,8 @@ fun parseBorderRadius(style: Style, value: String) {
   // Always invalidate renderer and notify native update for radius changes
   style.mBorderRenderer.invalidate()
   if (!style.inBatch) {
-    style.isDirty = StateKeys.BORDER_RADIUS.bits
+    style.isDirty = StateKeys.BORDER_RADIUS.low
+    style.isDirtyHigh = StateKeys.BORDER_RADIUS.high
     style.updateNativeStyle()
   }
 }
