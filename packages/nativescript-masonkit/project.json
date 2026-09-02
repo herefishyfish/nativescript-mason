@@ -34,10 +34,25 @@
         ]
       }
     },
+    "build.angular": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["production", "^production"],
+      "options": {
+        "command": "ng-packagr -p packages/nativescript-masonkit/angular/ng-package.json -c packages/nativescript-masonkit/angular/tsconfig.angular.json"
+      },
+      "outputs": ["{workspaceRoot}/dist/packages/nativescript-masonkit/angular"],
+      "dependsOn": [
+        {
+          "target": "build",
+          "projects": "self"
+        }
+      ]
+    },
     "build.all": {
       "executor": "nx:run-commands",
       "options": {
-        "commands": ["node tools/scripts/build-finish.ts nativescript-masonkit"],
+        "commands": ["node tools/scripts/build-finish.ts nativescript-masonkit --skip-angular"],
         "parallel": false
       },
       "outputs": ["{workspaceRoot}/dist/packages/nativescript-masonkit"],
@@ -47,7 +62,7 @@
           "projects": "dependencies"
         },
         {
-          "target": "build",
+          "target": "build.angular",
           "projects": "self"
         }
       ]
