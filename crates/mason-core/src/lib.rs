@@ -22,6 +22,8 @@ pub use taffy::style_helpers::*;
 pub use taffy::Layout;
 pub use taffy::Overflow;
 mod node;
+#[cfg(target_os = "android")]
+pub use node::set_android_size_writeback_deferred;
 
 #[cfg(target_vendor = "apple")]
 use crate::node::AppleNode;
@@ -153,12 +155,51 @@ fn copy_output(taffy: &Tree, node: Id, output: &mut Vec<f32>) {
     copy_output_inner(&inner, node, output, use_rounding);
 }
 
-fn copy_output_inner(
+fn output_len_inner(inner: &crate::tree::TreeInner, root: Id) -> usize {
+    let mut count = 0usize;
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        count += 1;
+        if let Some(children) = inner.children.get(node) {
+            stack.extend(children.iter().copied());
+        }
+    }
+    count * 22
+}
+
+fn copy_output_to_slice_inner(
     inner: &crate::tree::TreeInner,
     node: Id,
-    output: &mut Vec<f32>,
+    output: &mut [f32],
+    offset: &mut usize,
     use_rounding: bool,
 ) {
+    let n = &inner.nodes[node];
+    let layout = if use_rounding { n.final_layout } else { n.unrounded_layout };
+    let children = inner.children.get(node);
+    let len = children.map(|c| c.len()).unwrap_or(0);
+    let h = if layout.size.height.abs() <= 1e-6 && layout.scrollable_overflow_rect.bottom > layout.size.height {
+        layout.scrollable_overflow_rect.bottom
+    } else {
+        layout.size.height
+    };
+    output[*offset..*offset + 22].copy_from_slice(&[
+        layout.order as f32, layout.location.x, layout.location.y, layout.size.width, h,
+        layout.border.top, layout.border.right, layout.border.bottom, layout.border.left,
+        layout.margin.top, layout.margin.right, layout.margin.bottom, layout.margin.left,
+        layout.padding.top, layout.padding.right, layout.padding.bottom, layout.padding.left,
+        layout.scrollable_overflow_rect.right, layout.scrollable_overflow_rect.bottom,
+        layout.scrollbar_size.width, layout.scrollbar_size.height, len as f32,
+    ]);
+    *offset += 22;
+    if let Some(children) = children {
+        for &child in children {
+            copy_output_to_slice_inner(inner, child, output, offset, use_rounding);
+        }
+    }
+}
+
+fn copy_output_inner(inner: &crate::tree::TreeInner, node: Id, output: &mut Vec<f32>, use_rounding: bool) {
     let n = &inner.nodes[node];
     let layout = if use_rounding {
         n.final_layout
@@ -349,7 +390,14 @@ impl Mason {
         self.0
             .nodes_mut()
             .get_mut(node)
-            .map(|data| objc2::rc::Retained::into_raw(data.style().buffer()) as *mut c_void)
+            // Same exposure invariant as `style_data` - see the note there.
+            // NOTE: despite the name this hands out the *style* buffer, not the
+            // node state buffer (the Android sibling returns `state_buffer`).
+            // Left as-is to avoid changing behaviour, but it looks wrong.
+            .map(|data| {
+                let style = data.style_mut();
+                objc2::rc::Retained::into_raw(style.buffer()) as *mut c_void
+            })
             .unwrap_or(0 as _)
     }
 
@@ -375,6 +423,25 @@ impl Mason {
             .unwrap_or(false)
     }
 
+    /// Test helper: the node's current style arena handle.
+    #[cfg(test)]
+    pub(crate) fn node_style_handle(&self, node: Id) -> Option<u32> {
+        self.0
+            .nodes()
+            .get(node)
+            .map(|data| data.style().handle.index() as u32)
+    }
+
+    /// Test helper: whether an arena slot has been handed to platform code.
+    #[cfg(test)]
+    pub(crate) fn arena_slot_exposed(&self, handle: u32) -> bool {
+        self.0
+             .0
+            .read()
+            .style_arena
+            .is_exposed(StyleHandle::from_raw(handle))
+    }
+
     /// Test helper: query whether a node's style marks it as a list-item.
     pub fn is_node_list_item(&self, node: Id) -> bool {
         self.0
@@ -392,6 +459,18 @@ impl Mason {
             .get_mut(node)
             .map(|data| data.style().buffer())
             .unwrap_or(-1 as _)
+    }
+
+    /// Return the node's current style arena handle (as i32, -1 when missing).
+    /// Needed by JNI code that persists ByteBuffer ids against the handle.
+    #[cfg(target_os = "android")]
+    #[track_caller]
+    pub fn style_handle(&self, node: Id) -> i32 {
+        self.0
+            .nodes()
+            .get(node)
+            .map(|data| data.style().handle.index() as i32)
+            .unwrap_or(-1)
     }
 
     /// Return platform-specific pseudo style buffer (android: buffer id) for a node
@@ -420,7 +499,7 @@ impl Mason {
                 node.pseudo_styles
                     .as_ref()
                     .and_then(|p| p.resolve(flags))
-                    .map(|s| s.raw())
+                    .map(|s| s.raw_exposed())
             })
             .unwrap_or((0 as _, 0))
     }
@@ -452,7 +531,7 @@ impl Mason {
                     .as_mut()
                     .unwrap()
                     .resolve_or_create_mut(flags, &node.style, initialize_pseudo_style_from_base)
-                    .map(|s| s.raw_mut())
+                    .map(|s| s.raw_mut_exposed())
             })
             .unwrap_or((0 as _, 0))
     }
@@ -532,7 +611,21 @@ impl Mason {
         self.0
             .nodes_mut()
             .get_mut(node)
-            .map(|data| objc2::rc::Retained::into_raw(data.style().buffer()) as *mut c_void)
+            .map(|data| {
+                // Exposure invariant: platform code writes *through* this
+                // buffer (it retains the NSMutableData and mutates in place),
+                // so the slot must be exclusively owned before we hand it out.
+                // `style_mut` runs prepare_mut, which COWs a shared slot.
+                //
+                // Without this, a write for one node lands in a slot shared by
+                // others — in particular one of the immortal DEFAULT_* slots,
+                // which carry hundreds of refs — and every node sharing it
+                // silently inherits that node's styles.
+                //
+                // Mirrors `nativeGetStyleBuffer` on Android.
+                let style = data.style_mut();
+                objc2::rc::Retained::into_raw(style.buffer()) as *mut c_void
+            })
             .unwrap_or(0 as _)
     }
 
@@ -550,7 +643,7 @@ impl Mason {
         self.0
             .nodes_mut()
             .get_mut(node)
-            .map(|data| data.style_mut().raw_mut())
+            .map(|data| data.style_mut().raw_mut_exposed())
             .unwrap_or((0 as _, 0))
     }
 
@@ -683,6 +776,11 @@ impl Mason {
 
     pub fn layout_raw(&self, node_id: Id) -> Layout {
         *self.0.layout(node_id.into())
+    }
+
+    /// Diagnostic count for the guarded block-to-mixed zero-height fallback.
+    pub fn zero_height_fallback_count(&self) -> u64 {
+        self.0.inner().zero_height_fallback_count
     }
 
     /// Return transient float rects for a container as a flat `[left, top, right, bottom, …]` vec.
@@ -976,16 +1074,18 @@ impl Mason {
             .map(|buffer| (buffer, STYLE_BUFFER_SIZE))
     }
 
+    // Takes the write lock: handing the NSMutableData out marks the arena slot
+    // exposed so it is retired rather than recycled.
     #[cfg(target_vendor = "apple")]
     pub fn buffer_from(&self, handle: u32) -> Option<objc2::rc::Retained<NSMutableData>> {
-        let reader = self.0 .0.read();
-        reader.style_arena.buffer_opt(StyleHandle::from_raw(handle))
+        let mut writer = self.0 .0.write();
+        writer.style_arena.buffer_opt(StyleHandle::from_raw(handle))
     }
 
     #[cfg(target_vendor = "apple")]
     pub fn buffer_from_ptr(&self, handle: u32) -> Option<*mut c_void> {
-        let reader = self.0 .0.read();
-        reader
+        let mut writer = self.0 .0.write();
+        writer
             .style_arena
             .buffer_opt(StyleHandle::from_raw(handle))
             .map(|buffer| objc2::rc::Retained::into_raw(buffer) as *mut c_void)
@@ -1017,6 +1117,27 @@ impl Mason {
         F: FnOnce(&mut Style),
     {
         self.0.with_style_mut(node, func)
+    }
+
+    /// Writes the flat Android layout stream into caller-owned storage and
+    /// returns the required float count. If the slice is too small it is left
+    /// untouched, allowing the caller to grow once and retry without computing.
+    pub fn layout_into(&self, node_id: Id, output: &mut [f32]) -> usize {
+        let inner = self.0.inner();
+        let required = output_len_inner(&inner, node_id);
+        if output.len() < required {
+            return required;
+        }
+        let mut offset = 0;
+        copy_output_to_slice_inner(&inner, node_id, output, &mut offset, inner.use_rounding);
+        required
+    }
+
+    pub fn with_style_mut_force_dirty<F>(&mut self, node: Id, func: F)
+    where
+        F: FnOnce(&mut Style),
+    {
+        self.0.with_style_mut_force_dirty(node, func)
     }
 
     /// Prepare and invoke `func` on a mutable pseudo `Style` for `node` matching `flags`.
@@ -1570,6 +1691,21 @@ mod tests {
     }
 
     #[test]
+    fn cache_survives_noop_style_write() {
+        let mut mason = Mason::new();
+        let node = mason.create_node();
+        let id = node.id();
+        mason.compute(id);
+        assert!(!mason.0.inner().nodes[id].cache.is_empty());
+
+        mason.with_style_mut(id, |style| {
+            style.set_display(taffy::style::Display::Block);
+        });
+
+        assert!(!mason.0.inner().nodes[id].cache.is_empty());
+    }
+
+    #[test]
     fn inline_line_breaks_height() {
         let mut mason = Mason::new();
         let parent = mason.create_node();
@@ -1799,5 +1935,239 @@ mod tests {
             parent_h,
             expected
         );
+    }
+
+    /// Regression test: the per-node state buffer is
+    /// handed to platform code as a raw pointer (a direct ByteBuffer on
+    /// Android) which is cached indefinitely, so its address must stay stable
+    /// when the tree's SlotMap reallocates on growth (initial capacity 128).
+    #[test]
+    fn node_state_buffer_stable_across_tree_growth() {
+        use crate::node::{NodeStateKeys, NODE_STATE_BUFFER_SIZE};
+
+        let mut mason = Mason::new();
+        let first = mason.create_node();
+        let first_id = first.id();
+
+        let (ptr_before, len) = mason.node_state_data_raw_mut(first_id);
+        assert!(!ptr_before.is_null());
+        assert_eq!(len, NODE_STATE_BUFFER_SIZE);
+
+        // Write a sentinel through the raw pointer, as platform code would.
+        // (Read it back through the pointer too: Node::is_virtual goes through
+        // Node::is_virtual, which reads it back the same way.)
+        unsafe {
+            *ptr_before.add(NodeStateKeys::IS_VIRTUAL as usize) = 1;
+        }
+
+        // Grow the tree far past the SlotMap's initial capacity, forcing
+        // reallocations that move every Node value stored inline in it.
+        let mut nodes = Vec::new();
+        for _ in 0..4096 {
+            nodes.push(mason.create_node());
+        }
+
+        let (ptr_after, len_after) = mason.node_state_data_raw(first_id);
+        assert_eq!(len_after, NODE_STATE_BUFFER_SIZE);
+        assert_eq!(
+            ptr_before, ptr_after as *mut u8,
+            "state buffer address changed after tree growth"
+        );
+        let sentinel = unsafe { *ptr_after.add(NodeStateKeys::IS_VIRTUAL as usize) };
+        assert_eq!(sentinel, 1, "state buffer contents lost after tree growth");
+    }
+
+    /// Regression test: the IS_VIRTUAL byte platform
+    /// code writes into the state buffer must actually be honoured. The broken
+    /// raw getter returned a pointer address, so this read as true regardless.
+    #[test]
+    fn node_virtual_flag_follows_the_state_buffer() {
+        use crate::node::NodeStateKeys;
+
+        let mut mason = Mason::new();
+        let node = mason.create_node();
+        let id = node.id();
+
+        assert!(!mason.is_node_virtual(id));
+
+        let (ptr, _) = mason.node_state_data_raw_mut(id);
+        unsafe {
+            *ptr.add(NodeStateKeys::IS_VIRTUAL as usize) = 1;
+        }
+        assert!(mason.is_node_virtual(id));
+
+        unsafe {
+            *ptr.add(NodeStateKeys::IS_VIRTUAL as usize) = 0;
+        }
+        assert!(!mason.is_node_virtual(id));
+    }
+
+    /// The inline engine suppresses a child's line-height contribution only when
+    /// the node's IS_VIRTUAL state byte is set *and* the child is a list-item.
+    /// No platform writes that byte today, so an inline list-item must
+    /// contribute its height like any other inline child. This pins the
+    /// semantic: while the raw state getter was broken the flag read as garbage
+    /// (effectively always set), silently zeroing every inline list-item.
+    #[test]
+    fn inline_list_item_contributes_to_line_height_unless_marked_virtual() {
+        fn parent_height_with_virtual(virtual_flag: u8) -> f32 {
+            let mut mason = Mason::new();
+            let parent = mason.create_text_node();
+            let child = mason.create_image_node();
+            let (pid, cid) = (parent.id(), child.id());
+
+            mason.set_segments(
+                pid,
+                vec![InlineSegment::InlineChild {
+                    id: Some(cid),
+                    baseline: 0.0,
+                }],
+            );
+            mason.append_node(pid, &[cid]);
+            // Only the child measures: the parent's height must come from the
+            // line metrics the child contributes to.
+            mason.set_measure(cid, Some(test_measure), std::ptr::null_mut());
+            mason.with_style_mut(cid, |s| s.set_item_is_list_item(true));
+
+            let (ptr, _) = mason.node_state_data_raw_mut(cid);
+            unsafe {
+                *ptr.add(crate::node::NodeStateKeys::IS_VIRTUAL as usize) = virtual_flag;
+            }
+
+            mason.compute(pid);
+            mason.layout(pid)[4]
+        }
+
+        let normal = parent_height_with_virtual(0);
+        assert!(
+            normal >= 20.0 - 0.001,
+            "inline list-item should contribute its height, got {normal}"
+        );
+
+        let suppressed = parent_height_with_virtual(1);
+        assert!(
+            suppressed < normal,
+            "an explicitly virtual list-item should not contribute: {suppressed} vs {normal}"
+        );
+    }
+
+    /// Regression test: the FFI accessors that hand a style
+    /// buffer to platform code must mark that arena slot exposed, so `release`
+    /// retires it instead of recycling it under a stale platform reference.
+    #[test]
+    fn ffi_style_accessors_mark_the_slot_exposed() {
+        let mut mason = Mason::new();
+        let a = mason.create_node();
+        let b = mason.create_node();
+        let (aid, bid) = (a.id(), b.id());
+
+        // Force each node off the shared default handle onto its own slot.
+        mason.with_style_mut(aid, |s| s.set_flex_grow(1.0));
+        mason.with_style_mut(bid, |s| s.set_flex_grow(2.0));
+
+        let handle_b = mason.node_style_handle(bid).unwrap();
+        assert_ne!(mason.node_style_handle(aid).unwrap(), handle_b);
+        assert!(!mason.arena_slot_exposed(mason.node_style_handle(aid).unwrap()));
+
+        let (ptr, len) = mason.style_data_raw_mut(aid);
+        assert!(!ptr.is_null());
+        assert_eq!(len, crate::style::arena::STYLE_BUFFER_SIZE);
+
+        // Re-read the handle: the accessor goes through prepare_mut, which may COW.
+        let handle_a = mason.node_style_handle(aid).unwrap();
+        assert!(
+            mason.arena_slot_exposed(handle_a),
+            "handing the buffer out must mark the slot exposed"
+        );
+        assert!(
+            !mason.arena_slot_exposed(handle_b),
+            "an untouched node's slot must stay recyclable"
+        );
+    }
+
+    /// The pseudo-style FFI accessors expose their slots the same way.
+    #[test]
+    fn ffi_pseudo_style_accessors_mark_the_slot_exposed() {
+        let mut mason = Mason::new();
+        let node = mason.create_node();
+        let id = node.id();
+
+        let (ptr, len) = mason.pseudo_style_data_raw_mut(id, 1);
+        assert!(!ptr.is_null());
+        assert_eq!(len, crate::style::arena::STYLE_BUFFER_SIZE);
+
+        let handle = mason.pseudo_style_handle(id, 1).unwrap();
+        assert!(mason.arena_slot_exposed(handle));
+    }
+
+    /// Regression test: the style buffer is writable by
+    /// platform code, so every byte in it must decode without panicking —
+    /// `panic = "abort"` turns a panic here into a process abort.
+    #[test]
+    fn corrupt_style_buffer_bytes_decode_to_defaults() {
+        use crate::style::utils::set_style_data_i8;
+        use crate::style::StyleKeys;
+
+        let mut mason = Mason::new();
+        let parent = mason.create_node();
+        let child = mason.create_node();
+        let (pid, cid) = (parent.id(), child.id());
+        mason.add_child(pid, cid);
+
+        let corrupt = [
+            StyleKeys::DISPLAY,
+            StyleKeys::DISPLAY_MODE,
+            StyleKeys::POSITION,
+            StyleKeys::BOX_SIZING,
+            StyleKeys::OVERFLOW_X,
+            StyleKeys::OVERFLOW_Y,
+            StyleKeys::FLEX_DIRECTION,
+            StyleKeys::FLEX_WRAP,
+            StyleKeys::GRID_AUTO_FLOW,
+            StyleKeys::ALIGN,
+            StyleKeys::DIRECTION,
+            StyleKeys::FLOAT,
+            StyleKeys::CLEAR,
+            StyleKeys::WIDTH_TYPE,
+            StyleKeys::HEIGHT_TYPE,
+            StyleKeys::MARGIN_LEFT_TYPE,
+            StyleKeys::PADDING_LEFT_TYPE,
+            StyleKeys::INSET_TOP_TYPE,
+        ];
+
+        for key in corrupt {
+            mason.with_style_mut(cid, |s| {
+                set_style_data_i8(s.data_mut(), key, 0x7f);
+            });
+        }
+
+        mason.with_style(cid, |s| {
+            assert_eq!(s.get_display(), taffy::style::Display::Block);
+            assert_eq!(s.display_mode(), crate::style::DisplayMode::None);
+            assert_eq!(s.get_position(), taffy::style::Position::Relative);
+            assert_eq!(s.get_box_sizing(), taffy::style::BoxSizing::BorderBox);
+            assert_eq!(s.get_overflow_x(), crate::style::Overflow::Visible);
+            assert_eq!(s.get_overflow_y(), crate::style::Overflow::Visible);
+            assert_eq!(s.get_flex_direction(), taffy::style::FlexDirection::Row);
+            assert_eq!(s.get_flex_wrap(), taffy::style::FlexWrap::NoWrap);
+            assert_eq!(s.get_grid_auto_flow(), taffy::style::GridAutoFlow::Row);
+            assert_eq!(s.get_text_align(), taffy::style::TextAlign::Auto);
+            assert_eq!(s.get_direction(), taffy::style::Direction::Ltr);
+            assert_eq!(s.get_float(), taffy::style::Float::None);
+            assert_eq!(s.get_clear(), taffy::style::Clear::None);
+            assert!(s.get_size().width.is_auto());
+            assert!(s.get_size().height.is_auto());
+        });
+
+        // The full layout path must survive the same buffer.
+        mason.compute_size(
+            pid,
+            Size {
+                width: AvailableSpace::Definite(320.0),
+                height: AvailableSpace::Definite(480.0),
+            },
+        );
+        let out = mason.layout(pid);
+        assert!(out[3].is_finite() && out[4].is_finite());
     }
 }

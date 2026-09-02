@@ -2,8 +2,8 @@ use crate::style::utils::{
     dimension_from_type_value, dimension_to_type_value, get_style_data_bool, get_style_data_f32,
     get_style_data_i8, get_style_data_u8, length_percentage_auto_from_type_value,
     length_percentage_auto_to_type_value, length_percentage_from_type_value,
-    length_percentage_to_type_value, set_style_data_bool, set_style_data_f32, set_style_data_i32,
-    set_style_data_i8, set_style_data_u32, set_style_data_u8,
+    length_percentage_to_type_value, sanitize, set_style_data_bool, set_style_data_f32,
+    set_style_data_i32, set_style_data_i8, set_style_data_u32, set_style_data_u8,
 };
 use crate::utils::{
     align_content_from_enum, align_content_to_enum, align_items_from_enum, align_items_to_enum,
@@ -891,6 +891,39 @@ impl Clone for Style {
     }
 }
 
+impl Style {
+    /// Snapshot used only by taffy's leaf sizing path. Grid collections are
+    /// irrelevant for a node with no children, so avoid cloning their Vecs for
+    /// every intrinsic probe while retaining the shared raw style buffer.
+    pub(crate) fn clone_for_leaf_layout(&self) -> Self {
+        let arena = unsafe { &mut *self.arena };
+        arena.retain(self.handle);
+        Self {
+            arena,
+            raw: self.raw,
+            grid_template_rows: Vec::new(),
+            grid_template_rows_raw: None,
+            grid_template_columns: Vec::new(),
+            grid_template_columns_raw: None,
+            grid_auto_rows: Vec::new(),
+            grid_auto_rows_raw: None,
+            grid_auto_columns: Vec::new(),
+            grid_auto_columns_raw: None,
+            grid_template_areas: Vec::new(),
+            grid_template_areas_raw: self.grid_template_areas_raw.clone(),
+            grid_template_column_names: Vec::new(),
+            grid_template_row_names: Vec::new(),
+            grid_area: self.grid_area.clone(),
+            grid_column_start: self.grid_column_start.clone(),
+            grid_column_end: self.grid_column_end.clone(),
+            grid_row_start: self.grid_row_start.clone(),
+            grid_row_end: self.grid_row_end.clone(),
+            device_scale: self.device_scale.clone(),
+            handle: self.handle,
+        }
+    }
+}
+
 impl Drop for Style {
     fn drop(&mut self) {
         let arena = unsafe { &mut *self.arena };
@@ -1353,7 +1386,10 @@ impl Style {
         let data = self.data();
         VerticalAlignValue {
             align,
-            offset: get_style_data_f32(data, StyleKeys::VERTICAL_ALIGN_OFFSET_OFFSET),
+            offset: sanitize(get_style_data_f32(
+                data,
+                StyleKeys::VERTICAL_ALIGN_OFFSET_OFFSET,
+            )),
             is_percent: get_style_data_bool(data, StyleKeys::VERTICAL_ALIGN_IS_PERCENT_OFFSET),
         }
     }
@@ -1415,16 +1451,14 @@ impl Style {
     }
 
     pub fn get_float(&self) -> Float {
-        float_from_enum(get_style_data_i8(self.data(), StyleKeys::FLOAT))
-            .expect("Internal misuse: float enum out of range (expected 0–2)")
+        float_from_enum(get_style_data_i8(self.data(), StyleKeys::FLOAT)).unwrap_or(Float::None)
     }
     pub fn set_float(&mut self, value: Float) {
         self.prepare_mut();
         set_style_data_i8(self.data_mut(), StyleKeys::FLOAT, float_to_enum(value))
     }
     pub fn get_clear(&self) -> Clear {
-        clear_from_enum(get_style_data_i8(self.data(), StyleKeys::CLEAR))
-            .expect("Internal misuse: clear enum out of range (expected 0–3)")
+        clear_from_enum(get_style_data_i8(self.data(), StyleKeys::CLEAR)).unwrap_or(Clear::None)
     }
     pub fn set_clear(&mut self, value: Clear) {
         self.prepare_mut();
@@ -1575,7 +1609,8 @@ impl Style {
     }
 
     pub fn display_mode(&self) -> DisplayMode {
-        display_mode_from_enum(get_style_data_i8(self.data(), StyleKeys::DISPLAY_MODE)).unwrap()
+        display_mode_from_enum(get_style_data_i8(self.data(), StyleKeys::DISPLAY_MODE))
+            .unwrap_or(DisplayMode::None)
     }
 
     pub fn set_display_mode(&mut self, value: DisplayMode) {
@@ -1588,7 +1623,8 @@ impl Style {
     }
 
     pub fn get_display(&self) -> Display {
-        display_from_enum(get_style_data_i8(self.data(), StyleKeys::DISPLAY)).unwrap()
+        display_from_enum(get_style_data_i8(self.data(), StyleKeys::DISPLAY))
+            .unwrap_or(Display::Block)
     }
 
     pub fn set_display(&mut self, value: Display) {
@@ -1621,7 +1657,8 @@ impl Style {
     }
 
     pub fn get_box_sizing(&self) -> BoxSizing {
-        boxing_size_from_enum(get_style_data_i8(self.data(), StyleKeys::BOX_SIZING)).unwrap()
+        boxing_size_from_enum(get_style_data_i8(self.data(), StyleKeys::BOX_SIZING))
+            .unwrap_or(BoxSizing::BorderBox)
     }
 
     pub fn set_box_sizing(&mut self, value: BoxSizing) {
@@ -1634,8 +1671,10 @@ impl Style {
     }
     pub fn get_overflow(&self) -> Point<Overflow> {
         Point {
-            x: overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_X)).unwrap(),
-            y: overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_Y)).unwrap(),
+            x: overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_X))
+                .unwrap_or(Overflow::Visible),
+            y: overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_Y))
+                .unwrap_or(Overflow::Visible),
         }
     }
 
@@ -1654,7 +1693,8 @@ impl Style {
     }
 
     pub fn get_overflow_x(&self) -> Overflow {
-        overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_X)).unwrap()
+        overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_X))
+            .unwrap_or(Overflow::Visible)
     }
 
     pub fn set_overflow_x(&mut self, value: Overflow) {
@@ -1667,7 +1707,8 @@ impl Style {
     }
 
     pub fn get_overflow_y(&self) -> Overflow {
-        overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_Y)).unwrap()
+        overflow_from_enum(get_style_data_i8(self.data(), StyleKeys::OVERFLOW_Y))
+            .unwrap_or(Overflow::Visible)
     }
 
     pub fn set_overflow_y(&mut self, value: Overflow) {
@@ -1680,7 +1721,7 @@ impl Style {
     }
 
     pub fn get_scrollbar_width(&self) -> f32 {
-        get_style_data_f32(self.data(), StyleKeys::SCROLLBAR_WIDTH)
+        sanitize(get_style_data_f32(self.data(), StyleKeys::SCROLLBAR_WIDTH))
     }
 
     pub fn set_scrollbar_width(&mut self, value: f32) {
@@ -1689,7 +1730,8 @@ impl Style {
     }
 
     pub fn get_position(&self) -> Position {
-        position_from_enum(get_style_data_i8(self.data(), StyleKeys::POSITION)).unwrap()
+        position_from_enum(get_style_data_i8(self.data(), StyleKeys::POSITION))
+            .unwrap_or(Position::Relative)
     }
 
     pub fn set_position(&mut self, value: Position) {
@@ -2390,7 +2432,8 @@ impl Style {
     }
 
     pub fn get_text_align(&self) -> TextAlign {
-        text_align_from_enum(get_style_data_i8(self.data(), StyleKeys::ALIGN)).unwrap()
+        text_align_from_enum(get_style_data_i8(self.data(), StyleKeys::ALIGN))
+            .unwrap_or(TextAlign::Auto)
     }
 
     pub fn set_text_align(&mut self, value: TextAlign) {
@@ -2413,7 +2456,8 @@ impl Style {
     }
 
     pub fn get_flex_direction(&self) -> FlexDirection {
-        flex_direction_from_enum(get_style_data_i8(self.data(), StyleKeys::FLEX_DIRECTION)).unwrap()
+        flex_direction_from_enum(get_style_data_i8(self.data(), StyleKeys::FLEX_DIRECTION))
+            .unwrap_or(FlexDirection::Row)
     }
 
     pub fn set_flex_direction(&mut self, value: FlexDirection) {
@@ -2426,7 +2470,8 @@ impl Style {
     }
 
     pub fn get_flex_wrap(&self) -> FlexWrap {
-        flex_wrap_from_enum(get_style_data_i8(self.data(), StyleKeys::FLEX_WRAP)).unwrap()
+        flex_wrap_from_enum(get_style_data_i8(self.data(), StyleKeys::FLEX_WRAP))
+            .unwrap_or(FlexWrap::NoWrap)
     }
 
     pub fn set_flex_wrap(&mut self, value: FlexWrap) {
@@ -2439,7 +2484,7 @@ impl Style {
     }
 
     pub fn get_flex_grow(&self) -> f32 {
-        get_style_data_f32(self.data(), StyleKeys::FLEX_GROW)
+        sanitize(get_style_data_f32(self.data(), StyleKeys::FLEX_GROW))
     }
 
     pub fn set_flex_grow(&mut self, value: f32) {
@@ -2448,7 +2493,7 @@ impl Style {
     }
 
     pub fn get_flex_shrink(&self) -> f32 {
-        get_style_data_f32(self.data(), StyleKeys::FLEX_SHRINK)
+        sanitize(get_style_data_f32(self.data(), StyleKeys::FLEX_SHRINK))
     }
 
     pub fn set_flex_shrink(&mut self, value: f32) {
@@ -2473,7 +2518,8 @@ impl Style {
     }
 
     pub fn get_grid_auto_flow(&self) -> GridAutoFlow {
-        grid_auto_flow_from_enum(get_style_data_i8(self.data(), StyleKeys::GRID_AUTO_FLOW)).unwrap()
+        grid_auto_flow_from_enum(get_style_data_i8(self.data(), StyleKeys::GRID_AUTO_FLOW))
+            .unwrap_or(GridAutoFlow::Row)
     }
 
     pub fn set_grid_auto_flow(&mut self, value: GridAutoFlow) {
@@ -2815,11 +2861,34 @@ impl Style {
         area.buffer(self.handle)
     }
 
+    /// Record that this style's buffer has been handed to platform code, so its
+    /// arena slot is retired instead of recycled when the handle dies. Call at
+    /// the FFI boundary, after any `prepare_mut` — a COW moves the handle.
+    pub fn mark_exposed(&self) {
+        if self.arena.is_null() {
+            return;
+        }
+        let area = unsafe { &*self.arena };
+        area.mark_exposed(self.handle);
+    }
+
     pub fn raw(&self) -> (*const u8, usize) {
         (self.raw, STYLE_BUFFER_SIZE)
     }
 
     pub fn raw_mut(&mut self) -> (*mut u8, usize) {
+        (self.raw, STYLE_BUFFER_SIZE)
+    }
+
+    /// `raw_mut` for pointers that escape to platform code.
+    pub fn raw_mut_exposed(&mut self) -> (*mut u8, usize) {
+        self.mark_exposed();
+        (self.raw, STYLE_BUFFER_SIZE)
+    }
+
+    /// `raw` for pointers that escape to platform code.
+    pub fn raw_exposed(&self) -> (*const u8, usize) {
+        self.mark_exposed();
         (self.raw, STYLE_BUFFER_SIZE)
     }
 

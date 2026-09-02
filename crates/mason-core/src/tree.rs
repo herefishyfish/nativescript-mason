@@ -56,6 +56,11 @@ pub(crate) struct TreeInner {
     // Transient float rectangles collected during pre-layout.
     // Keyed by the container Id (the block/inline container that holds floats).
     pub(crate) float_context: SecondaryMap<Id, Vec<FloatRect>>,
+    // Avoid the float pre-pass entirely on trees known to contain no floats.
+    // Any structural/style dirty mark makes the cached answer conservative.
+    pub(crate) has_floats: bool,
+    pub(crate) floats_may_have_changed: bool,
+    pub(crate) zero_height_fallback_count: u64,
     pub(crate) use_rounding: bool,
     // small nesting counter to avoid re-entrant inline-run aggregation
     pub(crate) inline_run_nesting: usize,
@@ -68,7 +73,6 @@ pub(crate) struct TreeInner {
     // value. Lets `collect_floats`/`fix_scroll_container_sizes` skip their
     // full-tree walk entirely for the common float-free/scroll-free tree,
     // instead of unconditionally re-scanning every node on every layout pass.
-    pub(crate) has_floats: bool,
     pub(crate) has_scroll_containers: bool,
     // Set when a node is removed from `nodes`; tells compute_layout's
     // sanitize pass it needs to scrub stale ids from `children`.
@@ -90,6 +94,8 @@ impl TreeInner {
             has_floats: false,
             has_scroll_containers: false,
             structure_dirty: false,
+            floats_may_have_changed: true,
+            zero_height_fallback_count: 0,
         }
     }
 
@@ -99,14 +105,16 @@ impl TreeInner {
             parents: SecondaryMap::with_capacity(value),
             children: SecondaryMap::with_capacity(value),
             float_context: SecondaryMap::with_capacity(value),
+            has_floats: false,
+            has_scroll_containers: false,
+            structure_dirty: false,
+            floats_may_have_changed: true,
+            zero_height_fallback_count: 0,
             use_rounding: false,
             inline_run_nesting: 0,
             inline_run_pending: Vec::new(),
             density: Arc::new(AtomicU32::new(1f32.to_bits())),
             style_arena: Box::new(StyleArena::with_capacity(&[0u8; STYLE_BUFFER_SIZE], value)),
-            has_floats: false,
-            has_scroll_containers: false,
-            structure_dirty: false,
         }
     }
 
@@ -358,8 +366,10 @@ impl Tree {
             }
         }
 
-        if !to_insert.is_empty() {
+        {
             let mut inner_mut = self.inner_mut();
+            inner_mut.has_floats = !to_insert.is_empty();
+            inner_mut.floats_may_have_changed = false;
             for (container_id, floats) in to_insert.into_iter() {
                 inner_mut.float_context.insert(container_id, floats);
             }
@@ -889,11 +899,17 @@ impl Tree {
         // Clear and collect floats for the upcoming layout pass. We record
         // floated children per container first; then measure them against the
         // root available space so inline layout can consult approximate sizes.
-        self.clear_float_context();
-        if self.inner().has_floats {
+        let needs_float_pass = {
+            let inner = self.inner();
+            inner.has_floats || inner.floats_may_have_changed
+        };
+        if needs_float_pass {
+            self.clear_float_context();
             self.collect_floats(root.into());
+            if self.inner().has_floats {
+                self.measure_place_floats(root.into(), available_space);
+            }
         }
-        self.measure_place_floats(root.into(), available_space);
 
         // Sanitize children lists to remove stale node ids, but only when a
         // node was actually removed since the last pass.
@@ -954,115 +970,63 @@ impl Tree {
         parent_available_width: AvailableSpace,
         parent_available_height: AvailableSpace,
     ) {
-        let id: Id = node_id.into();
+        let mut stack = vec![(node_id.into(), parent_available_width, parent_available_height)];
+        let mut inner = self.0.write();
 
-        // Get parent's computed layout and style info
-        let (layout, padding, border, children, overflow) = {
-            let inner = self.0.read();
-            let node = inner.nodes.get(id);
-            if node.is_none() {
-                return;
-            }
-            let node = node.unwrap();
+        while let Some((id, available_width, available_height)) = stack.pop() {
+            let Some(node) = inner.nodes.get(id) else { continue };
+            let mut layout = node.unrounded_layout;
             let style = node.style();
-            let children = inner.children.get(id).cloned().unwrap_or_default();
-            (
-                node.unrounded_layout,
-                style.get_padding(),
-                style.get_border(),
-                children,
-                style.get_overflow(),
-            )
-        };
+            let padding = style.get_padding();
+            let border = style.get_border();
+            let overflow = style.get_overflow();
 
-        // Check if this node itself is a scroll container that needs clamping
-        let is_scroll_container_y = matches!(
-            overflow.y,
-            crate::style::Overflow::Scroll | crate::style::Overflow::Auto
-        );
-        let is_scroll_container_x = matches!(
-            overflow.x,
-            crate::style::Overflow::Scroll | crate::style::Overflow::Auto
-        );
-
-        if is_scroll_container_y {
-            if let AvailableSpace::Definite(constraint_h) = parent_available_height {
-                let mut inner = self.0.write();
-                if let Some(node) = inner.nodes.get_mut(id) {
-                    if node.unrounded_layout.size.height > constraint_h {
-                        if node.unrounded_layout.scrollable_overflow_rect.bottom
-                            < node.unrounded_layout.size.height
-                        {
-                            node.unrounded_layout.scrollable_overflow_rect.bottom =
-                                node.unrounded_layout.size.height;
+            if let Some(node) = inner.nodes.get_mut(id) {
+                if matches!(overflow.y, crate::style::Overflow::Scroll | crate::style::Overflow::Auto) {
+                    if let AvailableSpace::Definite(limit) = available_height {
+                        if node.unrounded_layout.size.height > limit {
+                            node.unrounded_layout.scrollable_overflow_rect.bottom = node.unrounded_layout
+                                .scrollable_overflow_rect.bottom.max(node.unrounded_layout.size.height);
+                            node.unrounded_layout.size.height = limit;
                         }
-                        node.unrounded_layout.size.height = constraint_h;
                     }
                 }
-            }
-        }
-
-        if is_scroll_container_x {
-            if let AvailableSpace::Definite(constraint_w) = parent_available_width {
-                let mut inner = self.0.write();
-                if let Some(node) = inner.nodes.get_mut(id) {
-                    if node.unrounded_layout.size.width > constraint_w {
-                        if node.unrounded_layout.scrollable_overflow_rect.right
-                            < node.unrounded_layout.size.width
-                        {
-                            node.unrounded_layout.scrollable_overflow_rect.right =
-                                node.unrounded_layout.size.width;
+                if matches!(overflow.x, crate::style::Overflow::Scroll | crate::style::Overflow::Auto) {
+                    if let AvailableSpace::Definite(limit) = available_width {
+                        if node.unrounded_layout.size.width > limit {
+                            node.unrounded_layout.scrollable_overflow_rect.right = node.unrounded_layout
+                                .scrollable_overflow_rect.right.max(node.unrounded_layout.size.width);
+                            node.unrounded_layout.size.width = limit;
                         }
-                        node.unrounded_layout.size.width = constraint_w;
                     }
                 }
+                layout = node.unrounded_layout;
             }
-        }
 
-        // Calculate available dimensions for children (our content box)
-        let padding_top = padding
-            .top
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let padding_bottom = padding
-            .bottom
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let border_top = border
-            .top
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let border_bottom = border
-            .bottom
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let padding_left = padding
-            .left
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let padding_right = padding
-            .right
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let border_left = border
-            .left
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let border_right = border
-            .right
-            .resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0);
-        let content_box_height =
-            layout.size.height - padding_top - padding_bottom - border_top - border_bottom;
-        let content_box_width =
-            layout.size.width - padding_left - padding_right - border_left - border_right;
-
-        // Recursively process children
-        for child_id in children {
-            let child_node_id = NodeId::from(child_id);
-            let child_avail_w = if content_box_width > 0.0 {
+            let resolve = |value: taffy::LengthPercentage| {
+                value.resolve_or_zero(Some(layout.size.width), |_v, _b| 0.0)
+            };
+            let content_box_height = layout.size.height
+                - resolve(padding.top) - resolve(padding.bottom)
+                - resolve(border.top) - resolve(border.bottom);
+            let content_box_width = layout.size.width
+                - resolve(padding.left) - resolve(padding.right)
+                - resolve(border.left) - resolve(border.right);
+            let child_width = if content_box_width > 0.0 {
                 AvailableSpace::Definite(content_box_width)
             } else {
                 AvailableSpace::MinContent
             };
-            let child_avail_h = if content_box_height > 0.0 {
+            let child_height = if content_box_height > 0.0 {
                 AvailableSpace::Definite(content_box_height)
             } else {
                 AvailableSpace::MinContent
             };
-            self.fix_scroll_container_sizes(child_node_id, child_avail_w, child_avail_h);
+            if let Some(children) = inner.children.get(id) {
+                for &child in children.iter().rev() {
+                    stack.push((child, child_width, child_height));
+                }
+            }
         }
     }
 
@@ -1492,6 +1456,7 @@ impl Tree {
     }
 
     fn mark_dirty_inner(tree: &mut TreeInner, node: Id) {
+        tree.floats_may_have_changed = true;
         let mut current = Some(node);
         // Always climb at least one level before honoring AlreadyEmpty: a
         // leaf whose cache is never populated (e.g. text laid out via its
@@ -1690,8 +1655,8 @@ impl Tree {
 
             func(style);
 
-            changed =
-                style.data() != &buffer_before[..] || style.non_buffer_snapshot() != non_buffer_before;
+            changed = style.data() != &buffer_before[..]
+                || style.non_buffer_snapshot() != non_buffer_before;
 
             sets_float = style.get_float() != Float::None;
             let overflow = style.get_overflow();
@@ -1715,6 +1680,19 @@ impl Tree {
             // dirty flag to the root — marking only this node leaves
             // ancestor/root caches stale.
             Tree::mark_dirty_inner(tree, node_id);
+        }
+    }
+
+    /// Platform direct buffers are written before their JNI sync callback, so
+    /// their mutation cannot use the normal before/after byte comparison.
+    pub fn with_style_mut_force_dirty<F>(&mut self, node_id: Id, func: F)
+    where
+        F: FnOnce(&mut Style),
+    {
+        let mut tree = self.0.write();
+        if let Some(node) = tree.nodes.get_mut(node_id) {
+            func(node.style_mut());
+            Tree::mark_dirty_inner(&mut tree, node_id);
         }
     }
 }
@@ -2006,7 +1984,12 @@ impl LayoutBlockContainer for Tree {
                         // If the block layout produced zero or tiny height despite
                         // having children (e.g. inline/text children), try the mixed
                         // layout path as a fallback so inline flows are handled.
-                        if (computed_layout.size.height <= 1e-6) && analysis.has_children {
+                        if (computed_layout.size.height <= 1e-6)
+                            && analysis.has_children
+                            && !analysis.all_inline
+                            && !analysis.has_mixed_content
+                        {
+                            tree.inner_mut().zero_height_fallback_count += 1;
                             let children =
                                 tree.inner().children.get(id).cloned().unwrap_or_default();
                             let mixed_out =
@@ -2113,7 +2096,7 @@ impl LayoutBlockContainer for Tree {
                             let inner = tree.inner();
                             let node = inner.nodes.get(id).unwrap();
                             let has_measure = node.has_measure;
-                            let style = node.style().clone();
+                            let style = node.style().clone_for_leaf_layout();
                             let style_size = style.get_size();
                             let measure = tree.node_data().get(id).unwrap().copy_measure();
                             (has_measure, style, style_size, measure)

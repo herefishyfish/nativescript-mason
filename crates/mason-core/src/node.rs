@@ -58,6 +58,9 @@ pub struct AndroidNode(pub(crate) jni::sys::jint);
 #[cfg(target_os = "android")]
 impl AndroidNode {
     pub fn set_computed_size(&self, width: f32, height: f32) {
+        if android_size_writeback_deferred() {
+            return;
+        }
         if let Some(jvm) = crate::JVM.get() {
             let mut env = match jvm.get_env() {
                 Ok(env) => env,
@@ -87,6 +90,21 @@ impl AndroidNode {
     pub fn computed_height(&self) -> f32 {
         0f32
     }
+}
+
+#[cfg(target_os = "android")]
+thread_local! {
+    static DEFER_ANDROID_SIZE_WRITEBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(target_os = "android")]
+pub fn set_android_size_writeback_deferred(value: bool) {
+    DEFER_ANDROID_SIZE_WRITEBACK.with(|deferred| deferred.set(value));
+}
+
+#[cfg(target_os = "android")]
+fn android_size_writeback_deferred() -> bool {
+    DEFER_ANDROID_SIZE_WRITEBACK.with(|deferred| deferred.get())
 }
 
 #[derive(Debug)]
@@ -274,6 +292,47 @@ impl NodeData {
             apple_data: None,
             measure: None,
             inline_segments: Mutex::new(vec![]),
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn measure(
+        &self,
+        known_dimensions: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+    ) -> Size<f32> {
+        match self.measure.as_ref() {
+            None => Size {
+                width: known_dimensions.width.unwrap_or_default(),
+                height: known_dimensions.height.unwrap_or_default(),
+            },
+            Some(measure) => {
+                let measure_data = self.data;
+                let available_space_width = match available_space.width {
+                    AvailableSpace::MinContent => -1.,
+                    AvailableSpace::MaxContent => -2.,
+                    AvailableSpace::Definite(value) => value,
+                };
+
+                let available_space_height = match available_space.height {
+                    AvailableSpace::MinContent => -1.,
+                    AvailableSpace::MaxContent => -2.,
+                    AvailableSpace::Definite(value) => value,
+                };
+
+                let size = measure(
+                    measure_data,
+                    known_dimensions.width.unwrap_or(f32::NAN),
+                    known_dimensions.height.unwrap_or(f32::NAN),
+                    available_space_width,
+                    available_space_height,
+                );
+
+                let width = MeasureOutput::get_width(size);
+                let height = MeasureOutput::get_height(size);
+
+                Size { width, height }
+            }
         }
     }
 
@@ -515,7 +574,10 @@ pub struct Node {
     pub(crate) has_measure: bool,
     pub(crate) type_: NodeType,
     pub(crate) is_anonymous: bool,
-    pub(crate) state: [u8; NODE_STATE_BUFFER_SIZE],
+    // Boxed so the address stays stable when the tree's SlotMap reallocates on
+    // growth: Android/iOS map this buffer as a raw pointer (direct ByteBuffer /
+    // UnsafeRawPointer) and cache it, so the pointee must never move.
+    pub(crate) state: Box<[u8; NODE_STATE_BUFFER_SIZE]>,
     // optional per-node pseudo styles (hover/active/focus/disabled/checked)
     pub(crate) pseudo_styles: Option<PseudoStyles>,
     #[cfg(target_os = "android")]
@@ -534,7 +596,7 @@ impl Node {
             has_measure: false,
             type_: NodeType::Normal,
             is_anonymous: false,
-            state: [0u8; NODE_STATE_BUFFER_SIZE],
+            state: Box::new([0u8; NODE_STATE_BUFFER_SIZE]),
             pseudo_styles: None,
             #[cfg(target_os = "android")]
             state_buffer: -1,
@@ -552,7 +614,7 @@ impl Node {
             has_measure: false,
             type_: NodeType::Normal,
             is_anonymous: false,
-            state: [0u8; NODE_STATE_BUFFER_SIZE],
+            state: Box::new([0u8; NODE_STATE_BUFFER_SIZE]),
             pseudo_styles: None,
             #[cfg(target_os = "android")]
             state_buffer: -1,

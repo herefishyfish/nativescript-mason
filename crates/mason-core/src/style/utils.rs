@@ -16,14 +16,26 @@ use taffy::style_helpers::{
 };
 use taffy::{CompactLength, Dimension, MaxTrackSizingFunction, Rect, Size};
 
+/// The style buffer is writable by platform code and the workspace builds with
+/// `panic = "abort"`, so every decoder below is total: an unrecognized type tag
+/// falls back to the meaning of tag `0` (what a zeroed buffer decodes to) and
+/// `NaN` values are clamped. Infinities are kept — taffy uses them as sentinels.
 #[inline(always)]
-#[track_caller]
+pub(crate) fn sanitize(value: f32) -> f32 {
+    if value.is_nan() {
+        0.0
+    } else {
+        value
+    }
+}
+
+#[inline(always)]
 pub fn length_percentage_auto_from_type_value(value_type: i8, value: f32) -> LengthPercentageAuto {
+    let value = sanitize(value);
     match value_type {
-        0 => LengthPercentageAuto::auto(),
         1 => LengthPercentageAuto::length(value),
         2 => LengthPercentageAuto::percent(value),
-        _ => unreachable!(),
+        _ => LengthPercentageAuto::auto(),
     }
 }
 
@@ -34,9 +46,8 @@ pub fn length_percentage_auto_to_type_value(value: LengthPercentageAuto) -> (i8,
     }
     let raw = value.into_raw();
     match raw.tag() {
-        CompactLength::LENGTH_TAG => (1, raw.value()),
         CompactLength::PERCENT_TAG => (2, raw.value()),
-        _ => unreachable!(),
+        _ => (1, raw.value()),
     }
 }
 
@@ -47,9 +58,8 @@ pub fn length_percentage_auto_to_format_type_value(value: LengthPercentageAuto) 
     }
     let raw = value.into_raw();
     match raw.tag() {
-        CompactLength::LENGTH_TAG => std::format!("{:?}", raw.value()),
         CompactLength::PERCENT_TAG => std::format!("{:?}%", raw.value()),
-        _ => unreachable!(),
+        _ => std::format!("{:?}", raw.value()),
     }
 }
 
@@ -57,9 +67,8 @@ pub fn length_percentage_auto_to_format_type_value(value: LengthPercentageAuto) 
 pub fn length_percentage_to_type_value(value: LengthPercentage) -> (i8, f32) {
     let raw = value.into_raw();
     match raw.tag() {
-        CompactLength::LENGTH_TAG => (0, raw.value()),
         CompactLength::PERCENT_TAG => (1, raw.value()),
-        _ => unreachable!(),
+        _ => (0, raw.value()),
     }
 }
 
@@ -67,26 +76,24 @@ pub fn length_percentage_to_type_value(value: LengthPercentage) -> (i8, f32) {
 pub fn length_percentage_to_format_type_value(value: LengthPercentage) -> String {
     let raw = value.into_raw();
     match raw.tag() {
-        CompactLength::LENGTH_TAG => std::format!("{:?}", raw.value()),
         CompactLength::PERCENT_TAG => std::format!("{:?}%", raw.value()),
-        _ => unreachable!(),
+        _ => std::format!("{:?}", raw.value()),
     }
 }
 
 #[inline(always)]
-#[track_caller]
 pub fn length_percentage_from_type_value(value_type: i8, value: f32) -> LengthPercentage {
+    let value = sanitize(value);
     match value_type {
-        0 => LengthPercentage::length(value),
         1 => LengthPercentage::percent(value),
-        _ => unreachable!(),
+        _ => LengthPercentage::length(value),
     }
 }
 
 #[inline(always)]
-#[track_caller]
 pub fn dimension_from_type_value(value_type: i8, value: f32) -> Dimension {
     // todo handle calc when supported
+    let value = sanitize(value);
     match value_type {
         0 => Dimension::auto(),
         1 => Dimension::length(value),
@@ -98,7 +105,7 @@ pub fn dimension_from_type_value(value_type: i8, value: f32) -> Dimension {
         7 => Dimension::fit_content_percent(value),
         8 => Dimension::stretch(),
         9 => Dimension::content(),
-        _ => unreachable!(),
+        _ => Dimension::auto(),
     }
 }
 
@@ -109,7 +116,6 @@ pub fn dimension_to_type_value(value: Dimension) -> (i8, f32) {
     }
     let raw = value.into_raw();
     match raw.tag() {
-        CompactLength::LENGTH_TAG => (1, raw.value()),
         CompactLength::PERCENT_TAG => (2, raw.value()),
         CompactLength::MIN_CONTENT_TAG => (3, 0.0),
         CompactLength::MAX_CONTENT_TAG => (4, 0.0),
@@ -118,7 +124,7 @@ pub fn dimension_to_type_value(value: Dimension) -> (i8, f32) {
         CompactLength::FIT_CONTENT_PERCENT_TAG => (7, raw.value()),
         CompactLength::STRETCH_TAG => (8, 0.0),
         CompactLength::CONTENT_TAG => (9, 0.0),
-        _ => unreachable!(),
+        _ => (1, raw.value()),
     }
 }
 
@@ -129,7 +135,6 @@ pub fn dimension_to_format_type_value(value: Dimension) -> String {
     }
     let raw = value.into_raw();
     match raw.tag() {
-        CompactLength::LENGTH_TAG => std::format!("{:?}", raw.value()),
         CompactLength::PERCENT_TAG => std::format!("{:?}%", raw.value()),
         CompactLength::MIN_CONTENT_TAG => "min-content".to_string(),
         CompactLength::MAX_CONTENT_TAG => "max-content".to_string(),
@@ -138,25 +143,16 @@ pub fn dimension_to_format_type_value(value: Dimension) -> String {
         CompactLength::FIT_CONTENT_PERCENT_TAG => std::format!("fit-content({:?}%)", raw.value()),
         CompactLength::STRETCH_TAG => "stretch".to_string(),
         CompactLength::CONTENT_TAG => "content".to_string(),
-        _ => unreachable!(),
+        _ => std::format!("{:?}", raw.value()),
     }
 }
 
-pub const fn dimension_with_auto(t: i8, v: f32) -> LengthPercentageAuto {
-    match t {
-        0 => LengthPercentageAuto::AUTO,
-        1 => LengthPercentageAuto::length(v),
-        2 => LengthPercentageAuto::percent(v),
-        _ => panic!(),
-    }
+pub fn dimension_with_auto(t: i8, v: f32) -> LengthPercentageAuto {
+    length_percentage_auto_from_type_value(t, v)
 }
 
-const fn dimension(t: i8, v: f32) -> LengthPercentage {
-    match t {
-        0 => LengthPercentage::length(v),
-        1 => LengthPercentage::percent(v),
-        _ => panic!(),
-    }
+fn dimension(t: i8, v: f32) -> LengthPercentage {
+    length_percentage_from_type_value(t, v)
 }
 
 pub fn min_max_from_values(
@@ -165,17 +161,17 @@ pub fn min_max_from_values(
     max_type: i8,
     max_value: f32,
 ) -> TrackSizingFunction {
+    let min_value = sanitize(min_value);
+    let max_value = sanitize(max_value);
     TrackSizingFunction {
         min: match min_type {
-            0 => MinTrackSizingFunction::AUTO,
             1 => MinTrackSizingFunction::MIN_CONTENT,
             2 => MinTrackSizingFunction::MAX_CONTENT,
             3 => MinTrackSizingFunction::from_length(min_value),
             4 => MinTrackSizingFunction::from_percent(min_value),
-            _ => panic!(),
+            _ => MinTrackSizingFunction::AUTO,
         },
         max: match max_type {
-            0 => MaxTrackSizingFunction::AUTO,
             1 => MaxTrackSizingFunction::MIN_CONTENT,
             2 => MaxTrackSizingFunction::MAX_CONTENT,
             3 => MaxTrackSizingFunction::from_length(max_value),
@@ -183,7 +179,7 @@ pub fn min_max_from_values(
             5 => MaxTrackSizingFunction::fr(max_value),
             6 => MaxTrackSizingFunction::fit_content(LengthPercentage::length(max_value)),
             7 => MaxTrackSizingFunction::fit_content(LengthPercentage::percent(max_value)),
-            _ => panic!(),
+            _ => MaxTrackSizingFunction::AUTO,
         },
     }
 }
@@ -620,5 +616,123 @@ pub(crate) fn set_style_data_i8_raw(style: &mut [u8], position: usize, value: i8
 
 #[inline(always)]
 pub(crate) fn get_style_data_i8_raw(style: &[u8], position: usize) -> i8 {
-    unsafe { style.as_ptr().add(position) as i8 }
+    unsafe { *style.as_ptr().add(position) as i8 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test: the raw getter used to return the *address* of the
+    /// byte instead of the byte, so every flag read as garbage (almost always
+    /// non-zero).
+    #[test]
+    fn get_style_data_i8_raw_reads_the_byte() {
+        let mut buffer = [0u8; 8];
+        set_style_data_i8_raw(&mut buffer, 3, 1);
+
+        assert_eq!(get_style_data_i8_raw(&buffer, 3), 1);
+        assert_eq!(get_style_data_i8_raw(&buffer, 0), 0);
+        assert_eq!(get_style_data_i8_raw(&buffer, 7), 0);
+
+        set_style_data_i8_raw(&mut buffer, 3, 0);
+        assert_eq!(get_style_data_i8_raw(&buffer, 3), 0);
+
+        set_style_data_i8_raw(&mut buffer, 5, -1);
+        assert_eq!(get_style_data_i8_raw(&buffer, 5), -1);
+    }
+
+    /// Regression test: decoding a byte platform code can corrupt must not
+    /// panic — the workspace builds with `panic = "abort"`.
+    #[test]
+    fn out_of_range_type_tags_fall_back_instead_of_panicking() {
+        for tag in [-128i8, -1, 10, 42, 127] {
+            assert!(length_percentage_auto_from_type_value(tag, 10.0).is_auto());
+            assert!(dimension_from_type_value(tag, 10.0).is_auto());
+        }
+
+        for tag in [-128i8, -1, 2, 42, 127] {
+            assert_eq!(
+                length_percentage_from_type_value(tag, 10.0),
+                LengthPercentage::length(10.0)
+            );
+        }
+
+        for tag in [-128i8, -1, 8, 42, 127] {
+            let track = min_max_from_values(tag, 10.0, tag, 10.0);
+            assert_eq!(track.min, MinTrackSizingFunction::AUTO);
+            assert_eq!(track.max, MaxTrackSizingFunction::AUTO);
+        }
+    }
+
+    #[test]
+    fn in_range_type_tags_are_unchanged() {
+        assert!(length_percentage_auto_from_type_value(0, 0.0).is_auto());
+        assert_eq!(
+            length_percentage_auto_from_type_value(1, 5.0),
+            LengthPercentageAuto::length(5.0)
+        );
+        assert_eq!(
+            length_percentage_auto_from_type_value(2, 5.0),
+            LengthPercentageAuto::percent(5.0)
+        );
+
+        assert_eq!(
+            length_percentage_from_type_value(0, 5.0),
+            LengthPercentage::length(5.0)
+        );
+        assert_eq!(
+            length_percentage_from_type_value(1, 5.0),
+            LengthPercentage::percent(5.0)
+        );
+
+        assert!(dimension_from_type_value(0, 0.0).is_auto());
+        assert_eq!(dimension_from_type_value(1, 5.0), Dimension::length(5.0));
+        assert_eq!(dimension_from_type_value(2, 5.0), Dimension::percent(5.0));
+
+        let track = min_max_from_values(3, 5.0, 5, 2.0);
+        assert_eq!(track.min, MinTrackSizingFunction::from_length(5.0));
+        assert_eq!(track.max, MaxTrackSizingFunction::fr(2.0));
+    }
+
+    #[test]
+    fn nan_values_are_clamped_but_infinity_is_kept() {
+        assert_eq!(
+            length_percentage_auto_from_type_value(1, f32::NAN),
+            LengthPercentageAuto::length(0.0)
+        );
+        assert_eq!(
+            length_percentage_from_type_value(1, f32::NAN),
+            LengthPercentage::percent(0.0)
+        );
+        assert_eq!(dimension_from_type_value(2, f32::NAN), Dimension::percent(0.0));
+
+        let track = min_max_from_values(3, f32::NAN, 3, f32::NAN);
+        assert_eq!(track.min, MinTrackSizingFunction::from_length(0.0));
+        assert_eq!(track.max, MaxTrackSizingFunction::from_length(0.0));
+
+        assert_eq!(
+            dimension_from_type_value(1, f32::INFINITY),
+            Dimension::length(f32::INFINITY)
+        );
+    }
+
+    /// Round-trips still hold for every tag the encoders can emit.
+    #[test]
+    fn type_value_round_trips() {
+        for value in [LengthPercentageAuto::AUTO, LengthPercentageAuto::length(3.5), LengthPercentageAuto::percent(0.5)] {
+            let (tag, v) = length_percentage_auto_to_type_value(value);
+            assert_eq!(length_percentage_auto_from_type_value(tag, v), value);
+        }
+
+        for value in [LengthPercentage::length(3.5), LengthPercentage::percent(0.5)] {
+            let (tag, v) = length_percentage_to_type_value(value);
+            assert_eq!(length_percentage_from_type_value(tag, v), value);
+        }
+
+        for value in [Dimension::auto(), Dimension::length(3.5), Dimension::percent(0.5)] {
+            let (tag, v) = dimension_to_type_value(value);
+            assert_eq!(dimension_from_type_value(tag, v), value);
+        }
+    }
 }
