@@ -62,23 +62,14 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeDestroy(long mason);
 
-  // FastNative, not CriticalNative: these enter Mason's compute pass, which for any
-  // measure-function leaf (e.g. text) synchronously calls back into Java via a full
-  // JNIEnv (see NodeMeasure::measure in mason-core). CriticalNative methods receive no
-  // JNIEnv and must never call back into the JVM, so these need the FastNative contract.
-  @FastNative
   static native void nativeNodeCompute(long mason, long node);
 
-  @FastNative
   static native void nativeNodeComputeSize(long mason, long node, long size);
 
-  @FastNative
   static native void nativeNodeComputeWH(long mason, long node, float width, float height);
 
-  @FastNative
   static native void nativeNodeComputeMaxContent(long mason, long node);
 
-  @FastNative
   static native void nativeNodeComputeMinContent(long mason, long node);
 
   @CriticalNative
@@ -123,17 +114,16 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeRemoveContext(long mason, long node);
 
-  @FastNative
-  static native float[] nativeNodeComputeWithSizeAndLayout(long mason,
-                                                           long node,
-                                                           float width,
-                                                           float height);
+  static native int nativeNodeComputeWithSizeAndLayout(long mason,
+                                                       long node,
+                                                       float width,
+                                                       float height,
+                                                       float[] output);
 
   @FastNative
   static native long[] nativeNodeGetChildren(long mason, long node);
 
-  @FastNative
-  static native float[] nativeNodeLayout(long mason, long node);
+  static native int nativeNodeLayout(long mason, long node, float[] output);
 
   @FastNative
   static native long[] nativeNodeGetFloatRectWithIds(long mason, long node);
@@ -147,7 +137,6 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeSetContext(long mason, long node, int measureFunc);
 
-  @FastNative
   static native float[] nativeNodeComputeAndLayout(long mason, long node);
 
   @FastNative
@@ -161,7 +150,7 @@ public class NativeHelpers {
   static native void nativeNodeSetSegments(long masonPtr, long nodePtr, InlineSegment[] segments);
 
   @FastNative
-  static native void nativeNodeSetSegmentsPacked(long masonPtr, long nodePtr, float[] floats, long[] longs, int[] kinds);
+  static native void nativeNodeSetSegmentsPacked(long masonPtr, long nodePtr, float[] floats, long[] longs, int[] kinds, int count);
 
   @CriticalNative
   static native void nativeSetAndroidNode(long masonPtr, long nodePtr, int node);

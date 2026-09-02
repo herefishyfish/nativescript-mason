@@ -139,6 +139,17 @@ class Button @JvmOverloads constructor(
     setPadding(0, 0, 0, 0)
 
     paint.textSize = fontSize
+    // Unlike TextView, a Button draws through AppCompatTextView's own layout
+    // rather than the engine's cached one, so it has to be told to use the same
+    // line box the engine measured with:
+    //  - includeFontPadding=false matches TextEngine's `descent - ascent` line
+    //    box (Android's top/bottom font padding would make the drawn layout
+    //    taller than the measured box and push the glyphs down),
+    //  - CENTER_VERTICAL centers that box in the content area, matching how
+    //    TextView.onDraw centers its single-line glyph box and how a UA
+    //    stylesheet centers button content. Horizontal gravity is left alone.
+    includeFontPadding = engine.includePadding
+    gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       defaultFocusHighlightEnabled = false
     }

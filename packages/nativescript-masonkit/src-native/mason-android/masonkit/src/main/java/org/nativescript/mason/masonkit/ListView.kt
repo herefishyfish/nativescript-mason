@@ -452,6 +452,6 @@ class ListView @JvmOverloads constructor(
   }
 
   override fun onChange(low: Long, high: Long) {
-    Node.invalidateDescendantTextViews(node, low, high)
+    Node.scheduleDescendantTextInvalidation(node, low, high)
   }
 }

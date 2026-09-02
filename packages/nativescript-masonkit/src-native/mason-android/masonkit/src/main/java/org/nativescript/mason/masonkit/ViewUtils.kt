@@ -23,13 +23,7 @@ class ViewUtils {
       val parentStyle = (parent as? Element)?.style
       if (parentStyle != null) {
         canvas.withSave {
-          Style.applyOverflowClip(
-            parentStyle,
-            canvas,
-            parentStyle.node,
-            parent.width.toFloat(),
-            parent.height.toFloat()
-          )
+          Style.applyOverflowClip(parentStyle, canvas, parentStyle.node)
 
           for (i in 0 until parent.childCount) {
             val child = parent.getChildAt(i)
@@ -202,8 +196,7 @@ class ViewUtils {
           canvas.clipPath(innerPath)
         }
 
-        Style.applyOverflowClip(style, canvas, style.node, width, height)
-
+        Style.applyOverflowClip(style, canvas, style.node)
         val filter = style.mFilter
         if (filter != null) {
           if (filter.filters.isEmpty() || useFastFilter) {
