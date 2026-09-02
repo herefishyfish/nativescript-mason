@@ -59,7 +59,7 @@
 
       <View class="chip-row">
         @for (n of hostBoxes; track n) {
-          <stress-chip class="chip chip-accent" [label]="'host ' + n"></stress-chip>
+          <stress-chip class="chip" [style]="'background-color:' + n" [label]="'host ' + n" />
         }
       </View>
     </View>
@@ -91,6 +91,163 @@
         @for (n of gridCells; track n) {
           <stress-chip class="grid-cell" [label]="'cell ' + n"></stress-chip>
         }
+      </View>
+    </View>
+
+    <!--
+      Border rendering. The solid single-colour case is drawn as one EVEN_ODD
+      path holding an outer and an inner contour: the inner contour's winding
+      cancels the outer's, leaving the band. It replaced a saveLayer + CLEAR
+      punch, so these cases exist to prove the fill rule produces the same shape
+      the blend did. Anything with per-side colours/widths or a non-solid style
+      takes a different branch and is here as a control.
+    -->
+    <View class="case">
+      <Text class="section-title">6. Border: uniform solid (even-odd ring)</Text>
+      <Text class="case-note">Band must be even all the way round and unbroken through the corners. A notch or seam at the top-left is the contour start point failing to close; a filled centre means the inner contour did not cancel.</Text>
+
+      <View class="b-row">
+        <View class="b-cell">
+          <View class="b-box b-solid"></View>
+          <Text class="b-cap">square</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-solid-r"></View>
+          <Text class="b-cap">rounded</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-solid-pill"></View>
+          <Text class="b-cap">pill</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-corners"></View>
+          <Text class="b-cap">per-corner</Text>
+        </View>
+      </View>
+    </View>
+
+    <View class="case">
+      <Text class="section-title">6b. Border: superellipse corners</Text>
+      <Text class="case-note">These matter more than the shapes above. A round corner is an analytic arcTo; every other corner-shape is a 16-segment polyline, and the old code filled outer and inner as two separate WINDING paths while the ring fills one EVEN_ODD path. The two rules agree only while a contour does not self-intersect — where they differ, non-zero fills an overlap and even-odd punches it out as a hole. A polyline corner is where an overlap is plausible, so a bite taken out of a corner here is the fill rule, not the geometry.</Text>
+
+      <View class="b-row">
+        <View class="b-cell">
+          <View class="b-box b-sq"></View>
+          <Text class="b-cap">squircle</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-notch"></View>
+          <Text class="b-cap">notch</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-bevel"></View>
+          <Text class="b-cap">bevel</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-se-mixed"></View>
+          <Text class="b-cap">4 shapes</Text>
+        </View>
+      </View>
+
+      <Text class="case-note">Same shapes with a thick border and a large radius — the inner contour is generated at an offset with radii rescaled to the inner box, so adjacent corner segments have the most room to overrun each other here.</Text>
+
+      <View class="b-row">
+        <View class="b-cell">
+          <View class="b-box b-sq-thick"></View>
+          <Text class="b-cap">squircle thick</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-notch-thick"></View>
+          <Text class="b-cap">notch thick</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-bevel-thick"></View>
+          <Text class="b-cap">bevel thick</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-sq-alpha"></View>
+          <Text class="b-cap">squircle 45%</Text>
+        </View>
+      </View>
+    </View>
+
+    <View class="case">
+      <Text class="section-title">7. Border: degenerate inner contour</Text>
+      <Text class="case-note">Border wider than half the box, so the inner contour collapses to nothing. Expected: a solid filled block. An empty or hollow box means even-odd cancelled the whole shape instead of just the hole.</Text>
+
+      <View class="b-row">
+        <View class="b-cell">
+          <View class="b-box b-thick"></View>
+          <Text class="b-cap">w &gt; box/2</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-thick-r"></View>
+          <Text class="b-cap">+ radius</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-huge-radius"></View>
+          <Text class="b-cap">radius &gt; box</Text>
+        </View>
+      </View>
+    </View>
+
+    <View class="case">
+      <Text class="section-title">8. Border: translucent</Text>
+      <Text class="case-note">Alpha is where a fill rule and a blend punch differ most. The band must be one flat tone over the page background — a darker ring anywhere means the shape is being painted twice.</Text>
+
+      <View class="b-row">
+        <View class="b-cell">
+          <View class="b-box b-alpha"></View>
+          <Text class="b-cap">45% square</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-alpha-r"></View>
+          <Text class="b-cap">45% rounded</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-alpha-on-fill"></View>
+          <Text class="b-cap">over fill</Text>
+        </View>
+      </View>
+    </View>
+
+    <View class="case">
+      <Text class="section-title">9. Border: per-side and non-solid (control)</Text>
+      <Text class="case-note">These take the per-side and stroke branches, not the ring. They should be unaffected by the ring change — if they broke too, the regression is in the shared path cache rather than the fill rule.</Text>
+
+      <View class="b-row">
+        <View class="b-cell">
+          <View class="b-box b-sides"></View>
+          <Text class="b-cap">4 colours</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-widths"></View>
+          <Text class="b-cap">4 widths</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-dashed"></View>
+          <Text class="b-cap">dashed</Text>
+        </View>
+        <View class="b-cell">
+          <View class="b-box b-dotted"></View>
+          <Text class="b-cap">dotted</Text>
+        </View>
+      </View>
+    </View>
+
+    <View class="case">
+      <Text class="section-title">10. Border: percentage radius survives a resize</Text>
+      <Text class="case-note">The radius is 50%, so it resolves to pixels against the box width. Tap Resize: the corners must re-round to match the new width. Corners that keep their old curve mean the renderer's cache is keyed on style bytes alone and never noticed the box changed.</Text>
+
+      <View class="b-row">
+        <View class="b-cell">
+          <View class="b-box b-pct" [class.b-wide]="wideBorderBox"></View>
+          <Text class="b-cap">{{ wideBorderBox ? 'wide' : 'narrow' }}</Text>
+        </View>
+      </View>
+
+      <View class="btn-row">
+        <button class="btn" (tap)="toggleBorderBoxWidth()">Resize</button>
       </View>
     </View>
 
