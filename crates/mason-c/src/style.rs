@@ -42,16 +42,14 @@ impl From<TrackSizingFunction> for CMasonMinMax {
             min_type = 2
         } else {
             let raw = value.min.into_raw();
-            if raw.is_length_or_percentage() {
-                if raw.uses_percentage() {
-                    min_type = 4;
-                } else {
-                    min_type = 3;
-                }
-                min_value = raw.value();
+            if raw.is_length_or_percentage() && raw.uses_percentage() {
+                min_type = 4;
             } else {
-                unreachable!()
+                // Length, and anything unrecognized (e.g. an unresolved calc):
+                // encoding must never abort the process.
+                min_type = 3;
             }
+            min_value = raw.value();
         }
 
         if value.max.is_auto() {
@@ -83,7 +81,10 @@ impl From<TrackSizingFunction> for CMasonMinMax {
                     max_type = 7;
                     max_value = raw.value();
                 }
-                _ => unreachable!(),
+                _ => {
+                    max_type = 3;
+                    max_value = raw.value();
+                }
             }
         }
 
@@ -141,7 +142,6 @@ impl Into<CMasonDimension> for Dimension {
         } else {
             let raw = self.into_raw();
             match raw.tag() {
-                CompactLength::LENGTH_TAG => CMasonDimension::length(raw.value()),
                 CompactLength::PERCENT_TAG => CMasonDimension::percent(raw.value()),
                 CompactLength::MIN_CONTENT_TAG => CMasonDimension::min_content(),
                 CompactLength::MAX_CONTENT_TAG => CMasonDimension::max_content(),
@@ -152,7 +152,7 @@ impl Into<CMasonDimension> for Dimension {
                 }
                 CompactLength::STRETCH_TAG => CMasonDimension::stretch(),
                 CompactLength::CONTENT_TAG => CMasonDimension::content(),
-                _ => unreachable!(),
+                _ => CMasonDimension::length(raw.value()),
             }
         }
     }
@@ -434,9 +434,7 @@ impl From<&Dimension> for CMasonDimension {
             }
             CompactLength::STRETCH_TAG => CMasonDimension::stretch(),
             CompactLength::CONTENT_TAG => CMasonDimension::content(),
-            _ => {
-                unreachable!()
-            }
+            _ => CMasonDimension::length(dimension.value()),
         }
     }
 }
@@ -469,11 +467,8 @@ impl From<LengthPercentageAuto> for CMasonDimension {
         let raw = value.into_raw();
         match raw.tag() {
             CompactLength::PERCENT_TAG => Self::percent(raw.value()),
-            CompactLength::LENGTH_TAG => Self::length(raw.value()),
             CompactLength::AUTO_TAG => Self::auto(),
-            _ => {
-                unreachable!()
-            }
+            _ => Self::length(raw.value()),
         }
     }
 }
@@ -556,11 +551,8 @@ impl From<LengthPercentageAuto> for CMasonLengthPercentageAuto {
         let raw = value.into_raw();
         match raw.tag() {
             CompactLength::PERCENT_TAG => Self::percent(raw.value()),
-            CompactLength::LENGTH_TAG => Self::length(raw.value()),
             CompactLength::AUTO_TAG => Self::auto(),
-            _ => {
-                unreachable!()
-            }
+            _ => Self::length(raw.value()),
         }
     }
 }
@@ -574,11 +566,8 @@ impl From<&LengthPercentageAuto> for CMasonLengthPercentageAuto {
         let raw = value.into_raw();
         match raw.tag() {
             CompactLength::PERCENT_TAG => Self::percent(raw.value()),
-            CompactLength::LENGTH_TAG => Self::length(raw.value()),
             CompactLength::AUTO_TAG => Self::auto(),
-            _ => {
-                unreachable!()
-            }
+            _ => Self::length(raw.value()),
         }
     }
 }
@@ -705,7 +694,9 @@ impl Into<GridPlacement> for CMasonGridPlacement {
                 GridPlacement::Line(self.value.into())
             }
             CMasonGridPlacementType::MasonGridPlacementTypeSpan => {
-                GridPlacement::Span(self.value.try_into().unwrap())
+                // The caller supplies `value`; a negative or oversized span is
+                // clamped rather than aborting the process.
+                GridPlacement::Span(self.value.max(0) as u16)
             }
         }
     }
@@ -1064,9 +1055,12 @@ pub extern "C" fn mason_style_prepare_style_for_mut(mason: *mut CMason, node: *m
 #[no_mangle]
 pub extern "C" fn mason_style_release_style_buffer(buffer: *mut CMasonBuffer) {
     if buffer.is_null() {
-        unsafe {
-            let _ = Box::from_raw(buffer);
-        }
+        return;
+    }
+
+    // Only the struct is boxed; `data` points into the arena and is not owned here.
+    unsafe {
+        let _ = Box::from_raw(buffer);
     }
 }
 
@@ -1381,5 +1375,71 @@ fn overflow_to_int(value: Overflow) -> i32 {
         Overflow::Hidden => 1,
         Overflow::Scroll => 2,
         Overflow::Clip => 3,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A negative span from the caller is clamped instead of aborting.
+    #[test]
+    fn negative_grid_span_is_clamped() {
+        for value in [-1i16, -32, i16::MIN] {
+            let placement = CMasonGridPlacement {
+                value,
+                value_type: CMasonGridPlacementType::MasonGridPlacementTypeSpan,
+            };
+            let converted: GridPlacement = placement.into();
+            assert_eq!(converted, GridPlacement::Span(0));
+        }
+    }
+
+    #[test]
+    fn positive_grid_span_is_unchanged() {
+        let placement = CMasonGridPlacement {
+            value: 3,
+            value_type: CMasonGridPlacementType::MasonGridPlacementTypeSpan,
+        };
+        let converted: GridPlacement = placement.into();
+        assert_eq!(converted, GridPlacement::Span(3));
+    }
+
+    /// Encoding must round-trip every tag the core can produce, and must not
+    /// abort on one it doesn't recognize.
+    #[test]
+    fn dimension_encoding_round_trips() {
+        let auto: CMasonDimension = Dimension::auto().into();
+        assert_eq!(auto.value_type, CMasonDimensionType::MasonDimensionAuto);
+
+        let length: CMasonDimension = Dimension::length(5.0).into();
+        assert_eq!(length.value_type, CMasonDimensionType::MasonDimensionPoints);
+        assert_eq!(length.value, 5.0);
+
+        let percent: CMasonDimension = Dimension::percent(0.5).into();
+        assert_eq!(percent.value_type, CMasonDimensionType::MasonDimensionPercent);
+        assert_eq!(percent.value, 0.5);
+    }
+
+    #[test]
+    fn length_percentage_auto_encoding_round_trips() {
+        let auto: CMasonLengthPercentageAuto = LengthPercentageAuto::auto().into();
+        assert_eq!(
+            auto.value_type,
+            CMasonLengthPercentageAutoType::MasonLengthPercentageAutoAuto
+        );
+
+        let length: CMasonLengthPercentageAuto = LengthPercentageAuto::length(7.0).into();
+        assert_eq!(
+            length.value_type,
+            CMasonLengthPercentageAutoType::MasonLengthPercentageAutoPoints
+        );
+        assert_eq!(length.value, 7.0);
+
+        let percent: CMasonLengthPercentageAuto = LengthPercentageAuto::percent(0.25).into();
+        assert_eq!(
+            percent.value_type,
+            CMasonLengthPercentageAutoType::MasonLengthPercentageAutoPercent
+        );
     }
 }

@@ -7,12 +7,12 @@ use std::sync::Mutex as StdMutex;
 static REGISTRY: Lazy<StdMutex<Vec<usize>>> = Lazy::new(|| StdMutex::new(Vec::new()));
 
 fn register_cnode(ptr: *mut CMasonNode) {
-    let mut reg = REGISTRY.lock().unwrap();
+    let mut reg = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
     reg.push(ptr as usize);
 }
 
 fn unregister_cnode(ptr: *mut CMasonNode) {
-    let mut reg = REGISTRY.lock().unwrap();
+    let mut reg = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
     let key = ptr as usize;
     if let Some(pos) = reg.iter().position(|p| *p == key) {
         reg.swap_remove(pos);
@@ -570,7 +570,7 @@ pub extern "C" fn mason_node_get_float_rects_buffer(
         let mut bytes: Vec<u8> = Vec::with_capacity(output.len() * entry_size);
 
         // Lookup registered CMasonNode pointers and serialize
-        let reg = REGISTRY.lock().unwrap();
+        let reg = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
         for (id, left, top, right, bottom) in output.into_iter() {
             // Find a registered CMasonNode whose inner NodeRef id matches `id`
             let mut node_ptr_usize: usize = 0;
