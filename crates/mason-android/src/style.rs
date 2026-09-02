@@ -129,7 +129,9 @@ pub extern "system" fn Java_org_nativescript_mason_masonkit_Style_nativeNonBuffe
         };
 
         if flags == 0 {
-            mason.with_style_mut(node.id().into(), update_style);
+            // The shared direct style buffer was written before this JNI
+            // callback, so Rust cannot perform the normal before/after guard.
+            mason.with_style_mut_force_dirty(node.id().into(), update_style);
         } else {
             mason.with_pseudo_style_mut(node.id().into(), flags, update_style);
         }
@@ -357,6 +359,17 @@ pub extern "system" fn nativeGetStyleBuffer(
         let mason = &mut *(mason as *mut Mason);
         let node = &mut *(node as *mut NodeRef);
 
+        // Exposure invariant: the platform writes *through* this buffer (Kotlin
+        // caches it as `mValues` and mutates it in place), so it must be
+        // exclusively owned before we hand out a pointer. Without this a shared
+        // slot — in particular one of the immortal DEFAULT_* slots, which can
+        // carry hundreds of refs — gets written by one node's styles and every
+        // other node sharing it silently inherits them.
+        //
+        // Must run before the cached-id early return below: that path would
+        // otherwise hand back a pointer to a still-shared slot.
+        mason.prepare_mut(node);
+
         let data = mason.style_data(node.id());
         if data >= 0 {
             return data;
@@ -367,6 +380,8 @@ pub extern "system" fn nativeGetStyleBuffer(
         if ptr.is_null() || len == 0 {
             return -1;
         }
+
+        let handle = mason.style_handle(node.id());
 
         unsafe {
             match env.new_direct_byte_buffer(ptr as _, len) {
@@ -385,8 +400,20 @@ pub extern "system" fn nativeGetStyleBuffer(
                             )
                         };
 
+                        // Thrown Java exception leaves the returned id undefined;
+                        // skip persisting and let it propagate to the JVM caller.
+                        if env.exception_check().unwrap_or(true) {
+                            return -1;
+                        }
+
                         match result {
-                            Ok(result) => result.i().unwrap_or(-1),
+                            Ok(result) => {
+                                let ret = result.i().unwrap_or(-1);
+                                if ret >= 0 && handle >= 0 {
+                                    mason.set_handle_buffer(handle as u32, ret);
+                                }
+                                ret
+                            }
                             Err(_) => -1,
                         }
                     }
@@ -425,6 +452,8 @@ pub extern "system" fn nativePrepareMut(
             return -1;
         }
 
+        let handle = mason.style_handle(node.id());
+
         unsafe {
             match env.new_direct_byte_buffer(ptr as _, len) {
                 Ok(buffer) => match mason_core::JVM_CACHE.get() {
@@ -442,8 +471,20 @@ pub extern "system" fn nativePrepareMut(
                             )
                         };
 
+                        // Thrown Java exception leaves the returned id undefined;
+                        // skip persisting and let it propagate to the JVM caller.
+                        if env.exception_check().unwrap_or(true) {
+                            return -1;
+                        }
+
                         match result {
-                            Ok(result) => result.i().unwrap_or(-1),
+                            Ok(result) => {
+                                let ret = result.i().unwrap_or(-1);
+                                if ret >= 0 && handle >= 0 {
+                                    mason.set_handle_buffer(handle as u32, ret);
+                                }
+                                ret
+                            }
                             Err(_) => -1,
                         }
                     }
