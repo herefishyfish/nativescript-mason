@@ -1281,13 +1281,7 @@ class CSSFilters {
         }
       }
 
-      return CSSFilter(
-        if (filters.isNotEmpty()) {
-          value
-        } else {
-          ""
-        }, filters
-      )
+      return CSSFilter(value, filters)
     }
   }
 }
