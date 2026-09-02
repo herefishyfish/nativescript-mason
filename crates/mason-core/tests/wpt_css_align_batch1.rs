@@ -1,7 +1,7 @@
-use mason_core::style::DisplayMode;
 use mason_core::*;
-use std::ffi::{c_float, c_longlong, c_void};
+use mason_core::style::DisplayMode;
 use taffy::style::Display;
+use std::ffi::{c_float, c_longlong, c_void};
 
 extern "C" fn measure_10x10(
     _data: *const c_void,
@@ -42,10 +42,7 @@ fn baseline_of_scrollable_1a() {
     let rid = root.id();
     mason.with_style_mut(rid, |s| {
         s.set_display(taffy::style::Display::Block);
-        s.set_size(taffy::geometry::Size {
-            width: taffy::style::Dimension::length(200.0),
-            height: taffy::style::Dimension::auto(),
-        });
+        s.set_size(taffy::geometry::Size { width: taffy::style::Dimension::length(200.0), height: taffy::style::Dimension::auto() });
     });
 
     // inline parent
@@ -63,28 +60,16 @@ fn baseline_of_scrollable_1a() {
     mason.with_style_mut(cid, |s| {
         s.set_display(Display::Block);
         s.set_display_mode(DisplayMode::Box);
-        s.set_overflow(mason_core::Point {
-            x: mason_core::style::Overflow::Scroll,
-            y: mason_core::style::Overflow::Scroll,
-        });
+        s.set_overflow(mason_core::Point { x: mason_core::style::Overflow::Scroll, y: mason_core::style::Overflow::Scroll });
     });
 
-    mason.set_segments(
-        pid,
-        vec![InlineSegment::InlineChild {
-            id: Some(cid),
-            baseline: 0.0,
-        }],
-    );
+    mason.set_segments(pid, vec![InlineSegment::InlineChild { id: Some(cid), baseline: 0.0 }]);
     mason.append_node(pid, &[cid]);
     mason.append_node(rid, &[pid]);
 
     mason.compute_wh(pid, 200.0, f32::NAN);
     let pl = mason.layout_raw(pid);
-    assert!(
-        pl.size.height + 1e-3 >= 12.0,
-        "parent should accommodate scrollable child's baseline height"
-    );
+    assert!(pl.size.height + 1e-3 >= 12.0, "parent should accommodate scrollable child's baseline height");
 }
 
 // Ported from css-align/baseline-of-scrollable-1b.html
@@ -96,10 +81,7 @@ fn baseline_of_scrollable_1b() {
     let rid = root.id();
     mason.with_style_mut(rid, |s| {
         s.set_display(taffy::style::Display::Block);
-        s.set_size(taffy::geometry::Size {
-            width: taffy::style::Dimension::length(220.0),
-            height: taffy::style::Dimension::auto(),
-        });
+        s.set_size(taffy::geometry::Size { width: taffy::style::Dimension::length(220.0), height: taffy::style::Dimension::auto() });
     });
 
     let parent = mason.create_text_node();
@@ -115,28 +97,16 @@ fn baseline_of_scrollable_1b() {
     mason.with_style_mut(cid, |s| {
         s.set_display(Display::Block);
         s.set_display_mode(DisplayMode::Box);
-        s.set_overflow(mason_core::Point {
-            x: mason_core::style::Overflow::Auto,
-            y: mason_core::style::Overflow::Auto,
-        });
+        s.set_overflow(mason_core::Point { x: mason_core::style::Overflow::Auto, y: mason_core::style::Overflow::Auto });
     });
 
-    mason.set_segments(
-        pid,
-        vec![InlineSegment::InlineChild {
-            id: Some(cid),
-            baseline: 0.0,
-        }],
-    );
+    mason.set_segments(pid, vec![InlineSegment::InlineChild { id: Some(cid), baseline: 0.0 }]);
     mason.append_node(pid, &[cid]);
     mason.append_node(rid, &[pid]);
 
     mason.compute_wh(pid, 220.0, f32::NAN);
     let pl = mason.layout_raw(pid);
-    assert!(
-        pl.size.height + 1e-3 >= 20.0,
-        "parent should accommodate scrollable child's height"
-    );
+    assert!(pl.size.height + 1e-3 >= 20.0, "parent should accommodate scrollable child's height");
 }
 
 // Ported from css-align/baseline-of-scrollable-2.html
@@ -148,10 +118,7 @@ fn baseline_of_scrollable_2() {
     let rid = root.id();
     mason.with_style_mut(rid, |s| {
         s.set_display(taffy::style::Display::Block);
-        s.set_size(taffy::geometry::Size {
-            width: taffy::style::Dimension::length(240.0),
-            height: taffy::style::Dimension::auto(),
-        });
+        s.set_size(taffy::geometry::Size { width: taffy::style::Dimension::length(240.0), height: taffy::style::Dimension::auto() });
     });
 
     let parent = mason.create_text_node();
@@ -176,33 +143,18 @@ fn baseline_of_scrollable_2() {
     mason.with_style_mut(cid, |s| {
         s.set_display(Display::Block);
         s.set_display_mode(DisplayMode::Box);
-        s.set_overflow(mason_core::Point {
-            x: mason_core::style::Overflow::Scroll,
-            y: mason_core::style::Overflow::Scroll,
-        });
+        s.set_overflow(mason_core::Point { x: mason_core::style::Overflow::Scroll, y: mason_core::style::Overflow::Scroll });
     });
 
-    mason.set_segments(
-        pid,
-        vec![
-            InlineSegment::InlineChild {
-                id: Some(ridn),
-                baseline: 0.0,
-            },
-            InlineSegment::InlineChild {
-                id: Some(cid),
-                baseline: 0.0,
-            },
-        ],
-    );
+    mason.set_segments(pid, vec![
+        InlineSegment::InlineChild { id: Some(ridn), baseline: 0.0 },
+        InlineSegment::InlineChild { id: Some(cid), baseline: 0.0 },
+    ]);
 
     mason.append_node(pid, &[ridn, cid]);
     mason.append_node(rid, &[pid]);
 
     mason.compute_wh(pid, 240.0, f32::NAN);
     let pl = mason.layout_raw(pid);
-    assert!(
-        pl.size.height + 1e-3 >= 20.0,
-        "parent should accommodate scrollable child's baseline contribution"
-    );
+    assert!(pl.size.height + 1e-3 >= 20.0, "parent should accommodate scrollable child's baseline contribution");
 }
