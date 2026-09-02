@@ -20,7 +20,8 @@ use objc2::runtime::NSObject;
 use parking_lot::{Mutex, RwLock};
 use slotmap::SecondaryMap;
 use std::sync::Arc;
-use taffy::{AvailableSpace, Cache, ClearState, Layout, Size};
+use crate::layout_cache::LayoutCache;
+use taffy::{AvailableSpace, ClearState, Layout, Size};
 
 use crate::style::arena::{StyleArena, StyleHandle};
 use crate::style::utils::{
@@ -507,7 +508,9 @@ impl InlineMeasureCache {
 #[derive(Debug, Clone)]
 pub struct Node {
     pub(crate) style: Style,
-    pub(crate) cache: Cache,
+    /// Per-node cache that lets distinct measure constraints coexist instead of
+    /// evicting each other through taffy's fixed 9-slot cache.
+    pub(crate) cache: LayoutCache,
     pub(crate) inline_measure_cache: InlineMeasureCache,
     pub(crate) unrounded_layout: Layout,
     pub(crate) final_layout: Layout,
