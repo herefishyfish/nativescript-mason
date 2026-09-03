@@ -87,6 +87,23 @@ interface Element : EventTarget {
     return HitTesting.elementFromPoint(view, x, y)
   }
 
+  /**
+   * Runs [fill] against this node's reusable layout buffer, growing it and
+   * retrying once when the tree needs more room than the buffer has.
+   *
+   * The native calls return the number of floats *required*, not the number
+   * written, so a return larger than the buffer means nothing usable landed in
+   * it. Returns that required count; the caller checks it against the buffer.
+   */
+  private inline fun fillLayoutBuffer(fill: (FloatArray) -> Int): Int {
+    var required = fill(node.layoutScratch)
+    if (required > node.layoutScratch.size) {
+      node.layoutScratch = FloatArray(required)
+      required = fill(node.layoutScratch)
+    }
+    return required
+  }
+
   fun layoutFlat(): MasonLayoutTree {
     if (node.nativePtr == 0L) {
       return MasonLayoutTree.empty
@@ -99,11 +116,13 @@ interface Element : EventTarget {
     if (!node.computeCacheDirty && node.layoutTree.nodeCount > 0) {
       return node.layoutTree
     }
-    val layouts = NativeHelpers.nativeNodeLayout(node.mason.nativePtr, node.nativePtr)
-    if (layouts.isEmpty()) {
+    val required = fillLayoutBuffer {
+      NativeHelpers.nativeNodeLayout(node.mason.nativePtr, node.nativePtr, it)
+    }
+    if (required <= 0 || required > node.layoutScratch.size) {
       return MasonLayoutTree.empty
     }
-    if (!node.layoutTree.fromFloatArray(layouts)) {
+    if (!node.layoutTree.fromFloatArray(node.layoutScratch, required)) {
       // another applyLayoutFlat DFS is mid-walk on this tree; keep it dirty
       // and schedule a follow-up instead of trusting this skipped refill
       node.computeCacheDirty = true
@@ -234,16 +253,19 @@ interface Element : EventTarget {
     var applied = true
     mason.inCompute = true
     try {
-      val layout = NativeHelpers.nativeNodeComputeWithSizeAndLayout(
-        mason.nativePtr,
-        node.nativePtr,
-        width,
-        height
-      )
-      if (layout.isEmpty()) {
+      val required = fillLayoutBuffer {
+        NativeHelpers.nativeNodeComputeWithSizeAndLayout(
+          mason.nativePtr,
+          node.nativePtr,
+          width,
+          height,
+          it
+        )
+      }
+      if (required <= 0 || required > node.layoutScratch.size) {
         return MasonLayoutTree.empty
       }
-      applied = node.layoutTree.fromFloatArray(layout)
+      applied = node.layoutTree.fromFloatArray(node.layoutScratch, required)
     } finally {
       mason.inCompute = false
       node.computeCache = SizeF(width, height)

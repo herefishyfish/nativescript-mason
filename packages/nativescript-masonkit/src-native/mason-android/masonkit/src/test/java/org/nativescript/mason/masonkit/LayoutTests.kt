@@ -98,7 +98,7 @@ class LayoutTests {
 
       root.appendChild(child)
 
-      val floats = NativeHelpers.nativeNodeComputeWithSizeAndLayout(mason.getNativePtr(), root.nativePtr, 100f, 100f)
+      val floats = computeLayoutFloats(mason, root, 100f, 100f)
       if (floats.isNotEmpty()) root.layoutTree.fromFloatArray(floats)
 
       val layout = child.computedLayout
@@ -125,7 +125,7 @@ class LayoutTests {
       n.style.display = variant
 
       // unconstrained compute (compute+layout to populate layoutTree)
-      val floats = NativeHelpers.nativeNodeComputeWithSizeAndLayout(mason.getNativePtr(), n.nativePtr, 50f, 50f)
+      val floats = computeLayoutFloats(mason, n, 50f, 50f)
       if (floats.isNotEmpty()) n.layoutTree.fromFloatArray(floats)
       val lay = n.computedLayout
       assertTrue(lay.width > 0f && lay.width.isFinite())
@@ -149,7 +149,7 @@ class LayoutTests {
     root.appendChild(b)
     root.appendChild(f)
 
-    val floats = NativeHelpers.nativeNodeComputeWithSizeAndLayout(mason.getNativePtr(), root.nativePtr, 100f, 100f)
+    val floats = computeLayoutFloats(mason, root, 100f, 100f)
     if (floats.isNotEmpty()) root.layoutTree.fromFloatArray(floats)
 
     val lb = b.computedLayout
@@ -174,7 +174,7 @@ class LayoutTests {
     root.appendChild(inlineNode)
     root.appendChild(boxNode)
 
-    val floats = NativeHelpers.nativeNodeComputeWithSizeAndLayout(mason.getNativePtr(), root.nativePtr, 100f, 100f)
+    val floats = computeLayoutFloats(mason, root, 100f, 100f)
     if (floats.isNotEmpty()) root.layoutTree.fromFloatArray(floats)
 
     assertTrue(inlineNode.computedLayout.width > 0f)
@@ -203,7 +203,7 @@ class LayoutTests {
 
     root.appendChild(card)
 
-    val floats = NativeHelpers.nativeNodeComputeWithSizeAndLayout(mason.getNativePtr(), root.nativePtr, 300f, Float.NaN)
+    val floats = computeLayoutFloats(mason, root, 300f, Float.NaN)
     if (floats.isNotEmpty()) root.layoutTree.fromFloatArray(floats)
 
     val rects = NativeHelpers.nativeNodeGetFloatRects(mason.getNativePtr(), root.nativePtr)

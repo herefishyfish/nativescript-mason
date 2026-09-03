@@ -123,17 +123,33 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeRemoveContext(long mason, long node);
 
+  /**
+   * Computes at the given size and writes the flat layout tree into {@code output}.
+   *
+   * <p>Returns the number of floats the tree actually needs. When that exceeds
+   * {@code output.length} nothing usable was written — grow the buffer to the
+   * returned size and call again. This replaced a variant that allocated and
+   * returned a fresh {@code float[]} on every measure pass.
+   */
   @FastNative
-  static native float[] nativeNodeComputeWithSizeAndLayout(long mason,
-                                                           long node,
-                                                           float width,
-                                                           float height);
+  static native int nativeNodeComputeWithSizeAndLayout(long mason,
+                                                       long node,
+                                                       float width,
+                                                       float height,
+                                                       float[] output);
 
   @FastNative
   static native long[] nativeNodeGetChildren(long mason, long node);
 
+  /**
+   * Writes the current flat layout tree into {@code output} without recomputing.
+   *
+   * <p>Same grow-and-retry contract as
+   * {@link #nativeNodeComputeWithSizeAndLayout}: the return value is the number
+   * of floats required, not the number written.
+   */
   @FastNative
-  static native float[] nativeNodeLayout(long mason, long node);
+  static native int nativeNodeLayout(long mason, long node, float[] output);
 
   @FastNative
   static native long[] nativeNodeGetFloatRectWithIds(long mason, long node);
@@ -161,7 +177,11 @@ public class NativeHelpers {
   static native void nativeNodeSetSegments(long masonPtr, long nodePtr, InlineSegment[] segments);
 
   @FastNative
-  static native void nativeNodeSetSegmentsPacked(long masonPtr, long nodePtr, float[] floats, long[] longs, int[] kinds);
+  /**
+   * @param count how many segments are live in the arrays, which may be longer
+   *              than that when the caller reuses its packing buffers.
+   */
+  static native void nativeNodeSetSegmentsPacked(long masonPtr, long nodePtr, float[] floats, long[] longs, int[] kinds, int count);
 
   @CriticalNative
   static native void nativeSetAndroidNode(long masonPtr, long nodePtr, int node);

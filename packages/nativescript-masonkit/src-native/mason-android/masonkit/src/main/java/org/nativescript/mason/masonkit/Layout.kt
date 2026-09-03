@@ -49,13 +49,22 @@ class MasonLayoutTree {
   @JvmField
   internal var reading = false
 
-  /** Returns false (and leaves this tree untouched) if a DFS is currently reading it. */
-  fun fromFloatArray(args: FloatArray): Boolean {
+  /**
+   * Returns false (and leaves this tree untouched) if a DFS is currently reading it.
+   *
+   * [length] is how many floats of [args] are live. The native side now fills a
+   * caller-owned buffer that is usually longer than the tree it just wrote, so
+   * parsing all the way to `args.size` would read stale floats left behind by an
+   * earlier, larger layout.
+   */
+  @JvmOverloads
+  fun fromFloatArray(args: FloatArray, length: Int = args.size): Boolean {
     if (reading) {
       return false
     }
+    val limit = length.coerceIn(0, args.size)
     val STRIDE = 22
-    val estimatedNodes = args.size / STRIDE
+    val estimatedNodes = limit / STRIDE
     ensureCapacity(estimatedNodes, estimatedNodes) // rough estimate for child indices too
     nodeCount = 0
     childIndicesCount = 0
@@ -65,10 +74,10 @@ class MasonLayoutTree {
     // DFS stack: (nodeIndex, remainingChildren)
     val stack = ArrayList<IntArray>(32) // [nodeIndex, remaining]
 
-    while (arrayIndex < args.size) {
+    while (arrayIndex < limit) {
       // Ensure there are enough floats remaining for one node
-      if (arrayIndex + STRIDE > args.size) {
-        throw IllegalArgumentException("fromFloatArray: truncated args (expected stride=$STRIDE, remaining=${args.size - arrayIndex})")
+      if (arrayIndex + STRIDE > limit) {
+        throw IllegalArgumentException("fromFloatArray: truncated args (expected stride=$STRIDE, remaining=${limit - arrayIndex})")
       }
 
       // Make sure arrays can hold this node before writing

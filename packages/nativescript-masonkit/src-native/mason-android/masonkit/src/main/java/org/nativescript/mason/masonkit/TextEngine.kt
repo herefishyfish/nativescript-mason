@@ -1183,7 +1183,8 @@ class TextEngine(val container: TextContainer) {
         node.nativePtr,
         floats,
         longs,
-        kinds
+        kinds,
+        count
       )
     }
 

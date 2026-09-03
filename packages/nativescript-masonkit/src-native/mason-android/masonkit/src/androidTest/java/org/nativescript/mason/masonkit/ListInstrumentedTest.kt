@@ -337,11 +337,7 @@ class ListInstrumentedTest {
     li: Li, mason: Mason, width: Float, height: Float
   ): Layout {
     return Layout.fromFloatArray(
-      NativeHelpers.nativeNodeComputeWithSizeAndLayout(
-        mason.nativePtr,
-        li.node.nativePtr,
-        width, height
-      ), 0
+      computeLayoutFloats(mason, li.node, width, height), 0
     ).second
   }
 }

@@ -289,11 +289,7 @@ class InlineLayoutInstrumentedTest {
     tv: TextView, mason: Mason, width: Float, height: Float
   ): Layout {
     return Layout.fromFloatArray(
-      NativeHelpers.nativeNodeComputeWithSizeAndLayout(
-        mason.nativePtr,
-        tv.node.nativePtr,
-        width, height
-      ), 0
+      computeLayoutFloats(mason, tv.node, width, height), 0
     ).second
   }
 }

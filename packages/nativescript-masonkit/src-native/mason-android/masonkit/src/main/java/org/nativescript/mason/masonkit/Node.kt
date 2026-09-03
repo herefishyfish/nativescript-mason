@@ -80,6 +80,13 @@ open class Node internal constructor(
   // View/Scroll/Li applying its own subtree). Most nodes never do that.
   internal val layoutTree = MasonLayoutTree()
 
+  // Reusable destination for the native layout calls, which now fill a
+  // caller-owned buffer instead of allocating a fresh float[] per pass. Grows to
+  // the largest tree this node has produced and is never shrunk, so a steady
+  // state costs no allocation at all. Only nodes that drive their own layout
+  // pass ever touch it, exactly like `layoutTree` above.
+  internal var layoutScratch: FloatArray = FloatArray(0)
+
   // Where this node's geometry actually landed; `nv()` reads through this
   // pair rather than `layoutTree` directly, since a descendant's own
   // `layoutTree` may stay unset. Set together by applyLayoutFlat's DFS.
