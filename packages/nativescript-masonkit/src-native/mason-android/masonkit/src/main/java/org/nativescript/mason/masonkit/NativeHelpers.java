@@ -163,8 +163,12 @@ public class NativeHelpers {
   @CriticalNative
   static native void nativeNodeSetContext(long mason, long node, int measureFunc);
 
-  @FastNative
-  static native float[] nativeNodeComputeAndLayout(long mason, long node);
+  // nativeNodeComputeAndLayout was declared here, but the only Rust export for
+  // it is name-mangled for the Node class
+  // (Java_org_nativescript_mason_masonkit_Node_nativeComputeAndLayout) and it is
+  // absent from the NativeHelpers registration table, so every call threw
+  // UnsatisfiedLinkError. Callers now compute and read back via
+  // nativeNodeCompute + nativeNodeLayout, which are both registered.
 
   @FastNative
   static native void nativeNodeSetChildren(

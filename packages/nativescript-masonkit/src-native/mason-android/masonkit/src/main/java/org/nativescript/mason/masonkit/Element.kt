@@ -205,11 +205,19 @@ interface Element : EventTarget {
     var applied = true
     mason.inCompute = true
     try {
-      val layout = NativeHelpers.nativeNodeComputeAndLayout(mason.nativePtr, node.nativePtr)
-      if (layout.isEmpty()) {
+      // nativeNodeComputeAndLayout is declared on NativeHelpers but the only
+      // Rust export for it is name-mangled for the Node class, so it resolves
+      // to nothing and throws UnsatisfiedLinkError. Compute and read back with
+      // the two calls that *are* registered — which also avoids the per-call
+      // float[] that this branch is trying to get rid of everywhere else.
+      NativeHelpers.nativeNodeCompute(mason.nativePtr, node.nativePtr)
+      val required = fillLayoutBuffer {
+        NativeHelpers.nativeNodeLayout(mason.nativePtr, node.nativePtr, it)
+      }
+      if (required <= 0 || required > node.layoutScratch.size) {
         return MasonLayoutTree.empty
       }
-      applied = node.layoutTree.fromFloatArray(layout)
+      applied = node.layoutTree.fromFloatArray(node.layoutScratch, required)
     } finally {
       mason.inCompute = false
       node.computeCache = SizeF(-1f, -1f)
@@ -227,9 +235,16 @@ interface Element : EventTarget {
    */
   fun layout(): Layout {
     val mason = node.mason
-    val floats = NativeHelpers.nativeNodeComputeAndLayout(mason.nativePtr, node.nativePtr)
-    if (floats.isEmpty()) return Layout.empty
-    return Layout.fromFloatArray(floats, 0).second
+    // Same substitution as computeAndLayout() above: the ComputeAndLayout
+    // export is unreachable from NativeHelpers, so compute and read back
+    // separately. Layout.fromFloatArray walks by child counts rather than to
+    // the end of the array, so the reusable buffer needs no length here.
+    NativeHelpers.nativeNodeCompute(mason.nativePtr, node.nativePtr)
+    val required = fillLayoutBuffer {
+      NativeHelpers.nativeNodeLayout(mason.nativePtr, node.nativePtr, it)
+    }
+    if (required <= 0 || required > node.layoutScratch.size) return Layout.empty
+    return Layout.fromFloatArray(node.layoutScratch, 0).second
   }
 
   fun computeAndLayout(width: Float, height: Float): MasonLayoutTree {
