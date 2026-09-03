@@ -2,7 +2,7 @@ import { CssProperty, Style, ViewBase as NSViewBase, ShorthandProperty, fontSize
 import { Display, Overflow, Length, Gap, LengthAuto, Position, BoxSizing, GridAutoFlow, JustifyItems, JustifySelf, AlignContent, VerticalAlign, Float, Clear } from '.';
 import { parseCSSShadow } from '@nativescript/core/ui/styling/css-shadow';
 import type { TextBase, ViewBase } from './common';
-import { isMasonChild_, isMasonView_ } from './symbols';
+import { isMasonView_ } from './symbols';
 import type { Style as MasonStyle } from './style';
 import { alignSelfProperty, flexDirectionProperty, flexGrowProperty, flexShrinkProperty, flexWrapProperty, justifyContentProperty } from '@nativescript/core/ui/layouts/flexbox-layout';
 
@@ -11,10 +11,16 @@ function getViewStyle(view: WeakRef<NSViewBase> | WeakRef<TextBase>): MasonStyle
   return ret._styleHelper as MasonStyle;
 }
 
+// Asks whether the view *is* a mason element, not whether it sits inside one.
+// Upstream dropped the `isMasonChild_` symbol in favour of the plain
+// `_isMasonChild` flag and deliberately narrowed this test at the same time: a
+// plain NativeScript view parented into a mason tree has no mason style buffer,
+// so its value still has to go through core's converter or core's own setNative
+// receives a string it cannot use.
 function isMasonViewOrChild(style: Style): boolean {
   if (style && style.viewRef) {
     const view = __ANDROID__ ? style.viewRef.get() : style.viewRef.deref();
-    return view && (view[isMasonView_] || view[isMasonChild_]);
+    return !!(view && view[isMasonView_]);
   }
   return false;
 }
