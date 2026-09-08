@@ -1124,9 +1124,23 @@ class Style internal constructor(@Transient internal var node: Node) {
       field = value
     }
 
+  /**
+   * Bumped by every style write on this node. Lets draw-time caches revalidate
+   * with one comparison instead of re-reading the style bytes they derive from
+   * — [BorderRenderer.updateCache] hashed ~30 buffer fields on *every draw of
+   * every bordered view* to answer the same question.
+   *
+   * Deliberately per-node and write-granular rather than border-granular: any
+   * write bumps it, so a cache keyed on it can never go stale, and the cost of
+   * an occasional redundant rebuild is far below the cost of the hash.
+   */
+  internal var styleWriteVersion = 0L
+    private set
+
   private fun isDirtyEmpty(): Boolean = (isDirty == -1L && isDirtyHigh == -1L)
 
   internal fun setOrAppendState(value: StateKeys) {
+    styleWriteVersion++
     if (isDirtyEmpty()) {
       isDirty = value.low
       isDirtyHigh = value.high
@@ -1140,6 +1154,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal fun setOrAppendState(keys: Array<StateKeys>) {
+    styleWriteVersion++
     for (value in keys) {
       if (isDirtyEmpty()) {
         isDirty = value.low
@@ -1187,6 +1202,7 @@ class Style internal constructor(@Transient internal var node: Node) {
   }
 
   internal fun setStateFromHalves(low: Long, high: Long) {
+    styleWriteVersion++
     if (isDirtyEmpty()) {
       isDirty = low
       isDirtyHigh = high
@@ -4202,6 +4218,13 @@ class Style internal constructor(@Transient internal var node: Node) {
     isValueInitialized = true
 
     updateTextStyle()
+
+    // Callers that set the dirty flags directly rather than through
+    // setOrAppendState (Border's radius path, Mason.setStyle) reach the
+    // version counter only here.
+    if (!isDirtyEmpty() || isSlowDirty) {
+      styleWriteVersion++
+    }
 
     val stateKeys = StateKeys(isDirty, isDirtyHigh)
     val directionDirty = stateKeys.hasFlag(StateKeys.DIRECTION)
