@@ -53,9 +53,8 @@ private fun maxWordWidth(text: CharSequence, paint: TextPaint, useLayout: Boolea
     val isWs = i < len && text[i].isWhitespace()
     if (i == len || isWs) {
       if (i > start) {
-        // Measure the range in place. subSequence() on a SpannableStringBuilder
-        // copies both characters and spans, which is a per-word allocation on a
-        // path flex/grid probes constantly.
+        // Measure the range directly; slicing a Spannable per word copies
+        // overlapping spans and turns this loop quadratic.
         val w = if (useLayout) Layout.getDesiredWidth(text, start, i, paint)
         else paint.measureText(text, start, i)
         if (w > maxW) maxW = w

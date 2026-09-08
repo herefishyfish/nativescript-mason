@@ -1,4 +1,6 @@
 import { layout } from '@nativescript/core/utils';
+import { cssUnits } from './units';
+import { reportCssDiagnostic } from './diagnostics';
 import type { GridAutoFlow, Length, LengthAuto, VerticalAlign, View } from '.';
 import { Color, CoreTypes, Length as CoreLength, PercentLength as CorePercentLength } from '@nativescript/core';
 import { AlignContent, AlignSelf, AlignItems, JustifyContent, JustifySelf, _parseGridAutoRowsColumns, _setGridAutoRows, _setGridAutoColumns, _parseGridLine, JustifyItems, GridTemplates, _parseGridTemplates, _setGridTemplateColumns, _setGridTemplateRows, _getGridTemplateRows, _getGridTemplateColumns, Float, Clear } from './utils';
@@ -295,6 +297,151 @@ function parseLengthPercentageAuto(type: number, value: number): LengthAuto {
     case 2:
       return { value, unit: '%' };
   }
+}
+
+// CSS `px` is a CSS pixel, which is the same size as a dip — so it scales with
+// the device, exactly as on the web. This deliberately differs from
+// @nativescript/core, where `px` means a literal device pixel; `dppx` is the
+// escape hatch for that meaning.
+const DEVICE_PIXEL_UNIT = 'dppx';
+
+function isDevicePixelToken(token: string): boolean {
+  return token.trim().toLowerCase().endsWith(DEVICE_PIXEL_UNIT);
+}
+
+// A declaration that parses to a non-finite number (`1e999px`, `calc(infinity *
+// 1px)` after core evaluates it) is not usable; treat it as 0, matching how the
+// existing parsers already handle an unparsable value.
+function finite(n: number): number {
+  if (Number.isFinite(n)) {
+    return n;
+  }
+  reportCssDiagnostic({ kind: 'unparsable-value', name: 'length', value: String(n), detail: 'not a finite number, treated as 0' });
+  return 0;
+}
+
+/** 1pt = 1/72in and 1 CSS px = 1/96in, so a point is 96/72 CSS px. */
+const PX_PER_PT = 96 / 72;
+
+/**
+ * Resolve a CSS length token to the device pixels the geometry buffers store.
+ *
+ * `emBasis` is the font size `em` is relative to, in CSS px — the element's own
+ * for a length, the parent's for `font-size` itself. It falls back to the root
+ * font size when the element has no font size of its own yet.
+ *
+ * Suffix order matters: `rem` also ends with `em`, and `dppx` with `px`.
+ */
+function tokenToDevicePx(token: string, raw: number, emBasis?: number): number {
+  const n = finite(raw);
+  const t = token.trim().toLowerCase();
+
+  if (t.endsWith(DEVICE_PIXEL_UNIT)) return n;
+  if (t.endsWith('rem')) return layout.toDevicePixels(n * cssUnits.rootFontSize);
+  if (t.endsWith('em')) return layout.toDevicePixels(n * (emBasis && emBasis > 0 ? emBasis : cssUnits.rootFontSize));
+  if (t.endsWith('pt')) return layout.toDevicePixels(n * PX_PER_PT);
+  if (t.endsWith('vmin') || t.endsWith('vmax') || t.endsWith('vw') || t.endsWith('vh')) {
+    if (cssUnits.viewportWidth <= 0 || cssUnits.viewportHeight <= 0) {
+      reportCssDiagnostic({ kind: 'unsupported-unit', name: 'length', value: t, detail: 'viewport size not known yet, resolved to 0' });
+      return 0;
+    }
+    if (t.endsWith('vmin')) return layout.toDevicePixels((n / 100) * Math.min(cssUnits.viewportWidth, cssUnits.viewportHeight));
+    if (t.endsWith('vmax')) return layout.toDevicePixels((n / 100) * Math.max(cssUnits.viewportWidth, cssUnits.viewportHeight));
+    if (t.endsWith('vw')) return layout.toDevicePixels((n / 100) * cssUnits.viewportWidth);
+    return layout.toDevicePixels((n / 100) * cssUnits.viewportHeight);
+  }
+
+  // A function value — calc(), clamp(), min(), max(), var() — leaves parseFloat
+  // with nothing, so the declaration collapses to 0. Core evaluates calc() and
+  // var() for stylesheet declarations before mason sees them, but an inline
+  // style or a direct JSX assignment comes straight here.
+  const fn = /^([a-z-]+)\(/.exec(t);
+  if (fn) {
+    reportCssDiagnostic({ kind: 'not-implemented', name: 'length', value: t, detail: `${fn[1]}() is not evaluated here; it resolves only in a stylesheet, where core expands it first` });
+    return 0;
+  }
+
+  // A trailing alphabetic run that isn't a unit we know is a silent
+  // mis-resolution waiting to happen — `1ch` would quietly become 1 CSS px.
+  const unit = /[a-z%]+$/.exec(t)?.[0];
+  if (unit && unit !== 'px' && unit !== 'dip') {
+    reportCssDiagnostic({ kind: 'unsupported-unit', name: 'length', value: t, detail: `unknown unit "${unit}", treated as CSS px` });
+  }
+
+  // px, dip and a bare number are all CSS pixels.
+  return layout.toDevicePixels(n);
+}
+
+/**
+ * Parse the `aspect-ratio` value into the single float the buffer holds.
+ *
+ * CSS allows `<number>`, a `<ratio>` (`2 / 3`), `auto`, and `auto` alongside a
+ * ratio. The buffer is one f32 and NaN means "no ratio", so every shape has
+ * to land here first — a raw `'2 / 3'` handed straight to `setFloat32` would
+ * coerce to NaN.
+ */
+export function parseAspectRatio(value: unknown): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : Number.NaN;
+  }
+  if (typeof value !== 'string') {
+    return Number.NaN;
+  }
+  // `auto` may accompany a ratio (`auto 2 / 3`); mason keeps the ratio, which is
+  // what `auto` falls back to for any element without an intrinsic one.
+  const t = value
+    .trim()
+    .toLowerCase()
+    .replace(/\bauto\b/g, ' ')
+    .trim();
+  if (t === '') {
+    return Number.NaN;
+  }
+  const slash = t.indexOf('/');
+  if (slash === -1) {
+    const n = Number(t);
+    if (!Number.isFinite(n) || n <= 0) {
+      reportCssDiagnostic({ kind: 'unparsable-value', name: 'aspect-ratio', value, detail: 'expected a positive <number>, a <ratio> like "2 / 3", or auto' });
+      return Number.NaN;
+    }
+    return n;
+  }
+  const width = Number(t.slice(0, slash).trim());
+  const height = Number(t.slice(slash + 1).trim());
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    reportCssDiagnostic({ kind: 'unparsable-value', name: 'aspect-ratio', value, detail: 'both sides of a <ratio> must be positive numbers' });
+    return Number.NaN;
+  }
+  return width / height;
+}
+
+/**
+ * Resolve a CSS length to the CSS pixels (== dips) core's `Length` speaks.
+ *
+ * core's own CSS properties (`width`/`height`/`min-*`/`max-*`) parse a
+ * stylesheet declaration with `PercentLength.parse` — a bare `parseFloat` —
+ * so `100vh` arrives as the number 100 and `px` as a device pixel rather
+ * than Mason's CSS pixel. Returns `undefined` for anything that isn't a
+ * plain length (`auto`, a percentage, a keyword, `calc()`), leaving those to
+ * their existing paths.
+ */
+export function cssLengthToDip(value: unknown, emBasis?: number): number | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const t = value.trim().toLowerCase();
+  if (t === '' || t === 'auto' || t.endsWith('%')) {
+    return undefined;
+  }
+  // Sizing keywords and function values have their own handling.
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?[a-z]*$/.test(t)) {
+    return undefined;
+  }
+  const n = parseFloat(t);
+  if (!Number.isFinite(n)) {
+    return undefined;
+  }
+  return layout.toDeviceIndependentPixels(tokenToDevicePx(t, n, emBasis));
 }
 
 function parseLengthPercentage(type: number, value: number): Length {
@@ -2773,9 +2920,16 @@ export class Style {
     return getFloat32(this.style_view, StyleKeys.ASPECT_RATIO);
   }
 
-  set aspectRatio(value: number) {
+  set aspectRatio(value: number | string) {
+    // A string arrives from a stylesheet, an inline style or a JSX prop; all
+    // three go through the same parser so `2 / 3` means what it does on the web.
+    const ratio = typeof value === 'number' ? value : parseAspectRatio(value);
+    const current = getFloat32(this.style_view, StyleKeys.ASPECT_RATIO);
+    // NaN is "no ratio" and never equals itself, so compare that case by hand
+    // or every re-assignment would rewrite the buffer and re-dirty the node.
+    if (current === ratio || (Number.isNaN(current) && Number.isNaN(ratio))) return;
     this.prepareMut();
-    setFloat32(this.style_view, StyleKeys.ASPECT_RATIO, value);
+    setFloat32(this.style_view, StyleKeys.ASPECT_RATIO, ratio);
     this.commitState(StateKeys.ASPECT_RATIO);
   }
 
