@@ -354,20 +354,29 @@ class BoxShadowRenderer(private val style: Style) {
           tmpRadii
         } else null
 
-        // Create shape
-        val shapeBitmap = createShapeBitmap(shapeW, shapeH, adjustedRadii, pool)
-
-        // Create blurred shadow
-        val shadowBitmap = createBlurredShadowBitmapRS(
-          context, shapeBitmap, shadow.blurRadius, shadow.color, pool
-        )
-
-        pool.putBitmap(shapeBitmap)
-
-        // Calculate draw position
         val drawX = shadow.offsetX - spread - blurPad.toFloat()
         val drawY = shadow.offsetY - spread - blurPad.toFloat()
-        clearOutsetShadowInterior(shadowBitmap, -drawX, -drawY, width, height, radii)
+        val key = SharedBoxShadowCache.Key(
+          width.toInt(),
+          height.toInt(),
+          adjustedRadii?.map(SharedBoxShadowCache::floatBits) ?: emptyList(),
+          SharedBoxShadowCache.floatBits(shadow.blurRadius),
+          SharedBoxShadowCache.floatBits(spread),
+          shadow.color,
+          SharedBoxShadowCache.floatBits(shadow.offsetX),
+          SharedBoxShadowCache.floatBits(shadow.offsetY),
+          context.resources.displayMetrics.densityDpi,
+        )
+        val shadowBitmap = SharedBoxShadowCache.get(key) ?: run {
+          val shapeBitmap = createShapeBitmap(shapeW, shapeH, adjustedRadii, pool)
+          val rendered = createBlurredShadowBitmapRS(
+            context, shapeBitmap, shadow.blurRadius, shadow.color, pool
+          )
+          pool.putBitmap(shapeBitmap)
+          clearOutsetShadowInterior(rendered, -drawX, -drawY, width, height, radii)
+          SharedBoxShadowCache.put(key, rendered)
+          rendered
+        }
 
         entries.add(ShadowBitmapEntry(shadowBitmap, drawX, drawY, false))
       }
