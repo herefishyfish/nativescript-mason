@@ -15,6 +15,7 @@ import android.graphics.RenderEffect
 import android.graphics.RenderNode
 import android.graphics.Shader
 import android.os.Build
+import android.os.SystemClock
 import android.renderscript.Allocation
 import android.renderscript.Element
 import android.renderscript.RenderScript
@@ -203,7 +204,7 @@ class BoxShadowRenderer(private val style: Style) {
     val outsetShadows = cachedOutsetList!!
     if (outsetShadows.isEmpty()) return
 
-    if (!forceLegacy && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    if (!forceLegacy && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && canvas.isHardwareAccelerated) {
       drawOutsetShadowsV31(view, canvas, width, height, borderRenderer, outsetShadows)
     } else {
       drawOutsetShadowsLegacy(view.context, canvas, width, height, borderRenderer, outsetShadows)
@@ -220,6 +221,7 @@ class BoxShadowRenderer(private val style: Style) {
     shadows: List<Shadow.BoxShadow>
   ) {
     if (needsRebuild(width, height)) {
+      val buildStarted = SystemClock.elapsedRealtimeNanos()
       val nodes = mutableListOf<RenderNode>()
       val hasRadii = borderRenderer.hasRadii()
       val radii = if (hasRadii) borderRenderer.getRadii() else null
@@ -303,6 +305,7 @@ class BoxShadowRenderer(private val style: Style) {
       }
 
       outsetShadowNodes = nodes
+      HardwareShadowStats.recordBuild(nodes.size, buildStarted)
       cachedWidth = width
       cachedHeight = height
       cachedShadowsHash = style.boxShadowsHash()
