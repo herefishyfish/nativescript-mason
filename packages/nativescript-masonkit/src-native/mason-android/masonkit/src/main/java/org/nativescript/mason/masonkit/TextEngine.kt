@@ -2394,7 +2394,11 @@ class TextEngine(val container: TextContainer) {
   internal fun invalidateInlineSegments(markDirty: Boolean = true, quiet: Boolean = false) {
     Node.bumpTextInvalidationEpoch()
     segmentsInvalidateVersion += 1
-    staleMeasures[this] = true
+    // put returns null when the key was absent — increment under the same
+    // main-thread discipline that guards every other staleMeasures mutation
+    // so the counter and the map never disagree (modulo GC expunge drift,
+    // which only delays one warm cycle).
+    if (staleMeasures.put(this, true) == null) staleCount.incrementAndGet()
     cachedAttributedString = null
     minMeasuredTextWidth = 0f
     minMeasuredTextHeight = 0f
@@ -2484,6 +2488,13 @@ class TextEngine(val container: TextContainer) {
 
     private val staleMeasures = java.util.WeakHashMap<TextEngine, Boolean>()
 
+    // O(1) mirror of staleMeasures.size: WeakHashMap.size() expunges stale
+    // refs on every call, which costs the small-mutation compute path 2-3us.
+    // Guarded by the same main-thread discipline as staleMeasures: added in
+    // invalidateInlineSegments, drained in collectWarmBatch, clamped at 0
+    // against GC expunge drift (a drifted count only delays one warm cycle).
+    private val staleCount = java.util.concurrent.atomic.AtomicInteger(0)
+
     // Batches smaller than this warm inline: the thread-hop cost outweighs
     // the parallelism for a handful of engines.
     private const val PARALLEL_WARM_MIN = 4
@@ -2493,7 +2504,7 @@ class TextEngine(val container: TextContainer) {
     // warmMeasuresParallel skips everything — no flush, no WeakHashMap
     // iteration, zero allocations. Far above the 0-2 stale engines typical of
     // text/style mutations; far below the ~88 stale engines of a cold deep
-    // layout compute. staleMeasures.size is O(1) and counts all roots, so a
+    // layout compute. Gated on staleCount (O(1) mirror of the set size), so a
     // pass can only warm when its own root is at least this dirty.
     private const val WARM_MIN_STALE_ENGINES = 16
 
@@ -2527,8 +2538,10 @@ class TextEngine(val container: TextContainer) {
       // Zero-bookkeeping fast path: below the threshold this is a small
       // mutation and warming strictly loses, so do nothing at all. Entries
       // left in staleMeasures are drained by the next warmMeasures exactly as
-      // in baseline — compute(w, h) never drained them there either.
-      if (staleMeasures.size < WARM_MIN_STALE_ENGINES) return
+      // in baseline — compute(w, h) never drained them there either. The gate
+      // is a single volatile read on the O(1) counter (WeakHashMap.size()
+      // would expunge stale refs on every small-mutation compute).
+      if (staleCount.get() < WARM_MIN_STALE_ENGINES) return
       val batch = collectWarmBatch(forRoot)
       if (batch.size < PARALLEL_WARM_MIN) {
         for (engine in batch) warmEngineProbes(engine)
@@ -2563,11 +2576,13 @@ class TextEngine(val container: TextContainer) {
       Style.flushPendingMetrics(forRoot)
       if (staleMeasures.isEmpty()) return emptyList()
       val batch = ArrayList<TextEngine>()
+      var drained = 0
       val it = staleMeasures.entries.iterator()
       while (it.hasNext()) {
         val engine = it.next().key ?: continue
         if ((engine.node.getRootNode() ?: engine.node) !== forRoot) continue
         it.remove()
+        drained += 1
         if (engine.container !is TextView || !engine.warmable()) continue
         (engine.container.node.view as? View)?.let {
           if (it.layoutParams == null) {
@@ -2578,6 +2593,9 @@ class TextEngine(val container: TextContainer) {
         }
         batch.add(engine)
       }
+      // Mirror the removals so the counter never disagrees with the map;
+      // clamped at 0 against GC expunge drift (only delays one warm cycle).
+      if (drained > 0) staleCount.updateAndGet { cur -> maxOf(0, cur - drained) }
       return batch
     }
 
