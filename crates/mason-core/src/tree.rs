@@ -112,9 +112,33 @@ struct StepStat {
 
 static TIMING_ENABLED: OnceLock<bool> = OnceLock::new();
 
+#[cfg(target_os = "android")]
+fn android_debug_prop(name: &str) -> Option<String> {
+    // libc is always linked on Android; no crate dependency needed.
+    extern "C" {
+        fn __system_property_get(name: *const std::os::raw::c_char, value: *mut std::os::raw::c_char) -> i32;
+    }
+    let c_name = std::ffi::CString::new(name).ok()?;
+    let mut buf = vec![0u8; 92]; // PROP_VALUE_MAX
+    let len = unsafe { __system_property_get(c_name.as_ptr(), buf.as_mut_ptr() as *mut std::os::raw::c_char) };
+    if len <= 0 {
+        None
+    } else {
+        Some(String::from_utf8_lossy(&buf[..len as usize]).into_owned())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn android_debug_prop(_name: &str) -> Option<String> {
+    None
+}
+
 #[inline(always)]
 fn timing_enabled() -> bool {
-    *TIMING_ENABLED.get_or_init(|| std::env::var("MASON_TIMING").as_deref() == Ok("1"))
+    *TIMING_ENABLED.get_or_init(|| {
+        std::env::var("MASON_TIMING").as_deref() == Ok("1")
+            || android_debug_prop("debug.mason.timing").as_deref() == Some("1")
+    })
 }
 
 thread_local! {
