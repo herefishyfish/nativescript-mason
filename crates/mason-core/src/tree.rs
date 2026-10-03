@@ -73,6 +73,32 @@ const STEP_NAMES: [&str; STEP_COUNT] = [
     "round_layout",
 ];
 
+// In-pass sub-timers: attribute time *inside* `compute_root_layout` (step 8).
+// These fire only while `LAYOUT_DEPTH > 0`, so out-of-pass calls to the
+// same helpers (style reads from FFI, etc.) never pollute a pass's buckets.
+// `lock_only` overlaps the other buckets (it isolates the RwLock acquisition
+// inside the same helpers) — exclude it when summing parts against
+// `compute_root_layout`.
+
+const SUB_STYLE_FETCH: usize = 0;
+const SUB_CACHE_GET: usize = 1;
+const SUB_CACHE_STORE: usize = 2;
+const SUB_LEAF_STYLE_BUILD: usize = 3;
+const SUB_CHILD_IDS_FETCH: usize = 4;
+const SUB_LOCK_ONLY: usize = 5;
+const SUB_MEASURE_CB: usize = 6;
+const SUB_COUNT: usize = 7;
+
+const SUB_NAMES: [&str; SUB_COUNT] = [
+    "style_fetch",
+    "cache_get",
+    "cache_store",
+    "leaf_style_build",
+    "child_ids_fetch",
+    "lock_only",
+    "measure_callback",
+];
+
 #[derive(Clone, Copy)]
 struct StepStat {
     total_ns: u64,
@@ -91,12 +117,17 @@ thread_local! {
     static STEP_STATS: RefCell<[StepStat; STEP_COUNT]> = const {
         RefCell::new([StepStat { total_ns: 0, count: 0, last_ns: 0 }; STEP_COUNT])
     };
+    static SUB_STATS: RefCell<[StepStat; SUB_COUNT]> = const {
+        RefCell::new([StepStat { total_ns: 0, count: 0, last_ns: 0 }; SUB_COUNT])
+    };
 }
 
 /// RAII per-step timer. When `timing` is false (the gate read once per
 /// `compute_layout`), construction is a no-op and `Drop` does nothing.
+/// `start_sub` accumulates into the in-pass `SUB_STATS` instead of `STEP_STATS`.
 struct StepTimer {
     step: usize,
+    sub: bool,
     start: Option<Instant>,
 }
 
@@ -105,6 +136,16 @@ impl StepTimer {
     fn start(step: usize, timing: bool) -> StepTimer {
         StepTimer {
             step,
+            sub: false,
+            start: if timing { Some(Instant::now()) } else { None },
+        }
+    }
+
+    #[inline(always)]
+    fn start_sub(step: usize, timing: bool) -> StepTimer {
+        StepTimer {
+            step,
+            sub: true,
             start: if timing { Some(Instant::now()) } else { None },
         }
     }
@@ -114,13 +155,16 @@ impl Drop for StepTimer {
     fn drop(&mut self) {
         if let Some(start) = self.start.take() {
             let last_ns = start.elapsed().as_nanos() as u64;
-            let _ = STEP_STATS.try_with(|stats| {
-                let mut stats = stats.borrow_mut();
-                let s = &mut stats[self.step];
-                s.total_ns = s.total_ns.saturating_add(last_ns);
-                s.count = s.count.saturating_add(1);
-                s.last_ns = last_ns;
-            });
+            let record = |stats: &mut StepStat| {
+                stats.total_ns = stats.total_ns.saturating_add(last_ns);
+                stats.count = stats.count.saturating_add(1);
+                stats.last_ns = last_ns;
+            };
+            if self.sub {
+                let _ = SUB_STATS.try_with(|stats| record(&mut stats.borrow_mut()[self.step]));
+            } else {
+                let _ = STEP_STATS.try_with(|stats| record(&mut stats.borrow_mut()[self.step]));
+            }
         }
     }
 }
@@ -131,9 +175,21 @@ fn report_step_stats() {
     }
     let _ = STEP_STATS.try_with(|stats| {
         let mut stats = stats.borrow_mut();
-        let mut line = String::with_capacity(512);
+        let mut line = String::with_capacity(1024);
         line.push_str("MASON_STEP");
         for (i, name) in STEP_NAMES.iter().enumerate() {
+            let s = stats[i];
+            line.push_str(&format!(" {name}={}ns/{}x/{}last", s.total_ns, s.count, s.last_ns));
+            // reset so each reported line covers a single compute_layout pass
+            stats[i] = StepStat { total_ns: 0, count: 0, last_ns: 0 };
+        }
+        log::info!("{line}");
+    });
+    let _ = SUB_STATS.try_with(|stats| {
+        let mut stats = stats.borrow_mut();
+        let mut line = String::with_capacity(1024);
+        line.push_str("MASON_STEP");
+        for (i, name) in SUB_NAMES.iter().enumerate() {
             let s = stats[i];
             line.push_str(&format!(" {name}={}ns/{}x/{}last", s.total_ns, s.count, s.last_ns));
             // reset so each reported line covers a single compute_layout pass
@@ -528,6 +584,9 @@ impl Tree {
 
     #[inline(always)]
     fn node_from_id(&self, node_id: NodeId) -> MappedRwLockReadGuard<'_, RawRwLock, Node> {
+        // lock_only: approximates the RwLock read acquisition; also covers the
+        // map+index inside the guard (a few ns). Overlaps style_fetch/cache buckets.
+        let _t = StepTimer::start_sub(SUB_LOCK_ONLY, timing_enabled() && in_layout_pass());
         RwLockReadGuard::map(self.0.read(), |v| {
             let key: Id = node_id.into();
             match v.nodes.get(key) {
@@ -539,11 +598,15 @@ impl Tree {
 
     #[inline(always)]
     fn node_from_id_mut(&mut self, node_id: NodeId) -> MappedRwLockWriteGuard<'_, RawRwLock, Node> {
+        let _t = StepTimer::start_sub(SUB_LOCK_ONLY, timing_enabled() && in_layout_pass());
         RwLockWriteGuard::map(self.0.write(), |v| v.nodes.get_mut(node_id.into()).unwrap())
     }
 
     #[inline(always)]
     pub fn style_from_id(&self, node_id: NodeId) -> MappedRwLockReadGuard<'_, RawRwLock, Style> {
+        // style_fetch: covers all taffy style reads (flex container, flex child,
+        // grid, block core style) since they all funnel through here.
+        let _t = StepTimer::start_sub(SUB_STYLE_FETCH, timing_enabled() && in_layout_pass());
         RwLockReadGuard::map(self.0.read(), |v| {
             v.nodes.get(node_id.into()).unwrap().style()
         })
@@ -2089,6 +2152,7 @@ impl TraversePartialTree for Tree {
     type ChildIter<'a> = ChildIter<'a>;
 
     fn child_ids(&self, node_id: NodeId) -> Self::ChildIter<'_> {
+        let _t = StepTimer::start_sub(SUB_CHILD_IDS_FETCH, timing_enabled() && in_layout_pass());
         let guard = RwLockReadGuard::map(self.0.read(), |v| {
             return v.children.get(node_id.into()).unwrap();
         });
@@ -2204,6 +2268,7 @@ fn measure_cache_key(ignores_offered_height: bool, inputs: &LayoutInput) -> Layo
 impl CacheTree for Tree {
     #[inline]
     fn cache_get(&mut self, node_id: NodeId, inputs: &LayoutInput) -> Option<LayoutOutput> {
+        let _t = StepTimer::start_sub(SUB_CACHE_GET, timing_enabled() && in_layout_pass());
         let node = self.node_from_id_mut(node_id);
         node.cache.get(&measure_cache_key(node.ignores_offered_height, inputs))
     }
@@ -2215,6 +2280,7 @@ impl CacheTree for Tree {
         inputs: &taffy::LayoutInput,
         layout_output: taffy::LayoutOutput,
     ) {
+        let _t = StepTimer::start_sub(SUB_CACHE_STORE, timing_enabled() && in_layout_pass());
         let mut node = self.node_from_id_mut(node_id);
         let key = measure_cache_key(node.ignores_offered_height, inputs);
         node.cache.store(&key, layout_output);
@@ -2517,6 +2583,10 @@ impl LayoutBlockContainer for Tree {
                         // Extract data under short locks, then drop before
                         // calling compute_leaf_layout (measure is FFI).
                         let (has_measure, style, style_size, measure, is_text_container, tree_uid) = {
+                            let _t = StepTimer::start_sub(
+                                SUB_LEAF_STYLE_BUILD,
+                                timing_enabled() && in_layout_pass(),
+                            );
                             let inner = tree.inner();
                             let tree_uid = inner.uid;
                             let node = inner.nodes.get(id).unwrap();
@@ -2646,7 +2716,13 @@ impl LayoutBlockContainer for Tree {
                                         // under a short lock. Do not call platform/native
                                         // measurement while holding tree write locks; callers
                                         // must snapshot data then invoke measure.
-                                        let meas = measure.measure(final_known, available_space);
+                                        let meas = {
+                                            let _t = StepTimer::start_sub(
+                                                SUB_MEASURE_CB,
+                                                timing_enabled() && in_layout_pass(),
+                                            );
+                                            measure.measure(final_known, available_space)
+                                        };
                                         block_measure_cache().entry(cache_key)
                                             .or_insert_with(InlineMeasureCache::new)
                                             .store(q_known, key_avail, meas);
@@ -2799,6 +2875,10 @@ impl LayoutBlockContainer for Tree {
                         // Call the measure function; many native `Li`
                         // implementations return the marker size when
                         // measured.
+                        let _t = StepTimer::start_sub(
+                            SUB_MEASURE_CB,
+                            timing_enabled() && in_layout_pass(),
+                        );
                         m.measure(Size::NONE, inputs.available_space)
                     } else {
                         Size::ZERO
