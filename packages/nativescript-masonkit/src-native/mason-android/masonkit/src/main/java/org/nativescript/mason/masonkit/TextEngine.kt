@@ -331,6 +331,13 @@ class TextEngine(val container: TextContainer) {
   private var textLayoutFlushPending = false
   private var textVisualFlushPending = false
 
+  // True while this engine is being primed by a warming probe. Per-engine
+  // (not companion-shared) so parallel warmers of distinct engines never
+  // publish a flag other threads read; while set, measure() skips all JNI
+  // (deferred segments flush, native segments push) like the warming=true
+  // semantics this replaces.
+  private var warmingProbe = false
+
   internal fun flushTextStyleIfNeeded(quiet: Boolean = false) {
     if (!textStyleFlushPending) return
     pendingTextStyleFlush.remove(this)
@@ -812,7 +819,7 @@ class TextEngine(val container: TextContainer) {
     // measured many times per compute and each post was a Handler message.
     val pendingInvalidate = style.fontDirty && !style.pendingMetricsSync
     try {
-      if (!warming) deferredSegments?.let {
+      if (!warmingProbe) deferredSegments?.let {
         deferredSegments = null
         NativeHelpers.nativeNodeSetSegmentsPacked(node.mason.nativePtr, node.nativePtr, it.floats, it.longs, it.kinds)
       }
@@ -824,7 +831,7 @@ class TextEngine(val container: TextContainer) {
         -2f -> 1L
         else -> 2L
       }
-      if (mcWMode == 2L && !warming) {
+      if (mcWMode == 2L && !warmingProbe) {
         lastDefiniteKnownWidth = knownWidth
         lastDefiniteKnownHeight = knownHeight
         lastDefiniteAvailableWidth = availableWidth
@@ -1380,7 +1387,7 @@ class TextEngine(val container: TextContainer) {
           }
         }
       }
-      if (warming) {
+      if (warmingProbe) {
         deferredSegments = PackedSegments(floats, longs, kinds)
       } else {
         deferredSegments = null
@@ -2387,7 +2394,11 @@ class TextEngine(val container: TextContainer) {
   internal fun invalidateInlineSegments(markDirty: Boolean = true, quiet: Boolean = false) {
     Node.bumpTextInvalidationEpoch()
     segmentsInvalidateVersion += 1
-    staleMeasures[this] = true
+    // put returns null when the key was absent — increment under the same
+    // main-thread discipline that guards every other staleMeasures mutation
+    // so the counter and the map never disagree (modulo GC expunge drift,
+    // which only delays one warm cycle).
+    if (staleMeasures.put(this, true) == null) staleCount.incrementAndGet()
     cachedAttributedString = null
     minMeasuredTextWidth = 0f
     minMeasuredTextHeight = 0f
@@ -2477,40 +2488,153 @@ class TextEngine(val container: TextContainer) {
 
     private val staleMeasures = java.util.WeakHashMap<TextEngine, Boolean>()
 
-    private var warming = false
+    // O(1) mirror of staleMeasures.size: WeakHashMap.size() expunges stale
+    // refs on every call, which costs the small-mutation compute path 2-3us.
+    // Guarded by the same main-thread discipline as staleMeasures: added in
+    // invalidateInlineSegments, drained in collectWarmBatch, clamped at 0
+    // against GC expunge drift (a drifted count only delays one warm cycle).
+    private val staleCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+    // Batches smaller than this warm inline: the thread-hop cost outweighs
+    // the parallelism for a handful of engines.
+    private const val PARALLEL_WARM_MIN = 4
+
+    // Below this many globally-stale engines, warming strictly loses (probe +
+    // hop cost vs the 1-2 cheap in-pass probes a small mutation needs), so
+    // warmMeasuresParallel skips everything — no flush, no WeakHashMap
+    // iteration, zero allocations. Far above the 0-2 stale engines typical of
+    // text/style mutations; far below the ~88 stale engines of a cold deep
+    // layout compute. Gated on staleCount (O(1) mirror of the set size), so a
+    // pass can only warm when its own root is at least this dirty.
+    private const val WARM_MIN_STALE_ENGINES = 16
+
+    // Daemon pool for warming probes; each engine in a batch is warmed by
+    // exactly one thread (dedupe happens in collectWarmBatch), and warming
+    // probes touch only per-engine measure state (see warmingProbe).
+    private val warmPool: java.util.concurrent.ExecutorService =
+      java.util.concurrent.Executors.newFixedThreadPool(
+        minOf(4, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+      ) { runnable ->
+        Thread(runnable, "mason-text-warm").apply { isDaemon = true }
+      }
 
     private const val KNOWN_NONE = -3f
 
+    // Warm the drained stale set for a computeAndLayout. Baseline policy is
+    // unchanged (always warm the whole stale set, no staleCount gate — that
+    // gate is specific to the small-mutation compute(w, h) path); only the
+    // scheduling differs: batches of distinct engines run on [warmPool], which
+    // is what computeAndLayout was already paying serially on the main thread.
     @JvmStatic
     internal fun warmMeasures(forRoot: Node) {
+      val batch = collectWarmBatch(forRoot)
+      if (batch.size < PARALLEL_WARM_MIN) {
+        for (engine in batch) warmEngineProbes(engine)
+        return
+      }
+      warmBatch(batch)
+    }
+
+    /**
+     * Warm stale text engines before a plain compute(w, h) enters Rust, so the
+     * in-pass measure callbacks hit the measure cache instead of building
+     * StaticLayouts serially on the calling thread. Probes for distinct
+     * engines run on [warmPool]; on timeout the compute proceeds with whatever
+     * cached — uncached engines just miss in-pass as they would have anyway.
+     * Must be called on the main thread (see [collectWarmBatch]).
+     */
+    @JvmStatic
+    internal fun warmMeasuresParallel(forRoot: Node) {
+      // Zero-bookkeeping fast path: below the threshold this is a small
+      // mutation and warming strictly loses, so do nothing at all. Entries
+      // left in staleMeasures are drained by the next warmMeasures exactly as
+      // in baseline — compute(w, h) never drained them there either. The gate
+      // is a single volatile read on the O(1) counter (WeakHashMap.size()
+      // would expunge stale refs on every small-mutation compute).
+      if (staleCount.get() < WARM_MIN_STALE_ENGINES) return
+      val batch = collectWarmBatch(forRoot)
+      if (batch.size < PARALLEL_WARM_MIN) {
+        for (engine in batch) warmEngineProbes(engine)
+        return
+      }
+      warmBatch(batch)
+    }
+
+    // Run one drained batch of distinct engines on [warmPool] and wait for the
+    // probes; on timeout the caller proceeds with whatever cached — uncached
+    // engines just miss in-pass as they would have anyway. Shared by
+    // warmMeasures (computeAndLayout) and warmMeasuresParallel (compute(w, h)).
+    private fun warmBatch(batch: List<TextEngine>) {
+      val latch = java.util.concurrent.CountDownLatch(batch.size)
+      for (engine in batch) {
+        warmPool.execute {
+          try {
+            warmEngineProbes(engine)
+          } catch (_: Throwable) {
+            // Warming is a cache prime only — a failed probe just misses in-pass.
+          } finally {
+            latch.countDown()
+          }
+        }
+      }
+      try {
+        latch.await(150, java.util.concurrent.TimeUnit.MILLISECONDS)
+      } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+      }
+    }
+
+    /**
+     * Main-thread-only: flush pending style/metrics state, then detach the set
+     * of stale engines belonging to [forRoot]. Also pins any missing view
+     * layoutParams so the measure path never writes View state off-main.
+     */
+    private fun collectWarmBatch(forRoot: Node): List<TextEngine> {
       flushPendingTextStyles(forRoot)
       Style.flushPendingMetrics(forRoot)
-      if (staleMeasures.isEmpty()) return
+      if (staleMeasures.isEmpty()) return emptyList()
       val batch = ArrayList<TextEngine>()
+      var drained = 0
       val it = staleMeasures.entries.iterator()
       while (it.hasNext()) {
         val engine = it.next().key ?: continue
         if ((engine.node.getRootNode() ?: engine.node) !== forRoot) continue
         it.remove()
+        drained += 1
         if (engine.container !is TextView || !engine.warmable()) continue
-        batch.add(engine)
-      }
-      if (batch.isEmpty()) return
-      warming = true
-      try {
-        for (engine in batch) {
-          val paint = (engine.container as TextView).paint
-          engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -1f, -2f)
-          engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -2f, -2f)
-          if (!engine.lastDefiniteAvailableWidth.isNaN()) {
-            engine.measure(
-              paint, engine.lastDefiniteKnownWidth, engine.lastDefiniteKnownHeight,
-              engine.lastDefiniteAvailableWidth, engine.lastDefiniteAvailableHeight
+        (engine.container.node.view as? View)?.let {
+          if (it.layoutParams == null) {
+            it.layoutParams = ViewGroup.LayoutParams(
+              ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
           }
         }
+        batch.add(engine)
+      }
+      // Mirror the removals so the counter never disagrees with the map;
+      // clamped at 0 against GC expunge drift (only delays one warm cycle).
+      if (drained > 0) staleCount.updateAndGet { cur -> maxOf(0, cur - drained) }
+      return batch
+    }
+
+    // The per-engine warming body shared by warmMeasures and the parallel
+    // path — identical constraint triples so cache keys match in-pass probes.
+    // Caller must guarantee engine.warmingProbe semantics and single-threaded
+    // access per engine.
+    private fun warmEngineProbes(engine: TextEngine) {
+      engine.warmingProbe = true
+      try {
+        val paint = (engine.container as TextView).paint
+        engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -1f, -2f)
+        engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -2f, -2f)
+        if (!engine.lastDefiniteAvailableWidth.isNaN()) {
+          engine.measure(
+            paint, engine.lastDefiniteKnownWidth, engine.lastDefiniteKnownHeight,
+            engine.lastDefiniteAvailableWidth, engine.lastDefiniteAvailableHeight
+          )
+        }
       } finally {
-        warming = false
+        engine.warmingProbe = false
       }
     }
 
@@ -2559,16 +2683,24 @@ class TextEngine(val container: TextContainer) {
       return hasTextLayoutFlags(low, high) || hasTextVisualFlags(low, high)
     }
 
+    // registerPendingTextStyle runs on whatever thread a style write lands on;
+    // all access to the set and the posted flag must hold this lock.
+    private val pendingTextStyleFlushLock = Any()
     private val pendingTextStyleFlush = HashSet<TextEngine>()
     private var textStyleFlushPosted = false
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     internal fun registerPendingTextStyle(engine: TextEngine) {
-      pendingTextStyleFlush.add(engine)
-      if (!textStyleFlushPosted) {
-        textStyleFlushPosted = true
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-          textStyleFlushPosted = false
-          flushPendingTextStyles()
+      synchronized(pendingTextStyleFlushLock) {
+        pendingTextStyleFlush.add(engine)
+        if (!textStyleFlushPosted) {
+          textStyleFlushPosted = true
+          mainHandler.post {
+            synchronized(pendingTextStyleFlushLock) {
+              textStyleFlushPosted = false
+            }
+            flushPendingTextStyles()
+          }
         }
       }
     }
@@ -2576,9 +2708,12 @@ class TextEngine(val container: TextContainer) {
     @JvmStatic
     @JvmOverloads
     internal fun flushPendingTextStyles(forRoot: Node? = null) {
-      if (pendingTextStyleFlush.isEmpty()) return
-      val pending = pendingTextStyleFlush.toTypedArray()
-      pendingTextStyleFlush.clear()
+      val pending: Array<TextEngine>
+      synchronized(pendingTextStyleFlushLock) {
+        if (pendingTextStyleFlush.isEmpty()) return
+        pending = pendingTextStyleFlush.toTypedArray()
+        pendingTextStyleFlush.clear()
+      }
       for (engine in pending) {
         val quiet = forRoot != null && (engine.node.getRootNode() ?: engine.node) === forRoot
         engine.flushTextStyleIfNeeded(quiet = quiet)

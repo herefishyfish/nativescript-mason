@@ -65,6 +65,33 @@ class DeepWebLayoutBenchmark {
         assertTrue("expected a deep layout tree, got ${tree.nodeCount}", tree.nodeCount >= fixture.nodeCount)
       }.second
 
+      phases += timed("hot_compute_and_layout", sample, iterations, fixture.diagnostics) {
+        repeat(iterations) {
+          // computeAndLayout(w, h) short-circuits on a clean cache, so force the
+          // same full relayout as style_mutation_relayout: the native dirty mark
+          // and Element's root computeCacheDirty gate (same invalidation gap).
+          fixture.root.node.dirty()
+          fixture.root.node.computeCacheDirty = true
+          val tree = fixture.root.computeAndLayout(WIDE, HEIGHT)
+          assertTrue("expected a deep layout tree, got ${tree.nodeCount}", tree.nodeCount >= fixture.nodeCount)
+        }
+      }.second
+
+      phases += timed("text_stale_compute_and_layout", sample, iterations, fixture.diagnostics) {
+        repeat(iterations) { index ->
+          // Stale every text engine so computeAndLayout's production cold
+          // onMeasure path re-measures each text node inside the timed compute.
+          fixture.staleAllText(index % 2 == 0)
+          // computeAndLayout(w, h) short-circuits on a clean cache, so force the
+          // same full relayout as style_mutation_relayout: the native dirty mark
+          // and Element's root computeCacheDirty gate (same invalidation gap).
+          fixture.root.node.dirty()
+          fixture.root.node.computeCacheDirty = true
+          val tree = fixture.root.computeAndLayout(WIDE, HEIGHT)
+          assertTrue("expected a deep layout tree, got ${tree.nodeCount}", tree.nodeCount >= fixture.nodeCount)
+        }
+      }.second
+
       phases += timed("constant_width_compute", sample, iterations, fixture.diagnostics) {
         repeat(iterations) {
           // Exercise the native cache rather than Element.compute's Java-side early return.
@@ -363,6 +390,13 @@ class DeepWebLayoutBenchmark {
       root.node.computeCacheDirty = true
       val tree = root.layoutFlat()
       root.applyLayoutFlat(root.node, tree)
+    }
+
+    fun staleAllText(alternate: Boolean) {
+      // Same fixed-shape string with only the trailing parity flipped so the
+      // per-op work is identical across refs and iterations.
+      val value = if (alternate) "$LONG_TEXT 0" else "$LONG_TEXT 1"
+      measuredText.forEach { it.second.textContent = value }
     }
 
     private fun flex(context: Context, name: String, direction: FlexDirection): View {

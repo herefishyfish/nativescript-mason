@@ -168,6 +168,10 @@ interface Element : EventTarget {
 
     val mason = node.mason
     if (mason.inCompute) return // re-entrant compute → skip to avoid Rust RWLock deadlock
+    // Prime stale text engines (parallel probes for distinct engines) so the
+    // in-pass measure callbacks during native compute hit the measure cache
+    // instead of building StaticLayouts serially on this thread.
+    TextEngine.warmMeasuresParallel(node)
     mason.inCompute = true
     try {
       NativeHelpers.nativeNodeComputeWH(mason.nativePtr, node.nativePtr, width, height)
@@ -362,16 +366,46 @@ interface Element : EventTarget {
     var applied = true
     mason.inCompute = true
     try {
-      val layout = NativeHelpers.nativeNodeComputeWithSizeAndLayout(
-        mason.nativePtr,
-        node.nativePtr,
-        width,
-        height
-      )
-      if (layout.isEmpty()) {
+      // Reuse the layout tree's export buffer across computes (same pattern as
+      // layoutFlat): the first call on a fresh tree allocates once to seed it,
+      // later calls fill the caller-owned buffer in place via a critical-section
+      // JNI write, skipping the owned-Vec clone + fresh float[] per compute.
+      var layoutSize: Int
+      if (node.layoutTree.exportBuffer.isEmpty()) {
+        val initialLayout = NativeHelpers.nativeNodeComputeWithSizeAndLayout(
+          mason.nativePtr,
+          node.nativePtr,
+          width,
+          height
+        )
+        if (initialLayout.isEmpty()) {
+          return MasonLayoutTree.empty
+        }
+        node.layoutTree.setExportBuffer(initialLayout)
+        layoutSize = initialLayout.size
+      } else {
+        layoutSize = NativeHelpers.nativeNodeComputeWithSizeAndLayoutInto(
+          mason.nativePtr,
+          node.nativePtr,
+          width,
+          height,
+          node.layoutTree.exportBuffer
+        )
+        if (layoutSize > node.layoutTree.exportBuffer.size) {
+          node.layoutTree.ensureExportCapacity(layoutSize)
+          layoutSize = NativeHelpers.nativeNodeComputeWithSizeAndLayoutInto(
+            mason.nativePtr,
+            node.nativePtr,
+            width,
+            height,
+            node.layoutTree.exportBuffer
+          )
+        }
+      }
+      if (layoutSize <= 0 || layoutSize > node.layoutTree.exportBuffer.size) {
         return MasonLayoutTree.empty
       }
-      applied = node.layoutTree.fromFloatArray(layout)
+      applied = node.layoutTree.fromFloatArray(node.layoutTree.exportBuffer, layoutSize)
     } finally {
       mason.endCompute()
       node.computeCache = SizeF(width, height)

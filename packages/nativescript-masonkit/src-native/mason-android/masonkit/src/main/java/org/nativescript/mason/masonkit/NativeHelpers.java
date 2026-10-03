@@ -130,6 +130,13 @@ public class NativeHelpers {
                                                            float height);
 
   @FastNative
+  static native int nativeNodeComputeWithSizeAndLayoutInto(long mason,
+                                                           long node,
+                                                           float width,
+                                                           float height,
+                                                           float[] output);
+
+  @FastNative
   static native long[] nativeNodeGetChildren(long mason, long node);
 
   @FastNative
