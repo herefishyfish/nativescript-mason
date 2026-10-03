@@ -168,6 +168,10 @@ interface Element : EventTarget {
 
     val mason = node.mason
     if (mason.inCompute) return // re-entrant compute → skip to avoid Rust RWLock deadlock
+    // Prime stale text engines (parallel probes for distinct engines) so the
+    // in-pass measure callbacks during native compute hit the measure cache
+    // instead of building StaticLayouts serially on this thread.
+    TextEngine.warmMeasuresParallel(node)
     mason.inCompute = true
     try {
       NativeHelpers.nativeNodeComputeWH(mason.nativePtr, node.nativePtr, width, height)

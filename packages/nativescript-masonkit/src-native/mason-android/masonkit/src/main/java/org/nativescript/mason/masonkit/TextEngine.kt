@@ -331,6 +331,13 @@ class TextEngine(val container: TextContainer) {
   private var textLayoutFlushPending = false
   private var textVisualFlushPending = false
 
+  // True while this engine is being primed by a warming probe. Per-engine
+  // (not companion-shared) so parallel warmers of distinct engines never
+  // publish a flag other threads read; while set, measure() skips all JNI
+  // (deferred segments flush, native segments push) like the warming=true
+  // semantics this replaces.
+  private var warmingProbe = false
+
   internal fun flushTextStyleIfNeeded(quiet: Boolean = false) {
     if (!textStyleFlushPending) return
     pendingTextStyleFlush.remove(this)
@@ -812,7 +819,7 @@ class TextEngine(val container: TextContainer) {
     // measured many times per compute and each post was a Handler message.
     val pendingInvalidate = style.fontDirty && !style.pendingMetricsSync
     try {
-      if (!warming) deferredSegments?.let {
+      if (!warmingProbe) deferredSegments?.let {
         deferredSegments = null
         NativeHelpers.nativeNodeSetSegmentsPacked(node.mason.nativePtr, node.nativePtr, it.floats, it.longs, it.kinds)
       }
@@ -824,7 +831,7 @@ class TextEngine(val container: TextContainer) {
         -2f -> 1L
         else -> 2L
       }
-      if (mcWMode == 2L && !warming) {
+      if (mcWMode == 2L && !warmingProbe) {
         lastDefiniteKnownWidth = knownWidth
         lastDefiniteKnownHeight = knownHeight
         lastDefiniteAvailableWidth = availableWidth
@@ -1380,7 +1387,7 @@ class TextEngine(val container: TextContainer) {
           }
         }
       }
-      if (warming) {
+      if (warmingProbe) {
         deferredSegments = PackedSegments(floats, longs, kinds)
       } else {
         deferredSegments = null
@@ -2477,15 +2484,70 @@ class TextEngine(val container: TextContainer) {
 
     private val staleMeasures = java.util.WeakHashMap<TextEngine, Boolean>()
 
-    private var warming = false
+    // Batches smaller than this warm inline: the thread-hop cost outweighs
+    // the parallelism for a handful of engines.
+    private const val PARALLEL_WARM_MIN = 4
+
+    // Daemon pool for warming probes; each engine in a batch is warmed by
+    // exactly one thread (dedupe happens in collectWarmBatch), and warming
+    // probes touch only per-engine measure state (see warmingProbe).
+    private val warmPool: java.util.concurrent.ExecutorService =
+      java.util.concurrent.Executors.newFixedThreadPool(
+        minOf(4, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+      ) { runnable ->
+        Thread(runnable, "mason-text-warm").apply { isDaemon = true }
+      }
 
     private const val KNOWN_NONE = -3f
 
     @JvmStatic
     internal fun warmMeasures(forRoot: Node) {
+      for (engine in collectWarmBatch(forRoot)) warmEngineProbes(engine)
+    }
+
+    /**
+     * Warm stale text engines before a plain compute(w, h) enters Rust, so the
+     * in-pass measure callbacks hit the measure cache instead of building
+     * StaticLayouts serially on the calling thread. Probes for distinct
+     * engines run on [warmPool]; on timeout the compute proceeds with whatever
+     * cached — uncached engines just miss in-pass as they would have anyway.
+     * Must be called on the main thread (see [collectWarmBatch]).
+     */
+    @JvmStatic
+    internal fun warmMeasuresParallel(forRoot: Node) {
+      val batch = collectWarmBatch(forRoot)
+      if (batch.size < PARALLEL_WARM_MIN) {
+        for (engine in batch) warmEngineProbes(engine)
+        return
+      }
+      val latch = java.util.concurrent.CountDownLatch(batch.size)
+      for (engine in batch) {
+        warmPool.execute {
+          try {
+            warmEngineProbes(engine)
+          } catch (_: Throwable) {
+            // Warming is a cache prime only — a failed probe just misses in-pass.
+          } finally {
+            latch.countDown()
+          }
+        }
+      }
+      try {
+        latch.await(150, java.util.concurrent.TimeUnit.MILLISECONDS)
+      } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+      }
+    }
+
+    /**
+     * Main-thread-only: flush pending style/metrics state, then detach the set
+     * of stale engines belonging to [forRoot]. Also pins any missing view
+     * layoutParams so the measure path never writes View state off-main.
+     */
+    private fun collectWarmBatch(forRoot: Node): List<TextEngine> {
       flushPendingTextStyles(forRoot)
       Style.flushPendingMetrics(forRoot)
-      if (staleMeasures.isEmpty()) return
+      if (staleMeasures.isEmpty()) return emptyList()
       val batch = ArrayList<TextEngine>()
       val it = staleMeasures.entries.iterator()
       while (it.hasNext()) {
@@ -2493,24 +2555,36 @@ class TextEngine(val container: TextContainer) {
         if ((engine.node.getRootNode() ?: engine.node) !== forRoot) continue
         it.remove()
         if (engine.container !is TextView || !engine.warmable()) continue
-        batch.add(engine)
-      }
-      if (batch.isEmpty()) return
-      warming = true
-      try {
-        for (engine in batch) {
-          val paint = (engine.container as TextView).paint
-          engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -1f, -2f)
-          engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -2f, -2f)
-          if (!engine.lastDefiniteAvailableWidth.isNaN()) {
-            engine.measure(
-              paint, engine.lastDefiniteKnownWidth, engine.lastDefiniteKnownHeight,
-              engine.lastDefiniteAvailableWidth, engine.lastDefiniteAvailableHeight
+        (engine.container.node.view as? View)?.let {
+          if (it.layoutParams == null) {
+            it.layoutParams = ViewGroup.LayoutParams(
+              ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
           }
         }
+        batch.add(engine)
+      }
+      return batch
+    }
+
+    // The per-engine warming body shared by warmMeasures and the parallel
+    // path — identical constraint triples so cache keys match in-pass probes.
+    // Caller must guarantee engine.warmingProbe semantics and single-threaded
+    // access per engine.
+    private fun warmEngineProbes(engine: TextEngine) {
+      engine.warmingProbe = true
+      try {
+        val paint = (engine.container as TextView).paint
+        engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -1f, -2f)
+        engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -2f, -2f)
+        if (!engine.lastDefiniteAvailableWidth.isNaN()) {
+          engine.measure(
+            paint, engine.lastDefiniteKnownWidth, engine.lastDefiniteKnownHeight,
+            engine.lastDefiniteAvailableWidth, engine.lastDefiniteAvailableHeight
+          )
+        }
       } finally {
-        warming = false
+        engine.warmingProbe = false
       }
     }
 
