@@ -284,6 +284,7 @@ where
     #[inline(always)]
     /// Unified implementation that both `LayoutPartialTree::compute_child_layout`
     /// and `LayoutBlockContainer::compute_block_child_layout` delegate to.
+    #[track_caller]
     fn compute_child_layout(
         &mut self,
         node_id: NodeId,
@@ -403,6 +404,7 @@ where
     }
 
     #[inline(always)]
+    #[track_caller]
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
         self.compute_child_layout(
             node_id,

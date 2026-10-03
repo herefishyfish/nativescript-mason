@@ -196,6 +196,7 @@ pub trait LayoutPartialTree: TraversePartialTree {
     fn set_unrounded_layout(&mut self, node_id: NodeId, layout: &Layout);
 
     /// Compute the specified node's size or full layout given the specified constraints
+    #[track_caller]
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput;
 }
 
@@ -363,6 +364,7 @@ pub trait LayoutBlockContainer: LayoutPartialTree {
 
     /// Compute the specified node's size or full layout given the specified constraints
     #[cfg(feature = "block_layout")]
+    #[track_caller]
     fn compute_block_child_layout(
         &mut self,
         node_id: NodeId,

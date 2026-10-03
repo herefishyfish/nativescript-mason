@@ -2260,6 +2260,7 @@ impl LayoutPartialTree for Tree {
         }
     }
 
+    #[track_caller]
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
         self.compute_block_child_layout(node_id, inputs, None)
     }
@@ -2443,6 +2444,7 @@ impl LayoutBlockContainer for Tree {
         StyleGuard(style)
     }
 
+    #[track_caller]
     fn compute_block_child_layout(
         &mut self,
         node_id: NodeId,
