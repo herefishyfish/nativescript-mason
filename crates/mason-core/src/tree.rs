@@ -240,6 +240,9 @@ fn report_step_stats() {
         }
         log::info!("{line}");
     });
+    for site in taffy::probe::take_sites() {
+        log::info!("MASON_PROBE {site}");
+    }
 }
 
 #[derive(Debug)]

@@ -226,6 +226,7 @@ pub fn compute_root_layout(
 ///
 /// Uses the provided closure to compute the layout (and then stores the result in the cache) if no cached layout is found.
 #[inline(always)]
+#[track_caller]
 pub fn compute_cached_layout<Tree: CacheTree + ?Sized, ComputeFunction>(
     tree: &mut Tree,
     node: NodeId,
@@ -239,6 +240,15 @@ where
 
     // First we check if we have a cached result for the given input
     let cache_entry = tree.cache_get(node, &inputs);
+    crate::probe::record(
+        std::panic::Location::caller(),
+        cache_entry.is_some(),
+        match inputs.axis {
+            RequestedAxis::Horizontal => 0,
+            RequestedAxis::Vertical => 1,
+            RequestedAxis::Both => 2,
+        },
+    );
     if let Some(cached_size_and_baselines) = cache_entry {
         debug_log_node!(inputs);
         debug_log!("RESULT (CACHED)", dbg:cached_size_and_baselines.size);
