@@ -65,6 +65,18 @@ class DeepWebLayoutBenchmark {
         assertTrue("expected a deep layout tree, got ${tree.nodeCount}", tree.nodeCount >= fixture.nodeCount)
       }.second
 
+      phases += timed("hot_compute_and_layout", sample, iterations, fixture.diagnostics) {
+        repeat(iterations) {
+          // computeAndLayout(w, h) short-circuits on a clean cache, so force the
+          // same full relayout as style_mutation_relayout: the native dirty mark
+          // and Element's root computeCacheDirty gate (same invalidation gap).
+          fixture.root.node.dirty()
+          fixture.root.node.computeCacheDirty = true
+          val tree = fixture.root.computeAndLayout(WIDE, HEIGHT)
+          assertTrue("expected a deep layout tree, got ${tree.nodeCount}", tree.nodeCount >= fixture.nodeCount)
+        }
+      }.second
+
       phases += timed("constant_width_compute", sample, iterations, fixture.diagnostics) {
         repeat(iterations) {
           // Exercise the native cache rather than Element.compute's Java-side early return.
