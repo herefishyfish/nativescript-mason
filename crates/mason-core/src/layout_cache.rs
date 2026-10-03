@@ -13,6 +13,12 @@ use taffy::{
 /// replace the oldest slot in round-robin order.
 const MEASURE_CAPACITY: usize = 32;
 
+/// Maximum distinct final layouts held per node. Flex's baseline probe and
+/// its final layout carry different exact keys; with a single slot each store
+/// evicts the other and both miss on every pass. A few slots let both
+/// persist, so only the first pass pays for both layouts.
+const FINAL_CAPACITY: usize = 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AvailableSpaceKey {
     Definite(u32),
@@ -134,8 +140,9 @@ fn classify_miss(diffs: [bool; 4]) -> MissClass {
 
 #[derive(Debug, Clone, Default)]
 pub struct LayoutCache {
-    final_layout_entry: Option<CacheEntry<LayoutOutput>>,
+    final_layout_entries: Vec<CacheEntry<LayoutOutput>>,
     measure_entries: Vec<CacheEntry<Size<f32>>>,
+    final_next_evict: usize,
     next_evict: usize,
 }
 
@@ -151,17 +158,32 @@ impl LayoutCache {
         let key = CacheKey::from(input);
         match input.run_mode {
             RunMode::PerformLayout => {
-                let entry = self.final_layout_entry.as_ref();
-                match entry.filter(|entry| entry.key == key) {
-                    Some(entry) => (Some(entry.content.clone()), None),
-                    None => (
-                        None,
-                        Some(match entry {
-                            None => MissClass::Empty,
-                            Some(entry) => classify_miss(key.component_diffs(entry.key)),
-                        }),
-                    ),
+                let hit = self
+                    .final_layout_entries
+                    .iter()
+                    .find(|entry| entry.key == key)
+                    .map(|entry| entry.content.clone());
+                if hit.is_some() {
+                    return (hit, None);
                 }
+                if self.final_layout_entries.is_empty() {
+                    return (None, Some(MissClass::Empty));
+                }
+                let mut best: Option<[bool; 4]> = None;
+                for entry in &self.final_layout_entries {
+                    let diffs = key.component_diffs(entry.key);
+                    let better = match best {
+                        None => true,
+                        Some(current) => {
+                            diffs.iter().filter(|d| **d).count()
+                                < current.iter().filter(|d| **d).count()
+                        }
+                    };
+                    if better {
+                        best = Some(diffs);
+                    }
+                }
+                (None, Some(classify_miss(best.unwrap_or([true; 4]))))
             }
             RunMode::ComputeSize => {
                 let hit = self
@@ -199,10 +221,21 @@ impl LayoutCache {
         let key = CacheKey::from(input);
         match input.run_mode {
             RunMode::PerformLayout => {
-                self.final_layout_entry = Some(CacheEntry {
-                    key,
-                    content: layout_output,
-                });
+                if let Some(existing) = self
+                    .final_layout_entries
+                    .iter_mut()
+                    .find(|entry| entry.key == key)
+                {
+                    existing.content = layout_output;
+                    return;
+                }
+                let entry = CacheEntry { key, content: layout_output };
+                if self.final_layout_entries.len() < FINAL_CAPACITY {
+                    self.final_layout_entries.push(entry);
+                } else {
+                    self.final_layout_entries[self.final_next_evict] = entry;
+                    self.final_next_evict = (self.final_next_evict + 1) % FINAL_CAPACITY;
+                }
             }
             RunMode::ComputeSize => {
                 // Measure hits are reconstructed from size alone. Caching an
@@ -242,14 +275,15 @@ impl LayoutCache {
         if self.is_empty() {
             return ClearState::AlreadyEmpty;
         }
-        self.final_layout_entry = None;
+        self.final_layout_entries.clear();
+        self.final_next_evict = 0;
         self.measure_entries.clear();
         self.next_evict = 0;
         ClearState::Cleared
     }
 
     pub fn is_empty(&self) -> bool {
-        self.final_layout_entry.is_none() && self.measure_entries.is_empty()
+        self.final_layout_entries.is_empty() && self.measure_entries.is_empty()
     }
 }
 
@@ -281,6 +315,63 @@ mod tests {
             width,
             height: 10.0,
         })
+    }
+
+    fn layout_input(known_width: Option<f32>, available_width: AvailableSpace) -> LayoutInput {
+        LayoutInput {
+            run_mode: RunMode::PerformLayout,
+            sizing_mode: taffy::SizingMode::ContentSize,
+            axis: RequestedAxis::Both,
+            known_dimensions: Size {
+                width: known_width,
+                height: Some(20.0),
+            },
+            parent_size: Size::NONE,
+            available_space: Size {
+                width: available_width,
+                height: AvailableSpace::Definite(20.0),
+            },
+            vertical_margins_are_collapsible: taffy::Line::FALSE,
+            known_dimensions_are_definite: taffy::Size {
+                width: known_width.is_some(),
+                height: true,
+            },
+        }
+    }
+
+    #[test]
+    fn distinct_final_layouts_coexist() {
+        // Regression test for the baseline-probe/final-layout ping-pong:
+        // the two PerformLayout calls a flex child receives per pass carry
+        // different keys and must both stay cached.
+        let mut cache = LayoutCache::default();
+        let baseline_probe = layout_input(Some(100.0), AvailableSpace::MaxContent);
+        let final_layout = layout_input(Some(100.0), AvailableSpace::Definite(100.0));
+
+        cache.store(&baseline_probe, out(100.0));
+        cache.store(&final_layout, out(100.0));
+
+        for _ in 0..10 {
+            assert!(cache.get(&baseline_probe).is_some());
+            assert!(cache.get(&final_layout).is_some());
+        }
+    }
+
+    #[test]
+    fn final_layout_capacity_evicts_oldest() {
+        let mut cache = LayoutCache::default();
+        let inputs: Vec<_> = (0..6)
+            .map(|index| layout_input(Some(index as f32), AvailableSpace::Definite(index as f32)))
+            .collect();
+        for (index, input) in inputs.iter().enumerate() {
+            cache.store(input, out(index as f32));
+        }
+        // Capacity is 4; the two oldest are gone, the rest survive.
+        assert!(cache.get(&inputs[0]).is_none());
+        assert!(cache.get(&inputs[1]).is_none());
+        for input in &inputs[2..] {
+            assert!(cache.get(input).is_some());
+        }
     }
 
     #[test]
