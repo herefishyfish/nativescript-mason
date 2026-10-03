@@ -140,6 +140,9 @@ pub struct LayoutCache {
 }
 
 impl LayoutCache {
+    /// Unclassified lookup. Only unit tests use this; the layout pass uses
+    /// `get_classified` so misses can be attributed.
+    #[cfg(test)]
     pub fn get(&self, input: &LayoutInput) -> Option<LayoutOutput> {
         self.get_classified(input).0
     }
