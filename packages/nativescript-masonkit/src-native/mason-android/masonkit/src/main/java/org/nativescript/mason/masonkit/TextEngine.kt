@@ -2488,6 +2488,15 @@ class TextEngine(val container: TextContainer) {
     // the parallelism for a handful of engines.
     private const val PARALLEL_WARM_MIN = 4
 
+    // Below this many globally-stale engines, warming strictly loses (probe +
+    // hop cost vs the 1-2 cheap in-pass probes a small mutation needs), so
+    // warmMeasuresParallel skips everything — no flush, no WeakHashMap
+    // iteration, zero allocations. Far above the 0-2 stale engines typical of
+    // text/style mutations; far below the ~88 stale engines of a cold deep
+    // layout compute. staleMeasures.size is O(1) and counts all roots, so a
+    // pass can only warm when its own root is at least this dirty.
+    private const val WARM_MIN_STALE_ENGINES = 16
+
     // Daemon pool for warming probes; each engine in a batch is warmed by
     // exactly one thread (dedupe happens in collectWarmBatch), and warming
     // probes touch only per-engine measure state (see warmingProbe).
@@ -2515,6 +2524,11 @@ class TextEngine(val container: TextContainer) {
      */
     @JvmStatic
     internal fun warmMeasuresParallel(forRoot: Node) {
+      // Zero-bookkeeping fast path: below the threshold this is a small
+      // mutation and warming strictly loses, so do nothing at all. Entries
+      // left in staleMeasures are drained by the next warmMeasures exactly as
+      // in baseline — compute(w, h) never drained them there either.
+      if (staleMeasures.size < WARM_MIN_STALE_ENGINES) return
       val batch = collectWarmBatch(forRoot)
       if (batch.size < PARALLEL_WARM_MIN) {
         for (engine in batch) warmEngineProbes(engine)
