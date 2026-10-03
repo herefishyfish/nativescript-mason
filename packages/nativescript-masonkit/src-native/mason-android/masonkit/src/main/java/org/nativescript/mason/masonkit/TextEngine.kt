@@ -2520,9 +2520,19 @@ class TextEngine(val container: TextContainer) {
 
     private const val KNOWN_NONE = -3f
 
+    // Warm the drained stale set for a computeAndLayout. Baseline policy is
+    // unchanged (always warm the whole stale set, no staleCount gate — that
+    // gate is specific to the small-mutation compute(w, h) path); only the
+    // scheduling differs: batches of distinct engines run on [warmPool], which
+    // is what computeAndLayout was already paying serially on the main thread.
     @JvmStatic
     internal fun warmMeasures(forRoot: Node) {
-      for (engine in collectWarmBatch(forRoot)) warmEngineProbes(engine)
+      val batch = collectWarmBatch(forRoot)
+      if (batch.size < PARALLEL_WARM_MIN) {
+        for (engine in batch) warmEngineProbes(engine)
+        return
+      }
+      warmBatch(batch)
     }
 
     /**
@@ -2547,6 +2557,14 @@ class TextEngine(val container: TextContainer) {
         for (engine in batch) warmEngineProbes(engine)
         return
       }
+      warmBatch(batch)
+    }
+
+    // Run one drained batch of distinct engines on [warmPool] and wait for the
+    // probes; on timeout the caller proceeds with whatever cached — uncached
+    // engines just miss in-pass as they would have anyway. Shared by
+    // warmMeasures (computeAndLayout) and warmMeasuresParallel (compute(w, h)).
+    private fun warmBatch(batch: List<TextEngine>) {
       val latch = java.util.concurrent.CountDownLatch(batch.size)
       for (engine in batch) {
         warmPool.execute {
