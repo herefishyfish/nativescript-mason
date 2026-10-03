@@ -5,10 +5,11 @@ use crate::style::{DisplayMode, Style};
 use parking_lot::lock_api::{MappedRwLockReadGuard, MappedRwLockWriteGuard};
 use parking_lot::{Mutex, RawRwLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use slotmap::{new_key_type, Key, KeyData, SecondaryMap, SlotMap};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Debug;
 use std::sync::atomic::AtomicU32;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 use style_atoms::Atom;
 use taffy::tree::DetailedLayoutInfo;
 use taffy::{
@@ -34,6 +35,112 @@ impl From<NodeId> for Id {
     fn from(value: NodeId) -> Self {
         KeyData::from_ffi(value.into()).into()
     }
+}
+
+// --- Env-gated per-step layout timing (MASON_TIMING=1) -----------------------
+//
+// Diagnostic lever for the DeepWebLayoutBenchmark "cold_compute other" bucket.
+// Zero-cost when disabled: the gate is a `OnceLock<bool>` read once per
+// `compute_layout` call; every `Instant::now()` happens only behind that bool,
+// so the disabled path is a single atomic load plus one branch per step.
+// When enabled, each step's elapsed nanos accumulate in a thread-local array
+// and one combined `MASON_STEP` line is logged after the pass via `log`.
+
+const STEP_SET_ROUNDING: usize = 0;
+const STEP_DEFERRED_DRAIN: usize = 1;
+const STEP_RESET_INLINE: usize = 2;
+const STEP_CLEAR_FLOATS: usize = 3;
+const STEP_COLLECT_FLOATS: usize = 4;
+const STEP_MEASURE_PLACE_FLOATS: usize = 5;
+const STEP_SANITIZE_STALE: usize = 6;
+const STEP_MARK_IGNORES_HEIGHT: usize = 7;
+const STEP_COMPUTE_ROOT: usize = 8;
+const STEP_FIX_SCROLL: usize = 9;
+const STEP_ROUND: usize = 10;
+const STEP_COUNT: usize = 11;
+
+const STEP_NAMES: [&str; STEP_COUNT] = [
+    "set_rounding_mode",
+    "deferred_drain",
+    "reset_inline_state",
+    "clear_float_context",
+    "collect_floats",
+    "measure_place_floats",
+    "sanitize_stale_children",
+    "mark_ignores_offered_height",
+    "compute_root_layout",
+    "fix_scroll_container_sizes",
+    "round_layout",
+];
+
+#[derive(Clone, Copy)]
+struct StepStat {
+    total_ns: u64,
+    count: u32,
+    last_ns: u64,
+}
+
+static TIMING_ENABLED: OnceLock<bool> = OnceLock::new();
+
+#[inline(always)]
+fn timing_enabled() -> bool {
+    *TIMING_ENABLED.get_or_init(|| std::env::var("MASON_TIMING").as_deref() == Ok("1"))
+}
+
+thread_local! {
+    static STEP_STATS: RefCell<[StepStat; STEP_COUNT]> = const {
+        RefCell::new([StepStat { total_ns: 0, count: 0, last_ns: 0 }; STEP_COUNT])
+    };
+}
+
+/// RAII per-step timer. When `timing` is false (the gate read once per
+/// `compute_layout`), construction is a no-op and `Drop` does nothing.
+struct StepTimer {
+    step: usize,
+    start: Option<Instant>,
+}
+
+impl StepTimer {
+    #[inline(always)]
+    fn start(step: usize, timing: bool) -> StepTimer {
+        StepTimer {
+            step,
+            start: if timing { Some(Instant::now()) } else { None },
+        }
+    }
+}
+
+impl Drop for StepTimer {
+    fn drop(&mut self) {
+        if let Some(start) = self.start.take() {
+            let last_ns = start.elapsed().as_nanos() as u64;
+            let _ = STEP_STATS.try_with(|stats| {
+                let mut stats = stats.borrow_mut();
+                let s = &mut stats[self.step];
+                s.total_ns = s.total_ns.saturating_add(last_ns);
+                s.count = s.count.saturating_add(1);
+                s.last_ns = last_ns;
+            });
+        }
+    }
+}
+
+fn report_step_stats() {
+    if !timing_enabled() {
+        return;
+    }
+    let _ = STEP_STATS.try_with(|stats| {
+        let mut stats = stats.borrow_mut();
+        let mut line = String::with_capacity(512);
+        line.push_str("MASON_STEP");
+        for (i, name) in STEP_NAMES.iter().enumerate() {
+            let s = stats[i];
+            line.push_str(&format!(" {name}={}ns/{}x/{}last", s.total_ns, s.count, s.last_ns));
+            // reset so each reported line covers a single compute_layout pass
+            stats[i] = StepStat { total_ns: 0, count: 0, last_ns: 0 };
+        }
+        log::info!("{line}");
+    });
 }
 
 #[derive(Debug)]
@@ -1052,32 +1159,51 @@ impl Tree {
         available_space: Size<AvailableSpace>,
         use_rounding: bool,
     ) {
+        let timing = timing_enabled();
+
         // Drain any deferred node removals from NodeRef::Drop before acquiring
         // locks for the layout pass.  This prevents the deferred queue from
         // growing unboundedly and cleans up nodes that couldn't be removed
         // earlier because the tree lock was contended.
-        drain_deferred_cleanup(&self.0, self.deferred_cleanup_queue(), &self.2);
+        {
+            let _t = StepTimer::start(STEP_DEFERRED_DRAIN, timing);
+            drain_deferred_cleanup(&self.0, self.deferred_cleanup_queue(), &self.2);
+        }
 
         // update tree rounding mode so other helpers (Tree::layout etc.) are consistent
-        self.set_use_rounding(use_rounding);
+        {
+            let _t = StepTimer::start(STEP_SET_ROUNDING, timing);
+            self.set_use_rounding(use_rounding);
+        }
 
         // reset any inline-run state before doing a full layout pass to avoid
         // stale pending entries / nesting interfering with cached layouts
-        self.inner_mut().inline_run_pending.clear();
-        self.set_inline_run_nesting(0);
+        {
+            let _t = StepTimer::start(STEP_RESET_INLINE, timing);
+            self.inner_mut().inline_run_pending.clear();
+            self.set_inline_run_nesting(0);
+        }
 
         // Clear and collect floats for the upcoming layout pass. We record
         // floated children per container first; then measure them against the
         // root available space so inline layout can consult approximate sizes.
-        self.clear_float_context();
+        {
+            let _t = StepTimer::start(STEP_CLEAR_FLOATS, timing);
+            self.clear_float_context();
+        }
         if self.inner().has_floats {
+            let _t = StepTimer::start(STEP_COLLECT_FLOATS, timing);
             self.collect_floats(root.into());
         }
-        self.measure_place_floats(root.into(), available_space);
+        {
+            let _t = StepTimer::start(STEP_MEASURE_PLACE_FLOATS, timing);
+            self.measure_place_floats(root.into(), available_space);
+        }
 
         // Sanitize children lists to remove stale node ids, but only when a
         // node was actually removed since the last pass.
         {
+            let _t = StepTimer::start(STEP_SANITIZE_STALE, timing);
             let inner_mut = &mut *self.inner_mut();
             if inner_mut.structure_dirty {
                 // raw pointer lets us read `nodes` while mutating `children`
@@ -1090,9 +1216,13 @@ impl Tree {
             }
         }
 
-        mark_ignores_offered_height(&mut self.inner_mut(), root.into());
+        {
+            let _t = StepTimer::start(STEP_MARK_IGNORES_HEIGHT, timing);
+            mark_ignores_offered_height(&mut self.inner_mut(), root.into());
+        }
 
         {
+            let _t = StepTimer::start(STEP_COMPUTE_ROOT, timing);
             let _pass = LayoutPassGuard::enter();
             compute_root_layout(self, root, available_space);
         }
@@ -1101,12 +1231,16 @@ impl Tree {
         // This is done after layout because block layout measures children with intrinsic sizing
         // (MinContent) which doesn't pass the parent's actual available dimensions.
         if self.inner().has_scroll_containers {
+            let _t = StepTimer::start(STEP_FIX_SCROLL, timing);
             self.fix_scroll_container_sizes(root, available_space.width, available_space.height);
         }
 
         if use_rounding {
+            let _t = StepTimer::start(STEP_ROUND, timing);
             round_layout(self, root);
         }
+
+        report_step_stats();
     }
 
     pub fn layout(&self, node: Id) -> MappedRwLockReadGuard<'_, RawRwLock, Layout> {
