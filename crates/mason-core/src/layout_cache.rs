@@ -59,6 +59,17 @@ impl CacheKey {
             && self.known_dimensions_are_definite == requested.known_dimensions_are_definite
             && (self.axis == RequestedAxis::Both || self.axis == requested.axis)
     }
+
+    /// Which key components differ from another key, in a fixed order:
+    /// dimensions, parent width, definiteness, axis.
+    fn component_diffs(self, other: Self) -> [bool; 4] {
+        [
+            self.dimensions != other.dimensions,
+            self.parent_size.width != other.parent_size.width,
+            self.known_dimensions_are_definite != other.known_dimensions_are_definite,
+            self.axis != other.axis,
+        ]
+    }
 }
 
 impl From<&LayoutInput> for CacheKey {
@@ -89,6 +100,38 @@ struct CacheEntry<T> {
     content: T,
 }
 
+/// Why a lookup missed. Timing-probe only: classified against the entry
+/// with the fewest differing key components, so `Multi` and the component
+/// classes are best-effort attributions, not exact causes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissClass {
+    /// No entries for this run mode yet; first probe on a cold cache.
+    Empty,
+    /// Size constraint differs (definite width bits or available-space class).
+    Dimensions,
+    /// Parent width differs.
+    ParentWidth,
+    /// `known_dimensions_are_definite` differs.
+    Definiteness,
+    /// Requested axis differs from a narrower stored entry.
+    Axis,
+    /// More than one component differs.
+    Multi,
+    /// Hidden layouts are never cached, so every lookup misses.
+    Hidden,
+}
+
+fn classify_miss(diffs: [bool; 4]) -> MissClass {
+    let count = diffs.iter().filter(|d| **d).count();
+    match count {
+        1 if diffs[0] => MissClass::Dimensions,
+        1 if diffs[1] => MissClass::ParentWidth,
+        1 if diffs[2] => MissClass::Definiteness,
+        1 => MissClass::Axis,
+        _ => MissClass::Multi,
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct LayoutCache {
     final_layout_entry: Option<CacheEntry<LayoutOutput>>,
@@ -98,19 +141,54 @@ pub struct LayoutCache {
 
 impl LayoutCache {
     pub fn get(&self, input: &LayoutInput) -> Option<LayoutOutput> {
+        self.get_classified(input).0
+    }
+
+    pub fn get_classified(&self, input: &LayoutInput) -> (Option<LayoutOutput>, Option<MissClass>) {
         let key = CacheKey::from(input);
         match input.run_mode {
-            RunMode::PerformLayout => self
-                .final_layout_entry
-                .as_ref()
-                .filter(|entry| entry.key == key)
-                .map(|entry| entry.content.clone()),
-            RunMode::ComputeSize => self
-                .measure_entries
-                .iter()
-                .find(|entry| entry.key.matches_measure(key))
-                .map(|entry| LayoutOutput::from_outer_size(entry.content)),
-            RunMode::PerformHiddenLayout => None,
+            RunMode::PerformLayout => {
+                let entry = self.final_layout_entry.as_ref();
+                match entry.filter(|entry| entry.key == key) {
+                    Some(entry) => (Some(entry.content.clone()), None),
+                    None => (
+                        None,
+                        Some(match entry {
+                            None => MissClass::Empty,
+                            Some(entry) => classify_miss(key.component_diffs(entry.key)),
+                        }),
+                    ),
+                }
+            }
+            RunMode::ComputeSize => {
+                let hit = self
+                    .measure_entries
+                    .iter()
+                    .find(|entry| entry.key.matches_measure(key))
+                    .map(|entry| LayoutOutput::from_outer_size(entry.content));
+                if hit.is_some() {
+                    return (hit, None);
+                }
+                if self.measure_entries.is_empty() {
+                    return (None, Some(MissClass::Empty));
+                }
+                let mut best: Option<[bool; 4]> = None;
+                for entry in &self.measure_entries {
+                    let diffs = key.component_diffs(entry.key);
+                    let better = match best {
+                        None => true,
+                        Some(current) => {
+                            diffs.iter().filter(|d| **d).count()
+                                < current.iter().filter(|d| **d).count()
+                        }
+                    };
+                    if better {
+                        best = Some(diffs);
+                    }
+                }
+                (None, Some(classify_miss(best.unwrap_or([true; 4]))))
+            }
+            RunMode::PerformHiddenLayout => (None, Some(MissClass::Hidden)),
         }
     }
 

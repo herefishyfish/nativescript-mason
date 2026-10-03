@@ -1,3 +1,4 @@
+use crate::layout_cache::MissClass;
 use crate::node::{drain_deferred_cleanup, InlineMeasureCache, Node, NodeData, NodeRef, NodeType, SubtreeAnalysis};
 use crate::style::arena::{StyleArena, StyleHandle, STYLE_BUFFER_SIZE};
 use crate::style::style_guard::StyleGuard;
@@ -89,7 +90,14 @@ const SUB_LOCK_ONLY: usize = 5;
 const SUB_MEASURE_CB: usize = 6;
 const SUB_CACHE_HIT: usize = 7;
 const SUB_CACHE_MISS: usize = 8;
-const SUB_COUNT: usize = 9;
+const SUB_CACHE_MISS_EMPTY: usize = 9;
+const SUB_CACHE_MISS_DIMS: usize = 10;
+const SUB_CACHE_MISS_PARENT: usize = 11;
+const SUB_CACHE_MISS_DEFINITE: usize = 12;
+const SUB_CACHE_MISS_AXIS: usize = 13;
+const SUB_CACHE_MISS_MULTI: usize = 14;
+const SUB_CACHE_MISS_HIDDEN: usize = 15;
+const SUB_COUNT: usize = 16;
 
 const SUB_NAMES: [&str; SUB_COUNT] = [
     "style_fetch",
@@ -101,6 +109,13 @@ const SUB_NAMES: [&str; SUB_COUNT] = [
     "measure_callback",
     "cache_hit",
     "cache_miss",
+    "cache_miss_empty",
+    "cache_miss_dims",
+    "cache_miss_parent",
+    "cache_miss_definite",
+    "cache_miss_axis",
+    "cache_miss_multi",
+    "cache_miss_hidden",
 ];
 
 #[derive(Clone, Copy)]
@@ -2299,13 +2314,27 @@ impl CacheTree for Tree {
         let timing = timing_enabled() && in_layout_pass();
         let _t = StepTimer::start_sub(SUB_CACHE_GET, timing);
         let node = self.node_from_id_mut(node_id);
-        let result = node.cache.get(&measure_cache_key(node.ignores_offered_height, inputs));
+        let (result, miss) =
+            node.cache
+                .get_classified(&measure_cache_key(node.ignores_offered_height, inputs));
         if timing {
-            // Zero-duration marker: the count is the payload, ns is noise.
-            let _c = StepTimer::start_sub(
-                if result.is_some() { SUB_CACHE_HIT } else { SUB_CACHE_MISS },
-                true,
-            );
+            // Zero-duration markers: the counts are the payload, ns is noise.
+            match miss {
+                None => drop(StepTimer::start_sub(SUB_CACHE_HIT, true)),
+                Some(class) => {
+                    drop(StepTimer::start_sub(SUB_CACHE_MISS, true));
+                    let slot = match class {
+                        MissClass::Empty => SUB_CACHE_MISS_EMPTY,
+                        MissClass::Dimensions => SUB_CACHE_MISS_DIMS,
+                        MissClass::ParentWidth => SUB_CACHE_MISS_PARENT,
+                        MissClass::Definiteness => SUB_CACHE_MISS_DEFINITE,
+                        MissClass::Axis => SUB_CACHE_MISS_AXIS,
+                        MissClass::Multi => SUB_CACHE_MISS_MULTI,
+                        MissClass::Hidden => SUB_CACHE_MISS_HIDDEN,
+                    };
+                    drop(StepTimer::start_sub(slot, true));
+                }
+            }
         }
         result
     }
