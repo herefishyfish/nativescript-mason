@@ -87,7 +87,9 @@ const SUB_LEAF_STYLE_BUILD: usize = 3;
 const SUB_CHILD_IDS_FETCH: usize = 4;
 const SUB_LOCK_ONLY: usize = 5;
 const SUB_MEASURE_CB: usize = 6;
-const SUB_COUNT: usize = 7;
+const SUB_CACHE_HIT: usize = 7;
+const SUB_CACHE_MISS: usize = 8;
+const SUB_COUNT: usize = 9;
 
 const SUB_NAMES: [&str; SUB_COUNT] = [
     "style_fetch",
@@ -97,6 +99,8 @@ const SUB_NAMES: [&str; SUB_COUNT] = [
     "child_ids_fetch",
     "lock_only",
     "measure_callback",
+    "cache_hit",
+    "cache_miss",
 ];
 
 #[derive(Clone, Copy)]
@@ -2268,9 +2272,18 @@ fn measure_cache_key(ignores_offered_height: bool, inputs: &LayoutInput) -> Layo
 impl CacheTree for Tree {
     #[inline]
     fn cache_get(&mut self, node_id: NodeId, inputs: &LayoutInput) -> Option<LayoutOutput> {
-        let _t = StepTimer::start_sub(SUB_CACHE_GET, timing_enabled() && in_layout_pass());
+        let timing = timing_enabled() && in_layout_pass();
+        let _t = StepTimer::start_sub(SUB_CACHE_GET, timing);
         let node = self.node_from_id_mut(node_id);
-        node.cache.get(&measure_cache_key(node.ignores_offered_height, inputs))
+        let result = node.cache.get(&measure_cache_key(node.ignores_offered_height, inputs));
+        if timing {
+            // Zero-duration marker: the count is the payload, ns is noise.
+            let _c = StepTimer::start_sub(
+                if result.is_some() { SUB_CACHE_HIT } else { SUB_CACHE_MISS },
+                true,
+            );
+        }
+        result
     }
 
     #[inline]
