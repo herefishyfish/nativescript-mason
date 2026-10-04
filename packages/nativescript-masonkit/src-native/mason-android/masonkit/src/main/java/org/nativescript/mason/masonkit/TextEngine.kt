@@ -2559,16 +2559,24 @@ class TextEngine(val container: TextContainer) {
       return hasTextLayoutFlags(low, high) || hasTextVisualFlags(low, high)
     }
 
+    // registerPendingTextStyle runs on whatever thread a style write lands on;
+    // all access to the set and the posted flag must hold this lock.
+    private val pendingTextStyleFlushLock = Any()
     private val pendingTextStyleFlush = HashSet<TextEngine>()
     private var textStyleFlushPosted = false
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     internal fun registerPendingTextStyle(engine: TextEngine) {
-      pendingTextStyleFlush.add(engine)
-      if (!textStyleFlushPosted) {
-        textStyleFlushPosted = true
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-          textStyleFlushPosted = false
-          flushPendingTextStyles()
+      synchronized(pendingTextStyleFlushLock) {
+        pendingTextStyleFlush.add(engine)
+        if (!textStyleFlushPosted) {
+          textStyleFlushPosted = true
+          mainHandler.post {
+            synchronized(pendingTextStyleFlushLock) {
+              textStyleFlushPosted = false
+            }
+            flushPendingTextStyles()
+          }
         }
       }
     }
@@ -2576,9 +2584,12 @@ class TextEngine(val container: TextContainer) {
     @JvmStatic
     @JvmOverloads
     internal fun flushPendingTextStyles(forRoot: Node? = null) {
-      if (pendingTextStyleFlush.isEmpty()) return
-      val pending = pendingTextStyleFlush.toTypedArray()
-      pendingTextStyleFlush.clear()
+      val pending: Array<TextEngine>
+      synchronized(pendingTextStyleFlushLock) {
+        if (pendingTextStyleFlush.isEmpty()) return
+        pending = pendingTextStyleFlush.toTypedArray()
+        pendingTextStyleFlush.clear()
+      }
       for (engine in pending) {
         val quiet = forRoot != null && (engine.node.getRootNode() ?: engine.node) === forRoot
         engine.flushTextStyleIfNeeded(quiet = quiet)
