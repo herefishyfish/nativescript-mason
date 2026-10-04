@@ -2394,11 +2394,12 @@ class TextEngine(val container: TextContainer) {
   internal fun invalidateInlineSegments(markDirty: Boolean = true, quiet: Boolean = false) {
     Node.bumpTextInvalidationEpoch()
     segmentsInvalidateVersion += 1
-    // put returns null when the key was absent — increment under the same
-    // main-thread discipline that guards every other staleMeasures mutation
-    // so the counter and the map never disagree (modulo GC expunge drift,
-    // which only delays one warm cycle).
-    if (staleMeasures.put(this, true) == null) staleCount.incrementAndGet()
+    // put returns null when the key was absent. The lock keeps the map and
+    // the counter consistent with concurrent drains; staleCount tolerates
+    // GC expunge drift either way (only delays one warm cycle).
+    synchronized(staleMeasuresLock) {
+      if (staleMeasures.put(this, true) == null) staleCount.incrementAndGet()
+    }
     cachedAttributedString = null
     minMeasuredTextWidth = 0f
     minMeasuredTextHeight = 0f
@@ -2487,6 +2488,13 @@ class TextEngine(val container: TextContainer) {
     private const val MEASURE_CACHE_SIZE = 8
 
     private val staleMeasures = java.util.WeakHashMap<TextEngine, Boolean>()
+
+    // Guards every staleMeasures structural mutation. WeakHashMap is not
+    // thread-safe, and the main-thread-only discipline documented on
+    // collectWarmBatch is not enforced: invalidateInlineSegments can run on
+    // a background thread while a drain iterates, which threw
+    // ConcurrentModificationException in the wild (20261004-080257 run).
+    private val staleMeasuresLock = Any()
 
     // O(1) mirror of staleMeasures.size: WeakHashMap.size() expunges stale
     // refs on every call, which costs the small-mutation compute path 2-3us.
@@ -2592,24 +2600,31 @@ class TextEngine(val container: TextContainer) {
     private fun collectWarmBatch(forRoot: Node): List<TextEngine> {
       flushPendingTextStyles(forRoot)
       Style.flushPendingMetrics(forRoot)
-      if (staleMeasures.isEmpty()) return emptyList()
+      // The isEmpty check and the drain iteration must be atomic: a
+      // concurrent invalidateInlineSegments put during iteration threw
+      // ConcurrentModificationException. The lock pairs with the one in
+      // invalidateInlineSegments; monitors are reentrant, so the View
+      // layoutParams work below is safe even if a callback re-enters.
       val batch = ArrayList<TextEngine>()
       var drained = 0
-      val it = staleMeasures.entries.iterator()
-      while (it.hasNext()) {
-        val engine = it.next().key ?: continue
-        if ((engine.node.getRootNode() ?: engine.node) !== forRoot) continue
-        it.remove()
-        drained += 1
-        if (engine.container !is TextView || !engine.warmable()) continue
-        (engine.container.node.view as? View)?.let {
-          if (it.layoutParams == null) {
-            it.layoutParams = ViewGroup.LayoutParams(
-              ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+      synchronized(staleMeasuresLock) {
+        if (staleMeasures.isEmpty()) return emptyList()
+        val it = staleMeasures.entries.iterator()
+        while (it.hasNext()) {
+          val engine = it.next().key ?: continue
+          if ((engine.node.getRootNode() ?: engine.node) !== forRoot) continue
+          it.remove()
+          drained += 1
+          if (engine.container !is TextView || !engine.warmable()) continue
+          (engine.container.node.view as? View)?.let {
+            if (it.layoutParams == null) {
+              it.layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+              )
+            }
           }
+          batch.add(engine)
         }
-        batch.add(engine)
       }
       // Mirror the removals so the counter never disagrees with the map;
       // clamped at 0 against GC expunge drift (only delays one warm cycle).
