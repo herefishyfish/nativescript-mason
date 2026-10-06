@@ -2500,7 +2500,6 @@ class TextEngine(val container: TextContainer) {
       try {
         for (engine in batch) {
           val paint = (engine.container as TextView).paint
-          engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -1f, -2f)
           engine.measure(paint, KNOWN_NONE, KNOWN_NONE, -2f, -2f)
           if (!engine.lastDefiniteAvailableWidth.isNaN()) {
             engine.measure(
